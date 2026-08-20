@@ -333,11 +333,11 @@
 <datalist id="clientList"></datalist>
 <div id="toast"></div>
 
+<script src="config.js"></script>
 <script>
 /* ================= STORAGE ================= */
-/* Paste your Apps Script /exec URL between the quotes below and the app
-   stays connected FOREVER on every device - no need to enter it again. */
-const BUILT_IN_SCRIPT_URL='';
+/* The permanent /exec URL lives in config.js - one line, easy to edit. */
+const BUILT_IN_SCRIPT_URL=String(window.HISAB_SCRIPT_URL||'').trim();
 const KEY='hisabData_v1';
 let DB=load();
 if(BUILT_IN_SCRIPT_URL)DB.scriptUrl=BUILT_IN_SCRIPT_URL;
