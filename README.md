@@ -1,8 +1,8 @@
 # Hisab — Caretaker Services Manager
 
 A simple calculator + employee database for a 2-partner caretaker services company.
-Runs fully in the browser — all data is saved on the device (browser storage), with
-JSON backup export/import for safekeeping or moving to another device.
+Runs fully in the browser, saves every entry on the device instantly, and also sends
+each submit to **your Google Sheet** in its respective tab.
 
 ## What it does
 
@@ -19,8 +19,17 @@ JSON backup export/import for safekeeping or moving to another device.
 
 Just open `index.html` in any browser — or host it anywhere (GitHub Pages works great).
 
-## Backup
+## Connect Google Sheets (one time, ~5 min)
 
-All data lives in the browser's local storage on the device you use.
-Use **All Records → Download backup (JSON)** regularly, and **Import backup (JSON)**
-to restore or move data to another phone/computer.
+The Apps Script is already locked to spreadsheet ID `1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY`.
+
+1. Open the spreadsheet → menu **Extensions → Apps Script**.
+2. Delete existing code → paste all of `google-apps-script.gs` → save.
+3. **Deploy → New deployment → ⚙ Web app** → Execute as: **Me**, Who has access: **Anyone** → Deploy.
+4. Authorize when asked (Advanced → Go to project → Allow — it's your own script).
+5. Copy the **Web app URL** (ends in `/exec`).
+6. In the app → **Google Sheet** tab → paste the URL → **Save & test connection** → **Send all saved data to Sheet**.
+
+The script auto-creates tabs: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab.
+
+To use the same data on a second phone/computer: connect the same URL there and press **Load data FROM Sheet** — or use the JSON backup export/import in All Records.
