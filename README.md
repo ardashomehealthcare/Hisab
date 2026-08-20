@@ -24,7 +24,7 @@ Just open `index.html` in any browser — or host it anywhere (GitHub Pages work
 The Apps Script is already locked to spreadsheet ID `1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY`.
 
 1. Open the spreadsheet → menu **Extensions → Apps Script**.
-2. Delete existing code → paste all of `google-apps-script.gs` → save.
+2. In the editor, press **Ctrl+A** (Mac: **Cmd+A**) to select everything, then **Delete**. Paste **only** the contents of `google-apps-script.gs` — no extra notes or `*` bullets after the last `}` — then save. If you see `SyntaxError: Unexpected token '*'`, leftover text is still in `Code.gs`; select-all and paste again.
 3. **Deploy → New deployment → ⚙ Web app** → Execute as: **Me**, Who has access: **Anyone** → Deploy.
 4. Authorize when asked (Advanced → Go to project → Allow — it's your own script).
 5. Copy the **Web app URL** (ends in `/exec`).

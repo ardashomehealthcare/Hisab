@@ -321,7 +321,7 @@
     <ol class="steps">
       <li>Open <b>sheets.google.com</b> → create a new blank spreadsheet, name it e.g. <b>Hisab</b>.</li>
       <li>In the sheet menu: <b>Extensions → Apps Script</b>.</li>
-      <li>Delete any code there and paste the whole code from the file <code>google-apps-script.gs</code> (in this project). Press the 💾 save icon.</li>
+      <li>Press <b>Ctrl+A</b> (Mac: <b>Cmd+A</b>) to select everything in <code>Code.gs</code>, then Delete. Paste <b>only</b> the contents of <code>google-apps-script.gs</code> from this project (nothing after the last <code>}</code>). Press the 💾 save icon. If Apps Script says <code>Unexpected token '*'</code>, leftover text is still in the file — select-all and paste again.</li>
       <li>Click <b>Deploy → New deployment</b> → gear icon ⚙ → choose <b>Web app</b>.</li>
       <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
       <li>Google will ask permission — click <b>Authorize</b>, choose your account, click <b>Advanced → Go to project (unsafe)</b> → <b>Allow</b>. (It's your own script, this is safe.)</li>
