@@ -11,4 +11,4 @@
    on EVERY device — you and your partner never enter it again.
    ============================================================ */
 
-window.HISAB_SCRIPT_URL = '';
+window.HISAB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoONPSQaprtZI_7siuNhuWkeB17cBYBeYM1dtGy3C2ZJG2GcZk_pz_7nImWfDPvccS_g/exec';
