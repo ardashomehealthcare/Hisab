@@ -1,27 +1,31 @@
-/**
- * HISAB — Google Sheets backend
- * ------------------------------------------------------------
- * SETUP (one time):
- * 1. Open your Google Sheet (sheets.google.com → new blank sheet, name it "Hisab").
- * 2. Menu: Extensions → Apps Script. Delete everything there and paste THIS whole file.
- * 3. Click the save (💾) icon.
- * 4. Deploy → New deployment → gear ⚙ → Web app.
- *      Execute as: Me
- *      Who has access: Anyone
- * 5. Deploy → Authorize (Advanced → Go to project → Allow).
- * 6. Copy the Web app URL (ends with /exec) and paste it in the Hisab app
- *    → "Google Sheet" tab → Save & test connection.
- *
- * The app will create these tabs automatically:
- * Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses
- */
+// HISAB — Google Sheets backend
+//
+// SETUP (one time):
+// 1. Open your Google Sheet (sheets.google.com -> new blank sheet, name it "Hisab").
+// 2. Menu: Extensions -> Apps Script. Select ALL existing code, delete it,
+//    then paste THIS whole file. Do not leave any leftover text.
+// 3. Click the save icon.
+// 4. Deploy -> New deployment -> gear -> Web app.
+//      Execute as: Me
+//      Who has access: Anyone
+// 5. Deploy -> Authorize (Advanced -> Go to project -> Allow).
+// 6. Copy the Web app URL (ends with /exec) and paste it in the Hisab app
+//    -> "Google Sheet" tab -> Save & test connection.
+//
+// Tabs created automatically:
+// Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses
 
-var SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'; // <-- paste your Hisab spreadsheet ID here
+var SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
 
 var SHEETS = ['Employees', 'DutyLeave', 'EmployeePayments', 'ClientReceipts', 'Expenses'];
 
 function getSpreadsheet() {
-  return SpreadsheetApp.openById(SPREADSHEET_ID);
+  if (SPREADSHEET_ID) {
+    return SpreadsheetApp.openById(SPREADSHEET_ID);
+  }
+  var active = SpreadsheetApp.getActiveSpreadsheet();
+  if (active) return active;
+  throw new Error('Cannot open spreadsheet. Set SPREADSHEET_ID.');
 }
 
 function json(obj) {
@@ -47,7 +51,10 @@ function doGet(e) {
     try {
       return json({ ok: true, msg: 'Connected to sheet: ' + getSpreadsheet().getName() });
     } catch (err) {
-      return json({ ok: false, error: 'Cannot open spreadsheet. Check SPREADSHEET_ID and that this Google account owns/edits it. ' + String(err) });
+      return json({
+        ok: false,
+        error: 'Cannot open spreadsheet. Check SPREADSHEET_ID and that this Google account owns/edits it. ' + String(err)
+      });
     }
   }
   if (action === 'getAll') {
@@ -55,11 +62,16 @@ function doGet(e) {
     SHEETS.forEach(function (name) {
       var ss = getSpreadsheet();
       var sh = ss.getSheetByName(name);
-      if (!sh || sh.getLastRow() < 2) { out[name] = []; return; }
+      if (!sh || sh.getLastRow() < 2) {
+        out[name] = [];
+        return;
+      }
       var vals = sh.getRange(2, 1, sh.getLastRow() - 1, sh.getLastColumn()).getValues();
       out[name] = vals.map(function (row) {
         return row.map(function (c) {
-          if (c instanceof Date) return Utilities.formatDate(c, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+          if (c instanceof Date) {
+            return Utilities.formatDate(c, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+          }
           return String(c);
         });
       });
