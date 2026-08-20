@@ -16,7 +16,13 @@
  * Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses
  */
 
+var SPREADSHEET_ID = ''; // <-- paste your Hisab spreadsheet ID here
+
 var SHEETS = ['Employees', 'DutyLeave', 'EmployeePayments', 'ClientReceipts', 'Expenses'];
+
+function getSpreadsheet() {
+  return SpreadsheetApp.openById(SPREADSHEET_ID);
+}
 
 function json(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj))
@@ -24,7 +30,7 @@ function json(obj) {
 }
 
 function getSheet(name, headers) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getSpreadsheet();
   var sh = ss.getSheetByName(name);
   if (!sh) sh = ss.insertSheet(name);
   if (headers && headers.length && sh.getLastRow() === 0) {
