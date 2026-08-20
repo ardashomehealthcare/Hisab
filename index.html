@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hisab – Caretaker Services Manager</title>
+<style>
+  :root{
+    --bg:#f4f6fb; --card:#ffffff; --ink:#1d2433; --muted:#68738a;
+    --brand:#1f6feb; --brand-dark:#174ea6; --green:#188a42; --red:#c53030;
+    --amber:#b7791f; --line:#e3e8f2; --soft:#eef3fc;
+    font-size:16px;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif; background:var(--bg); color:var(--ink);}
+  header{background:linear-gradient(120deg,#174ea6,#1f6feb); color:#fff; padding:14px 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  header h1{font-size:1.25rem; letter-spacing:.3px;}
+  header .sub{font-size:.8rem; opacity:.85;}
+  #sheetStatus{margin-left:auto; font-size:.78rem; background:rgba(255,255,255,.15); padding:5px 12px; border-radius:999px; display:flex; align-items:center; gap:6px;}
+  #sheetStatus .dot{width:9px; height:9px; border-radius:50%; background:#ffb020;}
+  #sheetStatus.ok .dot{background:#3ddc84;}
+
+  nav{display:flex; gap:4px; padding:8px 10px; overflow-x:auto; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:50;}
+  nav button{flex:0 0 auto; border:1px solid transparent; background:transparent; color:var(--muted); padding:9px 14px; border-radius:9px; font-size:.86rem; font-weight:600; cursor:pointer; white-space:nowrap;}
+  nav button.active{background:var(--soft); color:var(--brand-dark); border-color:#c9dcff;}
+  nav button:hover{color:var(--brand-dark);}
+
+  main{max-width:1080px; margin:0 auto; padding:16px 14px 70px;}
+  .tab{display:none;}
+  .tab.active{display:block; animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(4px);} to{opacity:1; transform:none;}}
+
+  .card{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px 16px 18px; margin-bottom:16px; box-shadow:0 1px 3px rgba(20,40,80,.05);}
+  .card h2{font-size:1rem; margin-bottom:4px; display:flex; align-items:center; gap:8px;}
+  .card .hint{font-size:.78rem; color:var(--muted); margin-bottom:12px;}
+  .badge{font-size:.66rem; font-weight:700; padding:2px 8px; border-radius:999px; letter-spacing:.4px;}
+  .badge.green{background:#e2f5e9; color:var(--green);}
+  .badge.red{background:#fde8e8; color:var(--red);}
+  .badge.blue{background:#e3edff; color:var(--brand-dark);}
+  .badge.amber{background:#fdf1dc; color:var(--amber);}
+
+  .grid{display:grid; gap:10px 12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));}
+  .field label{display:block; font-size:.74rem; font-weight:700; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.4px;}
+  .field input,.field select,.field textarea{width:100%; padding:9px 10px; border:1px solid #cdd6e6; border-radius:9px; font-size:.92rem; background:#fff; color:var(--ink);}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:2px solid #bcd4ff; border-color:var(--brand);}
+  .actions{margin-top:13px; display:flex; gap:10px; flex-wrap:wrap; align-items:center;}
+  .btn{border:none; border-radius:9px; padding:10px 18px; font-size:.9rem; font-weight:700; cursor:pointer;}
+  .btn.primary{background:var(--brand); color:#fff;}
+  .btn.primary:hover{background:var(--brand-dark);}
+  .btn.green{background:var(--green); color:#fff;}
+  .btn.red{background:var(--red); color:#fff;}
+  .btn.ghost{background:var(--soft); color:var(--brand-dark);}
+  .btn:disabled{opacity:.55; cursor:not-allowed;}
+  .msg{font-size:.82rem; font-weight:600;}
+  .msg.ok{color:var(--green);}
+  .msg.err{color:var(--red);}
+
+  table{width:100%; border-collapse:collapse; font-size:.84rem;}
+  th{background:var(--soft); text-align:left; padding:8px 9px; font-size:.72rem; text-transform:uppercase; letter-spacing:.4px; color:var(--brand-dark);}
+  td{padding:8px 9px; border-top:1px solid var(--line); vertical-align:top;}
+  tr:hover td{background:#fafcff;}
+  .tableWrap{overflow-x:auto; border:1px solid var(--line); border-radius:10px;}
+  .right{text-align:right;}
+  .del{color:var(--red); cursor:pointer; font-weight:700; border:none; background:none; font-size:.8rem;}
+  .money{font-variant-numeric:tabular-nums; font-weight:600;}
+  .pos{color:var(--green);} .neg{color:var(--red);}
+
+  .statRow{display:grid; gap:12px; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); margin-bottom:16px;}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:13px; padding:14px;}
+  .stat .lbl{font-size:.72rem; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:.4px;}
+  .stat .val{font-size:1.35rem; font-weight:800; margin-top:4px;}
+
+  .resultBox{background:var(--soft); border:1px solid #c9dcff; border-radius:11px; padding:14px; margin-top:14px; font-size:.9rem; line-height:1.85;}
+  .resultBox b{font-variant-numeric:tabular-nums;}
+  code{background:#eef1f7; padding:2px 6px; border-radius:6px; font-size:.8rem;}
+  ol.steps{margin:10px 0 0 20px; font-size:.87rem; line-height:1.7;}
+  ol.steps li{margin-bottom:6px;}
+  #toast{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#1d2433; color:#fff; padding:11px 20px; border-radius:10px; font-size:.86rem; font-weight:600; opacity:0; pointer-events:none; transition:opacity .25s; z-index:99; max-width:90vw; text-align:center;}
+  #toast.show{opacity:1;}
+  .twoCol{display:grid; gap:16px; grid-template-columns:1fr;}
+  @media(min-width:860px){.twoCol{grid-template-columns:1fr 1fr;}}
+  .filterRow{display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:12px;}
+  .filterRow .field{min-width:150px;}
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>🧮 Hisab — Caretaker Services</h1>
+    <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
+  </div>
+  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google Sheet: not connected</span></div>
+</header>
+
+<nav id="nav">
+  <button data-tab="dash" class="active">📊 Dashboard</button>
+  <button data-tab="emp">👤 Employees</button>
+  <button data-tab="duty">📅 Duty / Leave</button>
+  <button data-tab="money">💰 Money Entry</button>
+  <button data-tab="salary">🧾 Salary Calculator</button>
+  <button data-tab="pl">⚖️ Profit / Loss</button>
+  <button data-tab="records">🗂️ All Records</button>
+  <button data-tab="sheet">🔗 Google Sheet</button>
+</nav>
+
+<main>
+
+<!-- ============ DASHBOARD ============ -->
+<section class="tab active" id="tab-dash">
+  <div class="statRow">
+    <div class="stat"><div class="lbl">Employees</div><div class="val" id="dEmp">0</div></div>
+    <div class="stat"><div class="lbl">Received (this month)</div><div class="val pos" id="dIn">₹0</div></div>
+    <div class="stat"><div class="lbl">Paid out (this month)</div><div class="val neg" id="dOut">₹0</div></div>
+    <div class="stat"><div class="lbl">Profit (this month)</div><div class="val" id="dPr">₹0</div></div>
+    <div class="stat"><div class="lbl">Each partner share</div><div class="val" id="dSh">₹0</div></div>
+  </div>
+  <div class="card">
+    <h2>Recent entries</h2>
+    <div class="hint">Latest 12 entries from every section. Full lists are in “All Records”.</div>
+    <div class="tableWrap"><table id="dashTable">
+      <thead><tr><th>Date</th><th>Type</th><th>Details</th><th class="right">Amount</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ EMPLOYEES ============ -->
+<section class="tab" id="tab-emp">
+  <div class="card">
+    <h2>Add employee <span class="badge blue">Database</span></h2>
+    <div class="hint">Fill only what you know — no field is compulsory. You can edit later by adding again with the same name.</div>
+    <div class="grid">
+      <div class="field"><label>Employee name</label><input id="eName" placeholder="e.g. Ramesh Kumar"></div>
+      <div class="field"><label>Phone</label><input id="ePhone" placeholder="Mobile no."></div>
+      <div class="field"><label>Wage type</label>
+        <select id="eWageType" onchange="toggleDutyField()"><option value="">— select —</option><option value="monthly">Monthly salary</option><option value="daily">Per day</option></select></div>
+      <div class="field"><label>Wage amount (₹)</label><input id="eWage" type="number" min="0" placeholder="e.g. 18000 / month or 700 / day"></div>
+      <div class="field" id="eDutyField"><label>Duty period</label>
+        <select id="eDuty"><option value="">— select —</option><option value="24">24 hour</option><option value="12">12 hour</option></select></div>
+      <div class="field"><label>Joining date</label><input id="eJoin" type="date"></div>
+      <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new"></div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="saveEmployee()">✔ Submit employee</button>
+      <span class="msg" id="eMsg"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Employee list</h2>
+    <div class="tableWrap"><table id="empTable">
+      <thead><tr><th>Name</th><th>Phone</th><th>Wage</th><th>Duty</th><th>Joined</th><th>Client name</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ DUTY / LEAVE ============ -->
+<section class="tab" id="tab-duty">
+  <div class="twoCol">
+    <div class="card">
+      <h2>Duty entry <span class="badge green">On duty</span></h2>
+      <div class="hint">When did the employee do duty? (from → to). Single day: keep both dates same, or fill only “From”.</div>
+      <div class="grid">
+        <div class="field"><label>Employee</label><select id="dEmpSel" class="empSelect"></select></div>
+        <div class="field"><label>From date</label><input id="dFrom" type="date"></div>
+        <div class="field"><label>To date</label><input id="dTo" type="date"></div>
+        <div class="field"><label>Client name</label><input id="dClient" list="clientList" placeholder="Choose from list or type new"></div>
+      </div>
+      <div class="actions"><button class="btn green" onclick="saveDutyLeave('duty')">✔ Submit duty</button><span class="msg" id="dMsg"></span></div>
+    </div>
+    <div class="card">
+      <h2>Leave entry <span class="badge red">On leave</span></h2>
+      <div class="hint">When did the employee take leave? (from → to). Leave days are cut from that month's salary.</div>
+      <div class="grid">
+        <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect"></select></div>
+        <div class="field"><label>From date</label><input id="lFrom" type="date"></div>
+        <div class="field"><label>To date</label><input id="lTo" type="date"></div>
+      </div>
+      <div class="actions"><button class="btn red" onclick="saveDutyLeave('leave')">✔ Submit leave</button><span class="msg" id="lMsg"></span></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Duty &amp; leave records</h2>
+    <div class="tableWrap"><table id="dutyTable">
+      <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Client</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ MONEY ENTRY ============ -->
+<section class="tab" id="tab-money">
+  <div class="card">
+    <h2>Client payment received <span class="badge green">Money IN</span></h2>
+    <div class="hint">Received money from a client? Enter just the amount if that's all you have — every field is optional.</div>
+    <div class="grid">
+      <div class="field"><label>Client name</label><input id="rClient" list="clientList" placeholder="Choose from list or type new"></div>
+      <div class="field"><label>Date</label><input id="rDate" type="date"></div>
+      <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000"></div>
+      <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect"></select></div>
+      <div class="field"><label>Mode</label><select id="rMode"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+    </div>
+    <div class="actions"><button class="btn green" onclick="saveReceipt()">✔ Submit client payment</button><span class="msg" id="rMsg"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
+    <div class="hint">Salary / advance / any payment given to an employee, with date. Saved in that employee's ledger.</div>
+    <div class="grid">
+      <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect"></select></div>
+      <div class="field"><label>Date</label><input id="pDate" type="date"></div>
+      <div class="field"><label>Amount paid (₹)</label><input id="pAmt" type="number" min="0" placeholder="e.g. 15000"></div>
+      <div class="field"><label>Payment type</label><select id="pType"><option value="">— select —</option><option>Salary</option><option>Advance</option><option>Bonus</option><option>Other</option></select></div>
+      <div class="field"><label>Mode</label><select id="pMode"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+    </div>
+    <div class="actions"><button class="btn red" onclick="savePayment()">✔ Submit employee payment</button><span class="msg" id="pMsg"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Other expense <span class="badge amber">Money OUT</span></h2>
+    <div class="hint">Office rent, travel, phone, commission — anything else spent from company money.</div>
+    <div class="grid">
+      <div class="field"><label>Expense item</label><input id="xItem" placeholder="e.g. Auto fare"></div>
+      <div class="field"><label>Date</label><input id="xDate" type="date"></div>
+      <div class="field"><label>Amount (₹)</label><input id="xAmt" type="number" min="0"></div>
+    </div>
+    <div class="actions"><button class="btn primary" onclick="saveExpense()">✔ Submit expense</button><span class="msg" id="xMsg"></span></div>
+  </div>
+</section>
+
+<!-- ============ SALARY CALCULATOR ============ -->
+<section class="tab" id="tab-salary">
+  <div class="card">
+    <h2>Salary calculator (calendar month)</h2>
+    <div class="hint">
+      Salary is calculated from the <b>duty days you have entered</b> in the Duty/Leave tab (leave days are cut automatically).
+      Rule: duty for the whole calendar month (30 or 31 days, 28/29 in Feb) = full month salary.
+      Fewer days = per-day calculation (monthly wage ÷ days in that month × duty days). Per-day employees = rate × duty days.
+    </div>
+    <div class="grid">
+      <div class="field"><label>Employee</label><select id="sEmpSel" class="empSelect"></select></div>
+      <div class="field"><label>Month</label><input id="sMonth" type="month"></div>
+    </div>
+    <div class="actions" style="margin-top:8px;">
+      <label style="font-size:.83rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
+        <input type="checkbox" id="sAssumeFull" style="width:16px;height:16px;">
+        No duty entries for this month? Count full month duty (starts from joining date, minus leaves)
+      </label>
+    </div>
+    <div class="actions"><button class="btn primary" onclick="calcSalary()">🧾 Calculate salary</button></div>
+    <div class="resultBox" id="sResult" style="display:none;"></div>
+    <div class="actions" id="sSaveRow" style="display:none;">
+      <button class="btn green" onclick="saveSalaryAsPayment()">💸 Record this salary as payment given today</button>
+      <span class="msg" id="sMsg"></span>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PROFIT / LOSS ============ -->
+<section class="tab" id="tab-pl">
+  <div class="card">
+    <h2>Monthly profit / loss — 50-50 partner share</h2>
+    <div class="hint">Calculated by calendar month: Client money received − Employee payments − Other expenses. Profit or loss is divided equally between both partners.</div>
+    <div class="grid" style="max-width:340px;">
+      <div class="field"><label>Month</label><input id="plMonth" type="month"></div>
+    </div>
+    <div class="actions"><button class="btn primary" onclick="calcPL()">⚖️ Calculate profit / loss</button></div>
+    <div class="resultBox" id="plResult" style="display:none;"></div>
+  </div>
+  <div class="card">
+    <h2>Month-by-month summary</h2>
+    <div class="tableWrap"><table id="plTable">
+      <thead><tr><th>Month</th><th class="right">Received</th><th class="right">Emp. payments</th><th class="right">Expenses</th><th class="right">Profit/Loss</th><th class="right">Per partner</th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
+</section>
+
+<!-- ============ ALL RECORDS ============ -->
+<section class="tab" id="tab-records">
+  <div class="card">
+    <div class="filterRow">
+      <div class="field"><label>Filter by employee</label><select id="fEmp" class="empSelect" onchange="renderRecords()"></select></div>
+      <div class="field"><label>Filter by month</label><input id="fMonth" type="month" onchange="renderRecords()"></div>
+      <button class="btn ghost" onclick="document.getElementById('fEmp').value='';document.getElementById('fMonth').value='';renderRecords();">Clear filters</button>
+      <button class="btn ghost" onclick="exportBackup()">⬇ Download backup (JSON)</button>
+    </div>
+  </div>
+  <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Payments given to employees</h2><div class="tableWrap"><table id="recPayments"><thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Duty / Leave</h2><div class="tableWrap"><table id="recDuty"><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Client</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Other expenses</h2><div class="tableWrap"><table id="recExpenses"><thead><tr><th>Date</th><th>Item</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+</section>
+
+<!-- ============ GOOGLE SHEET ============ -->
+<section class="tab" id="tab-sheet">
+  <div class="card">
+    <h2>Connect your Google Sheet</h2>
+    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once connected.</div>
+    <div class="field" style="max-width:640px;">
+      <label>Google Apps Script Web-App URL</label>
+      <input id="scriptUrl" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="saveScriptUrl()">💾 Save &amp; test connection</button>
+      <button class="btn green" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
+      <button class="btn ghost" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
+      <span class="msg" id="shMsg"></span>
+    </div>
+  </div>
+  <div class="card">
+    <h2>One-time setup (5 minutes)</h2>
+    <ol class="steps">
+      <li>Open <b>sheets.google.com</b> → create a new blank spreadsheet, name it e.g. <b>Hisab</b>.</li>
+      <li>In the sheet menu: <b>Extensions → Apps Script</b>.</li>
+      <li>Delete any code there and paste the whole code from the file <code>google-apps-script.gs</code> (in this project). Press the 💾 save icon.</li>
+      <li>Click <b>Deploy → New deployment</b> → gear icon ⚙ → choose <b>Web app</b>.</li>
+      <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
+      <li>Google will ask permission — click <b>Authorize</b>, choose your account, click <b>Advanced → Go to project (unsafe)</b> → <b>Allow</b>. (It's your own script, this is safe.)</li>
+      <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>) and paste it in the box above → <b>Save &amp; test connection</b>.</li>
+      <li>Press <b>Send all saved data to Sheet</b> once. Done — from now on every submit goes to the sheet automatically.</li>
+    </ol>
+  </div>
+</section>
+
+</main>
+<datalist id="clientList"></datalist>
+<div id="toast"></div>
+
+<script>
+/* ================= STORAGE ================= */
+const KEY='hisabData_v1';
+let DB=load();
+function load(){
+  try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees)return d;}catch(e){}
+  return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[],scriptUrl:''};
+}
+function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const todayStr=()=>new Date().toISOString().slice(0,10);
+const fmt=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
+function flash(id,txt,ok=true){const el=document.getElementById(id);el.textContent=txt;el.className='msg '+(ok?'ok':'err');clearTimeout(el._t);el._t=setTimeout(()=>el.textContent='',4000);}
+
+/* ================= NAV ================= */
+document.getElementById('nav').addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x===b));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-'+b.dataset.tab));
+  renderAll();
+});
+
+/* ================= GOOGLE SHEET SYNC ================= */
+const SHEET_COLS={
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','joinDate','client','savedAt'],
+  DutyLeave:['id','empName','type','from','to','days','client','savedAt'],
+  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt'],
+  ClientReceipts:['id','client','date','amount','empName','mode','savedAt'],
+  Expenses:['id','item','date','amount','savedAt']
+};
+function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
+async function postToSheet(payload){
+  if(!DB.scriptUrl)return {ok:false,offline:true};
+  try{
+    const res=await fetch(DB.scriptUrl,{method:'POST',body:JSON.stringify(payload)});
+    const j=await res.json();
+    return j;
+  }catch(e){return {ok:false,error:String(e)};}
+}
+async function sendRecord(sheet,rec){
+  const r=await postToSheet({action:'append',sheet,headers:SHEET_COLS[sheet],row:rowFor(sheet,rec)});
+  if(r.ok){rec.synced=true;persist();toast('✅ Saved & sent to Google Sheet');}
+  else if(r.offline){toast('💾 Saved on device (Google Sheet not connected yet)');}
+  else{toast('💾 Saved on device — Sheet sync failed, will retry with "Send all"');}
+  updateSheetStatus();
+}
+async function syncAll(){
+  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  flash('shMsg','Sending everything…');
+  const data={};
+  data.Employees={headers:SHEET_COLS.Employees,rows:DB.employees.map(r=>rowFor('Employees',r))};
+  data.DutyLeave={headers:SHEET_COLS.DutyLeave,rows:DB.dutyLeave.map(r=>rowFor('DutyLeave',r))};
+  data.EmployeePayments={headers:SHEET_COLS.EmployeePayments,rows:DB.payments.map(r=>rowFor('EmployeePayments',r))};
+  data.ClientReceipts={headers:SHEET_COLS.ClientReceipts,rows:DB.receipts.map(r=>rowFor('ClientReceipts',r))};
+  data.Expenses={headers:SHEET_COLS.Expenses,rows:DB.expenses.map(r=>rowFor('Expenses',r))};
+  const r=await postToSheet({action:'replaceAll',data});
+  if(r.ok){[...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();flash('shMsg','✅ All data written to your Google Sheet.');}
+  else flash('shMsg','❌ Could not reach the Sheet. Check the URL / internet.',false);
+  updateSheetStatus();
+}
+async function loadFromSheet(){
+  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
+  flash('shMsg','Loading from Sheet…');
+  try{
+    const res=await fetch(DB.scriptUrl+'?action=getAll');
+    const j=await res.json();
+    if(!j.ok)throw 0;
+    const map=(sheet,cols)=> (j.data[sheet]||[]).map(row=>{const o={synced:true};cols.forEach((c,i)=>o[c]=row[i]??'');return o;});
+    DB.employees=map('Employees',SHEET_COLS.Employees);
+    DB.dutyLeave=map('DutyLeave',SHEET_COLS.DutyLeave);
+    DB.payments=map('EmployeePayments',SHEET_COLS.EmployeePayments);
+    DB.receipts=map('ClientReceipts',SHEET_COLS.ClientReceipts);
+    DB.expenses=map('Expenses',SHEET_COLS.Expenses);
+    persist();renderAll();flash('shMsg','✅ Data loaded from Google Sheet.');
+  }catch(e){flash('shMsg','❌ Could not load. Check URL / deployment access = Anyone.',false);}
+}
+async function saveScriptUrl(){
+  const u=document.getElementById('scriptUrl').value.trim();
+  DB.scriptUrl=u;persist();updateSheetStatus();
+  if(!u){flash('shMsg','URL cleared. Data will save on this device only.');return;}
+  flash('shMsg','Testing connection…');
+  try{
+    const res=await fetch(u+'?action=ping');const j=await res.json();
+    if(j.ok)flash('shMsg','✅ Connected! Every submit now also goes to your Google Sheet.');
+    else throw 0;
+  }catch(e){flash('shMsg','❌ Could not connect. Check the URL ends in /exec and access is "Anyone".',false);}
+  updateSheetStatus();
+}
+function updateSheetStatus(){
+  const s=document.getElementById('sheetStatus'),t=document.getElementById('sheetStatusTxt');
+  if(DB.scriptUrl){s.classList.add('ok');t.textContent='Google Sheet: connected';}
+  else{s.classList.remove('ok');t.textContent='Google Sheet: not connected';}
+}
+
+/* ================= HELPERS ================= */
+function dayCount(from,to){
+  if(!from&&!to)return '';
+  const a=new Date(from||to),b=new Date(to||from);
+  return Math.max(1,Math.round((b-a)/86400000)+1);
+}
+function monthOf(dateStr){return (dateStr||'').slice(0,7);}
+function daysInMonth(ym){const [y,m]=ym.split('-').map(Number);return new Date(y,m,0).getDate();}
+function anyFilled(vals){return vals.some(v=>String(v||'').trim()!=='');}
+
+/* ================= EMPLOYEE ================= */
+function saveEmployee(){
+  const rec={id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
+    wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
+  // If same name exists, update it instead of duplicating
+  const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
+  if(existing){
+    ['phone','wageType','wageAmount','dutyHours','joinDate','client'].forEach(k=>{if(String(rec[k]).trim()!=='')existing[k]=rec[k];});
+    if(rec.wageType==='daily')existing.dutyHours='';
+    existing.savedAt=rec.savedAt;existing.synced=false;persist();
+    flash('eMsg','Updated existing employee "'+existing.name+'".');
+    sendRecord('Employees',existing);
+  }else{
+    DB.employees.push(rec);persist();
+    flash('eMsg','Employee saved.');
+    sendRecord('Employees',rec);
+  }
+  clear('eName','ePhone','eWageType','eWage','eDuty','eJoin','eClient');
+  toggleDutyField();
+  renderAll();
+}
+function toggleDutyField(){
+  document.getElementById('eDutyField').style.display=val('eWageType')==='daily'?'none':'';
+  if(val('eWageType')==='daily')document.getElementById('eDuty').value='';
+}
+
+/* ================= DUTY / LEAVE ================= */
+function saveDutyLeave(type){
+  const p=type==='duty'?{emp:'dEmpSel',f:'dFrom',t:'dTo',m:'dMsg'}:{emp:'lEmpSel',f:'lFrom',t:'lTo',m:'lMsg'};
+  const rec={id:uid(),empName:val(p.emp),type,from:val(p.f),to:val(p.t)||val(p.f),
+    client:type==='duty'?val('dClient'):'',savedAt:new Date().toLocaleString()};
+  rec.days=dayCount(rec.from,rec.to);
+  if(!anyFilled([rec.empName,rec.from,rec.to,rec.client])){flash(p.m,'Fill at least one field.',false);return;}
+  DB.dutyLeave.push(rec);persist();
+  flash(p.m,(type==='duty'?'Duty':'Leave')+' entry saved.');
+  sendRecord('DutyLeave',rec);
+  clear(p.f,p.t);if(type==='duty')clear('dClient');
+  renderAll();
+}
+
+/* ================= MONEY ================= */
+function saveReceipt(){
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode])){flash('rMsg','Fill at least one field.',false);return;}
+  if(rec.amount&&!rec.date)rec.date=todayStr();
+  DB.receipts.push(rec);persist();flash('rMsg','Client payment saved.');
+  sendRecord('ClientReceipts',rec);
+  clear('rClient','rDate','rAmt','rEmpSel','rMode');renderAll();
+}
+function savePayment(){
+  const rec={id:uid(),empName:val('pEmpSel'),date:val('pDate'),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.empName,rec.date,rec.amount,rec.payType,rec.mode])){flash('pMsg','Fill at least one field.',false);return;}
+  if(rec.amount&&!rec.date)rec.date=todayStr();
+  DB.payments.push(rec);persist();flash('pMsg','Employee payment saved.');
+  sendRecord('EmployeePayments',rec);
+  clear('pEmpSel','pDate','pAmt','pType','pMode');renderAll();
+}
+function saveExpense(){
+  const rec={id:uid(),item:val('xItem'),date:val('xDate'),amount:val('xAmt'),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.item,rec.date,rec.amount])){flash('xMsg','Fill at least one field.',false);return;}
+  if(rec.amount&&!rec.date)rec.date=todayStr();
+  DB.expenses.push(rec);persist();flash('xMsg','Expense saved.');
+  sendRecord('Expenses',rec);
+  clear('xItem','xDate','xAmt');renderAll();
+}
+
+/* ================= SALARY CALC ================= */
+let lastSalary=null;
+function daysSetInMonth(recs,ym){
+  const dim=daysInMonth(ym);const set=new Set();
+  recs.forEach(r=>{
+    if(!r.from)return;
+    const from=r.from,to=r.to||r.from;
+    for(let d=1;d<=dim;d++){
+      const ds=ym+'-'+String(d).padStart(2,'0');
+      if(ds>=from&&ds<=to)set.add(d);
+    }
+  });
+  return set;
+}
+function calcSalary(){
+  const name=val('sEmpSel'),ym=val('sMonth');
+  const box=document.getElementById('sResult'),saveRow=document.getElementById('sSaveRow');
+  if(!name||!ym){box.style.display='block';box.innerHTML='Please choose an employee and a month.';saveRow.style.display='none';return;}
+  const emp=DB.employees.find(e=>e.name===name);
+  const dim=daysInMonth(ym);
+  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='duty');
+  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave');
+  let dutySet=daysSetInMonth(dutyRecs,ym);
+  const leaveSet=daysSetInMonth(leaveRecs,ym);
+  let assumed=false,joinNote='';
+  if(dutySet.size===0&&document.getElementById('sAssumeFull').checked){
+    assumed=true;
+    let startDay=1;
+    const jd=emp?.joinDate||'';
+    if(jd){
+      if(monthOf(jd)===ym){startDay=Number(jd.slice(8,10));joinNote=` (counted from joining date ${jd})`;}
+      else if(jd>ym+'-31'){startDay=dim+1;joinNote=` (joining date ${jd} is after this month)`;}
+    }
+    dutySet=new Set();
+    for(let d=startDay;d<=dim;d++)dutySet.add(d);
+  }
+  leaveSet.forEach(d=>dutySet.delete(d));
+  const dutyDays=dutySet.size,leaveDays=leaveSet.size;
+  if(dutyDays===0&&!assumed){
+    const paid0=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym).reduce((s,p)=>s+Number(p.amount||0),0);
+    box.style.display='block';
+    box.innerHTML=`<b>${esc(name)}</b> — no duty days entered for this month, so salary = <b>₹0</b>.<br>
+      Add his duty dates (from → to) in the <b>Duty / Leave</b> tab, or tick the checkbox above to count the full month.`+
+      (paid0?`<br>Already paid this month: <b>${fmt(paid0)}</b>`:'');
+    lastSalary=null;saveRow.style.display='none';return;
+  }
+  const wage=Number(emp?.wageAmount||0),wt=emp?.wageType||'';
+  let salary=0,ruleTxt='';
+  if(wt==='monthly'){
+    if(dutyDays>=dim){salary=wage;ruleTxt=`Full calendar month duty (${dutyDays}/${dim} days) → full monthly salary.`;}
+    else{salary=wage/dim*dutyDays;ruleTxt=`Part month: ₹${wage.toLocaleString('en-IN')} ÷ ${dim} days × ${dutyDays} duty days.`;}
+  }else if(wt==='daily'){
+    salary=wage*dutyDays;ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`;
+  }else{
+    ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
+  }
+  salary=Math.round(salary);
+  const paid=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym).reduce((s,p)=>s+Number(p.amount||0),0);
+  const [y,m]=ym.split('-');
+  const monthName=new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});
+  box.style.display='block';
+  box.innerHTML=`
+    <b>${esc(name)}</b> — ${monthName} (${dim} days)${emp?` • ${esc(emp.wageType||'?')} ₹${Number(emp.wageAmount||0).toLocaleString('en-IN')}${emp.dutyHours?` • ${esc(emp.dutyHours)} hr duty`:''}`:''}<br>
+    Duty days: <b>${dutyDays}</b>${assumed?` <i>(no duty entry — month counted automatically${joinNote})</i>`:' <i>(from your duty entries)</i>'} &nbsp;|&nbsp; Leave days: <b>${leaveDays}</b><br>
+    ${ruleTxt}<br>
+    Salary for this month: <b style="font-size:1.15rem;">${fmt(salary)}</b><br>
+    Already paid in ${monthName}: <b>${fmt(paid)}</b> &nbsp;→&nbsp; Balance to pay: <b class="${salary-paid>=0?'':'neg'}">${fmt(salary-paid)}</b>`;
+  lastSalary={name,ym,salary,monthName};
+  saveRow.style.display=salary>0?'flex':'none';
+}
+function saveSalaryAsPayment(){
+  if(!lastSalary)return;
+  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.monthName,mode:'',savedAt:new Date().toLocaleString()};
+  DB.payments.push(rec);persist();flash('sMsg','Recorded as payment given today.');
+  sendRecord('EmployeePayments',rec);renderAll();
+}
+
+/* ================= PROFIT / LOSS ================= */
+function plForMonth(ym){
+  const inn=DB.receipts.filter(r=>monthOf(r.date)===ym).reduce((s,r)=>s+Number(r.amount||0),0);
+  const out=DB.payments.filter(r=>monthOf(r.date)===ym).reduce((s,r)=>s+Number(r.amount||0),0);
+  const exp=DB.expenses.filter(r=>monthOf(r.date)===ym).reduce((s,r)=>s+Number(r.amount||0),0);
+  return {inn,out,exp,profit:inn-out-exp};
+}
+function calcPL(){
+  const ym=val('plMonth');const box=document.getElementById('plResult');
+  if(!ym){box.style.display='block';box.textContent='Choose a month.';return;}
+  const {inn,out,exp,profit}=plForMonth(ym);
+  const [y,m]=ym.split('-');
+  const monthName=new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});
+  box.style.display='block';
+  box.innerHTML=`<b>${monthName}</b><br>
+    Client money received: <b class="pos">${fmt(inn)}</b><br>
+    Payments to employees: <b class="neg">− ${fmt(out)}</b><br>
+    Other expenses: <b class="neg">− ${fmt(exp)}</b><br>
+    <span style="font-size:1.05rem;">${profit>=0?'PROFIT':'LOSS'}: <b class="${profit>=0?'pos':'neg'}" style="font-size:1.2rem;">${fmt(Math.abs(profit))}</b></span><br>
+    Each partner (50%): <b class="${profit>=0?'pos':'neg'}">${fmt(Math.abs(profit)/2)} ${profit>=0?'profit':'loss'} each</b>`;
+}
+function renderPLTable(){
+  const months=new Set();
+  [...DB.receipts,...DB.payments,...DB.expenses].forEach(r=>{const m=monthOf(r.date);if(m)months.add(m);});
+  const tb=document.querySelector('#plTable tbody');tb.innerHTML='';
+  [...months].sort().reverse().forEach(ym=>{
+    const {inn,out,exp,profit}=plForMonth(ym);
+    const [y,m]=ym.split('-');
+    const label=new Date(y,m-1,1).toLocaleString('en-IN',{month:'short',year:'numeric'});
+    tb.insertAdjacentHTML('beforeend',`<tr><td>${label}</td><td class="right money pos">${fmt(inn)}</td><td class="right money">${fmt(out)}</td><td class="right money">${fmt(exp)}</td><td class="right money ${profit>=0?'pos':'neg'}">${fmt(profit)}</td><td class="right money ${profit>=0?'pos':'neg'}">${fmt(profit/2)}</td></tr>`);
+  });
+  if(!months.size)tb.innerHTML='<tr><td colspan="6" style="color:var(--muted);">No dated money entries yet.</td></tr>';
+}
+
+/* ================= RENDER ================= */
+function val(id){return document.getElementById(id).value.trim();}
+function clear(...ids){ids.forEach(i=>document.getElementById(i).value='');}
+function fillEmpSelects(){
+  document.querySelectorAll('.empSelect').forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name).map(e=>`<option>${esc(e.name)}</option>`).join('');
+    sel.value=cur;
+  });
+  // client dropdown list — collected from client payments + duty entries
+  const names=new Set();
+  DB.receipts.forEach(r=>{if(r.client)names.add(r.client.trim());});
+  DB.dutyLeave.forEach(r=>{if(r.client)names.add(r.client.trim());});
+  DB.employees.forEach(e=>{if(e.client)names.add(e.client.trim());});
+  document.getElementById('clientList').innerHTML=[...names].sort((a,b)=>a.localeCompare(b)).map(n=>`<option value="${esc(n)}">`).join('');
+}
+function delRec(list,id){
+  if(!confirm('Delete this entry? (It will be removed from the Sheet on next "Send all")'))return;
+  DB[list]=DB[list].filter(r=>r.id!==id);persist();renderAll();
+  toast('Deleted. Press "Send all" in Google Sheet tab to update the sheet.');
+}
+function renderEmployees(){
+  const tb=document.querySelector('#empTable tbody');tb.innerHTML='';
+  DB.employees.forEach(e=>{
+    tb.insertAdjacentHTML('beforeend',`<tr><td><b>${esc(e.name)||'—'}</b></td><td>${esc(e.phone)||''}</td>
+      <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
+      <td>${e.dutyHours?esc(e.dutyHours)+' hr':''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
+      <td><button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
+  });
+  if(!DB.employees.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
+}
+function dutyRow(r,list){
+  return `<tr><td>${esc(r.empName)||'—'}</td><td><span class="badge ${r.type==='duty'?'green':'red'}">${r.type.toUpperCase()}</span></td>
+    <td>${esc(r.from)||''}</td><td>${esc(r.to)||''}</td><td>${r.days||''}</td><td>${esc(r.client||r.note)||''}</td>
+    <td><button class="del" onclick="delRec('${list}','${r.id}')">✕</button></td></tr>`;
+}
+function renderDuty(){
+  const tb=document.querySelector('#dutyTable tbody');
+  tb.innerHTML=DB.dutyLeave.slice().reverse().map(r=>dutyRow(r,'dutyLeave')).join('')||'<tr><td colspan="7" style="color:var(--muted);">No entries yet.</td></tr>';
+}
+function renderRecords(){
+  const fe=val('fEmp'),fm=val('fMonth');
+  const okEmp=r=>!fe||r.empName===fe;
+  const okM=r=>!fm||monthOf(r.date)===fm;
+  const okMDuty=r=>!fm||monthOf(r.from)===fm||monthOf(r.to)===fm;
+  document.querySelector('#recReceipts tbody').innerHTML=DB.receipts.filter(r=>okM(r)&&(!fe||r.empName===fe)).slice().reverse().map(r=>
+    `<tr><td>${esc(r.date)}</td><td>${esc(r.client)}</td><td>${esc(r.empName)}</td><td>${esc(r.mode)}</td><td class="right money pos">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('receipts','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
+  document.querySelector('#recPayments tbody').innerHTML=DB.payments.filter(r=>okEmp(r)&&okM(r)).slice().reverse().map(r=>
+    `<tr><td>${esc(r.date)}</td><td>${esc(r.empName)}</td><td>${esc(r.payType)}</td><td>${esc(r.mode)}</td><td class="right money neg">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('payments','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
+  document.querySelector('#recDuty tbody').innerHTML=DB.dutyLeave.filter(r=>okEmp(r)&&okMDuty(r)).slice().reverse().map(r=>dutyRow(r,'dutyLeave')).join('')||'<tr><td colspan="7" style="color:var(--muted);">Nothing here.</td></tr>';
+  document.querySelector('#recExpenses tbody').innerHTML=DB.expenses.filter(okM).slice().reverse().map(r=>
+    `<tr><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td class="right money">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('expenses','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">Nothing here.</td></tr>';
+}
+function renderDash(){
+  const ym=todayStr().slice(0,7);
+  const {inn,out,exp,profit}=plForMonth(ym);
+  document.getElementById('dEmp').textContent=DB.employees.length;
+  document.getElementById('dIn').textContent=fmt(inn);
+  document.getElementById('dOut').textContent=fmt(out+exp);
+  const pr=document.getElementById('dPr');pr.textContent=fmt(profit);pr.className='val '+(profit>=0?'pos':'neg');
+  const sh=document.getElementById('dSh');sh.textContent=fmt(profit/2);sh.className='val '+(profit>=0?'pos':'neg');
+  const rows=[];
+  DB.receipts.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge green">IN</span>',det:'Client: '+esc(r.client||'—')+(r.empName?' ('+esc(r.empName)+')':''),amt:r.amount,cls:'pos'}));
+  DB.payments.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge red">OUT</span>',det:'Paid '+esc(r.empName||'—')+(r.payType?' • '+esc(r.payType):''),amt:r.amount,cls:'neg'}));
+  DB.expenses.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge amber">EXP</span>',det:esc(r.item||'—'),amt:r.amount,cls:'neg'}));
+  DB.dutyLeave.forEach(r=>rows.push({d:r.from||r.savedAt,type:`<span class="badge ${r.type==='duty'?'blue':'red'}">${r.type.toUpperCase()}</span>`,det:esc(r.empName||'—')+(r.client?' @ '+esc(r.client):'')+' '+esc(r.from||'')+' → '+esc(r.to||''),amt:'',cls:''}));
+  rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
+  document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
+    `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
+}
+function renderAll(){fillEmpSelects();renderEmployees();renderDuty();renderRecords();renderPLTable();renderDash();}
+
+function exportBackup(){
+  const a=document.createElement('a');
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify(DB,null,2));
+  a.download='hisab-backup-'+todayStr()+'.json';a.click();
+}
+
+/* init */
+document.getElementById('scriptUrl').value=DB.scriptUrl||'';
+document.getElementById('sMonth').value=todayStr().slice(0,7);
+document.getElementById('plMonth').value=todayStr().slice(0,7);
+updateSheetStatus();renderAll();
+</script>
+</body>
+</html>
