@@ -137,7 +137,8 @@
         <select id="eWageType" onchange="toggleDutyField()"><option value="">— select —</option><option value="monthly">Monthly salary</option><option value="daily">Per day</option></select></div>
       <div class="field"><label>Wage amount (₹)</label><input id="eWage" type="number" min="0" placeholder="e.g. 18000 / month or 700 / day"></div>
       <div class="field" id="eDutyField"><label>Duty period</label>
-        <select id="eDuty"><option value="">— select —</option><option value="24">24 hour</option><option value="12">12 hour</option></select></div>
+        <select id="eDuty" onchange="toggleDutyField()"><option value="">— select —</option><option value="24">24 hour</option><option value="12">12 hour</option></select></div>
+      <div class="field" id="eTimeField" style="display:none;"><label>Duty start time (24 hr)</label><input id="eTime" type="time"></div>
       <div class="field"><label>Joining date</label><input id="eJoin" type="date"></div>
       <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new"></div>
     </div>
@@ -164,7 +165,9 @@
       <div class="grid">
         <div class="field"><label>Employee</label><select id="dEmpSel" class="empSelect"></select></div>
         <div class="field"><label>From date</label><input id="dFrom" type="date"></div>
+        <div class="field"><label>From time (24-hr duty)</label><input id="dFromT" type="time"></div>
         <div class="field"><label>To date</label><input id="dTo" type="date"></div>
+        <div class="field"><label>To time (24-hr duty)</label><input id="dToT" type="time"></div>
         <div class="field"><label>Client name</label><input id="dClient" list="clientList" placeholder="Choose from list or type new"></div>
       </div>
       <div class="actions"><button class="btn green" onclick="saveDutyLeave('duty')">✔ Submit duty</button><span class="msg" id="dMsg"></span></div>
@@ -354,8 +357,8 @@ document.getElementById('nav').addEventListener('click',e=>{
 
 /* ================= GOOGLE SHEET SYNC ================= */
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','joinDate','client','savedAt'],
-  DutyLeave:['id','empName','type','from','to','days','client','savedAt'],
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt'],
   ClientReceipts:['id','client','date','amount','empName','mode','savedAt'],
   Expenses:['id','item','date','amount','savedAt']
@@ -438,13 +441,15 @@ function anyFilled(vals){return vals.some(v=>String(v||'').trim()!=='');}
 /* ================= EMPLOYEE ================= */
 function saveEmployee(){
   const rec={id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
-    wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
+    wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),
+    dutyTime:(val('eWageType')!=='daily'&&val('eDuty')==='24')?val('eTime'):'',
+    joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
   // If same name exists, update it instead of duplicating
   const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
   if(existing){
-    ['phone','wageType','wageAmount','dutyHours','joinDate','client'].forEach(k=>{if(String(rec[k]).trim()!=='')existing[k]=rec[k];});
-    if(rec.wageType==='daily')existing.dutyHours='';
+    ['phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
+    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';}
     existing.savedAt=rec.savedAt;existing.synced=false;persist();
     flash('eMsg','Updated existing employee "'+existing.name+'".');
     sendRecord('Employees',existing);
@@ -453,27 +458,47 @@ function saveEmployee(){
     flash('eMsg','Employee saved.');
     sendRecord('Employees',rec);
   }
-  clear('eName','ePhone','eWageType','eWage','eDuty','eJoin','eClient');
+  clear('eName','ePhone','eWageType','eWage','eDuty','eTime','eJoin','eClient');
   toggleDutyField();
   renderAll();
 }
 function toggleDutyField(){
-  document.getElementById('eDutyField').style.display=val('eWageType')==='daily'?'none':'';
-  if(val('eWageType')==='daily')document.getElementById('eDuty').value='';
+  const daily=val('eWageType')==='daily';
+  document.getElementById('eDutyField').style.display=daily?'none':'';
+  if(daily)document.getElementById('eDuty').value='';
+  const show24=!daily&&val('eDuty')==='24';
+  document.getElementById('eTimeField').style.display=show24?'':'none';
+  if(!show24)document.getElementById('eTime').value='';
 }
 
 /* ================= DUTY / LEAVE ================= */
 function saveDutyLeave(type){
   const p=type==='duty'?{emp:'dEmpSel',f:'dFrom',t:'dTo',m:'dMsg'}:{emp:'lEmpSel',f:'lFrom',t:'lTo',m:'lMsg'};
   const rec={id:uid(),empName:val(p.emp),type,from:val(p.f),to:val(p.t)||val(p.f),
+    fromTime:type==='duty'?val('dFromT'):'',toTime:type==='duty'?val('dToT'):'',
     client:type==='duty'?val('dClient'):'',savedAt:new Date().toLocaleString()};
-  rec.days=dayCount(rec.from,rec.to);
+  rec.days=dutyDayCount(rec);
   if(!anyFilled([rec.empName,rec.from,rec.to,rec.client])){flash(p.m,'Fill at least one field.',false);return;}
   DB.dutyLeave.push(rec);persist();
   flash(p.m,(type==='duty'?'Duty':'Leave')+' entry saved.');
   sendRecord('DutyLeave',rec);
-  clear(p.f,p.t);if(type==='duty')clear('dClient');
+  clear(p.f,p.t);if(type==='duty')clear('dClient','dFromT','dToT');
   renderAll();
+}
+/* 24-hr time-based day count: 18 Aug 08:00 -> 19 Aug 08:00 = 1 day */
+function dutyDayCount(rec){
+  if(!rec.from)return '';
+  if(rec.fromTime&&rec.to){
+    const start=new Date(rec.from+'T'+rec.fromTime);
+    const end=new Date(rec.to+'T'+(rec.toTime||rec.fromTime));
+    const hrs=(end-start)/3600000;
+    if(hrs>0)return Math.max(1,Math.round(hrs/24));
+  }
+  return dayCount(rec.from,rec.to);
+}
+function addDaysStr(dateStr,n){
+  const d=new Date(dateStr+'T12:00:00');d.setDate(d.getDate()+n);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
 }
 
 /* ================= MONEY ================= */
@@ -505,13 +530,13 @@ function saveExpense(){
 /* ================= SALARY CALC ================= */
 let lastSalary=null;
 function daysSetInMonth(recs,ym){
-  const dim=daysInMonth(ym);const set=new Set();
+  const set=new Set();
   recs.forEach(r=>{
     if(!r.from)return;
-    const from=r.from,to=r.to||r.from;
-    for(let d=1;d<=dim;d++){
-      const ds=ym+'-'+String(d).padStart(2,'0');
-      if(ds>=from&&ds<=to)set.add(d);
+    const n=(r.fromTime&&r.days)?Number(r.days):dayCount(r.from,r.to||r.from);
+    for(let i=0;i<n;i++){
+      const ds=addDaysStr(r.from,i);
+      if(ds.slice(0,7)===ym)set.add(Number(ds.slice(8,10)));
     }
   });
   return set;
@@ -559,18 +584,39 @@ function calcSalary(){
     ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
   }
   salary=Math.round(salary);
-  const paid=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym).reduce((s,p)=>s+Number(p.amount||0),0);
+  const monthPays=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym)
+    .sort((x,z)=>String(x.date).localeCompare(String(z.date)));
+  const paid=monthPays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const allPays=DB.payments.filter(p=>p.empName===name);
+  const paidAll=allPays.reduce((s,p)=>s+Number(p.amount||0),0);
   const [y,m]=ym.split('-');
   const monthName=new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});
+  const payRows=monthPays.length
+    ? `<table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
+        <thead><tr><th>Date</th><th>Type</th><th>Mode</th><th class="right">Amount</th></tr></thead>
+        <tbody>${monthPays.map(p=>`<tr><td>${esc(p.date)||''}</td><td>${esc(p.payType)||''}</td><td>${esc(p.mode)||''}</td><td class="right money">${p.amount?fmt(p.amount):''}</td></tr>`).join('')}
+        <tr><td colspan="3"><b>Total paid in ${monthName}</b></td><td class="right money"><b>${fmt(paid)}</b></td></tr></tbody></table>`
+    : `<i>No payment given to ${esc(name)} in ${monthName} yet.</i><br>`;
+  const bal=salary-paid;
   box.style.display='block';
   box.innerHTML=`
-    <b>${esc(name)}</b> — ${monthName} (${dim} days)${emp?` • ${esc(emp.wageType||'?')} ₹${Number(emp.wageAmount||0).toLocaleString('en-IN')}${emp.dutyHours?` • ${esc(emp.dutyHours)} hr duty`:''}`:''}<br>
+    <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
+      <b style="font-size:1.05rem;">${esc(name)}</b> — ${monthName} (${dim} days)<br>
+      ${emp?`${emp.phone?`📞 ${esc(emp.phone)} &nbsp;`:''}Wage: <b>${fmt(emp.wageAmount)} ${emp.wageType==='monthly'?'/ month':emp.wageType==='daily'?'/ day':''}</b>
+      ${emp.dutyHours?` &nbsp;•&nbsp; Duty: <b>${esc(emp.dutyHours)} hr${emp.dutyTime?' from '+esc(emp.dutyTime):''}</b>`:''}
+      ${emp.joinDate?` &nbsp;•&nbsp; Joined: <b>${esc(emp.joinDate)}</b>`:''}
+      ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`:'<i>⚠ Not found in Employees tab</i>'}
+    </div>
     Duty days: <b>${dutyDays}</b>${assumed?` <i>(no duty entry — month counted automatically${joinNote})</i>`:' <i>(from your duty entries)</i>'} &nbsp;|&nbsp; Leave days: <b>${leaveDays}</b><br>
     ${ruleTxt}<br>
-    Salary for this month: <b style="font-size:1.15rem;">${fmt(salary)}</b><br>
-    Already paid in ${monthName}: <b>${fmt(paid)}</b> &nbsp;→&nbsp; Balance to pay: <b class="${salary-paid>=0?'':'neg'}">${fmt(salary-paid)}</b>`;
-  lastSalary={name,ym,salary,monthName};
-  saveRow.style.display=salary>0?'flex':'none';
+    Salary for ${monthName}: <b style="font-size:1.15rem;">${fmt(salary)}</b>
+    <div style="margin-top:8px;"><b>Payment history — ${monthName}:</b></div>
+    ${payRows}
+    <span style="font-size:1.02rem;">Balance ${bal>=0?'to pay':'overpaid / advance'}: <b class="${bal>0?'neg':'pos'}" style="font-size:1.15rem;">${fmt(Math.abs(bal))}</b></span><br>
+    <span style="color:var(--muted);font-size:.8rem;">Total paid to ${esc(name)} till date (all months): ${fmt(paidAll)} in ${allPays.length} payment${allPays.length===1?'':'s'}</span>`;
+  lastSalary={name,ym,salary:bal>0?bal:salary,monthName};
+  saveRow.style.display=bal>0?'flex':'none';
+  document.querySelector('#sSaveRow .btn').textContent='💸 Record balance '+fmt(bal>0?bal:0)+' as payment given today';
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
@@ -639,14 +685,14 @@ function renderEmployees(){
   DB.employees.forEach(e=>{
     tb.insertAdjacentHTML('beforeend',`<tr><td><b>${esc(e.name)||'—'}</b></td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
-      <td>${e.dutyHours?esc(e.dutyHours)+' hr':''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
+      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):''):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
       <td><button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!DB.employees.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }
 function dutyRow(r,list){
   return `<tr><td>${esc(r.empName)||'—'}</td><td><span class="badge ${r.type==='duty'?'green':'red'}">${r.type.toUpperCase()}</span></td>
-    <td>${esc(r.from)||''}</td><td>${esc(r.to)||''}</td><td>${r.days||''}</td><td>${esc(r.client||r.note)||''}</td>
+    <td>${esc(r.from)||''}${r.fromTime?' '+esc(r.fromTime):''}</td><td>${esc(r.to)||''}${r.toTime?' '+esc(r.toTime):''}</td><td>${r.days||''}</td><td>${esc(r.client||r.note)||''}</td>
     <td><button class="del" onclick="delRec('${list}','${r.id}')">✕</button></td></tr>`;
 }
 function renderDuty(){
