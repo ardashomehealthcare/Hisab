@@ -335,8 +335,12 @@
 
 <script>
 /* ================= STORAGE ================= */
+/* Paste your Apps Script /exec URL between the quotes below and the app
+   stays connected FOREVER on every device - no need to enter it again. */
+const BUILT_IN_SCRIPT_URL='';
 const KEY='hisabData_v1';
 let DB=load();
+if(BUILT_IN_SCRIPT_URL)DB.scriptUrl=BUILT_IN_SCRIPT_URL;
 function load(){
   try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees)return d;}catch(e){}
   return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[],scriptUrl:''};
@@ -426,6 +430,7 @@ async function loadFromSheet(){
   }catch(e){flash('shMsg','❌ Could not load. Check URL / deployment access = Anyone.',false);}
 }
 async function saveScriptUrl(){
+  if(BUILT_IN_SCRIPT_URL){flash('shMsg','URL is permanently built into the app - nothing to save. Already connected.');return;}
   const u=document.getElementById('scriptUrl').value.trim();
   DB.scriptUrl=u;persist();updateSheetStatus();
   if(!u){flash('shMsg','URL cleared. Data will save on this device only.');return;}
@@ -439,7 +444,8 @@ async function saveScriptUrl(){
 }
 function updateSheetStatus(){
   const s=document.getElementById('sheetStatus'),t=document.getElementById('sheetStatusTxt');
-  if(DB.scriptUrl){s.classList.add('ok');t.textContent='Google Sheet: connected';}
+  if(BUILT_IN_SCRIPT_URL){s.classList.add('ok');t.textContent='Google Sheet: connected (permanent)';}
+  else if(DB.scriptUrl){s.classList.add('ok');t.textContent='Google Sheet: connected';}
   else{s.classList.remove('ok');t.textContent='Google Sheet: not connected';}
 }
 
@@ -754,6 +760,10 @@ function exportBackup(){
 
 /* init */
 document.getElementById('scriptUrl').value=DB.scriptUrl||'';
+if(BUILT_IN_SCRIPT_URL){
+  const inp=document.getElementById('scriptUrl');
+  inp.value=BUILT_IN_SCRIPT_URL;inp.disabled=true;
+}
 document.getElementById('sMonth').value=todayStr().slice(0,7);
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 updateSheetStatus();renderAll();
