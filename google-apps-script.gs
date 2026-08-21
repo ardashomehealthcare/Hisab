@@ -57,6 +57,27 @@ function doGet(e) {
       });
     }
   }
+  if (action === 'deleteRow') {
+    // Delete rows by id: .../exec?action=deleteRow&sheet=ClientReceipts&id=xxxx
+    try {
+      var sheetName = e.parameter.sheet;
+      var id = e.parameter.id;
+      if (SHEETS.indexOf(sheetName) === -1) return json({ ok: false, error: 'unknown sheet: ' + sheetName });
+      if (!id) return json({ ok: false, error: 'missing id' });
+      var dsh = getSpreadsheet().getSheetByName(sheetName);
+      if (!dsh) return json({ ok: false, error: 'sheet tab not found: ' + sheetName });
+      var removed = 0;
+      for (var r = dsh.getLastRow(); r >= 2; r--) {
+        if (String(dsh.getRange(r, 1).getValue()) === String(id)) {
+          dsh.deleteRow(r);
+          removed++;
+        }
+      }
+      return json({ ok: true, removed: removed });
+    } catch (err) {
+      return json({ ok: false, error: String(err) });
+    }
+  }
   if (action === 'getAll') {
     var out = {};
     SHEETS.forEach(function (name) {
@@ -70,7 +91,12 @@ function doGet(e) {
       out[name] = vals.map(function (row) {
         return row.map(function (c) {
           if (c instanceof Date) {
-            return Utilities.formatDate(c, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+            var tz = Session.getScriptTimeZone();
+            // Time-only cells are stored by Sheets as dates in Dec 1899.
+            if (c.getFullYear() < 1900) {
+              return Utilities.formatDate(c, tz, 'HH:mm');
+            }
+            return Utilities.formatDate(c, tz, 'yyyy-MM-dd');
           }
           return String(c);
         });
