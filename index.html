@@ -174,11 +174,15 @@
     </div>
     <div class="card">
       <h2>Leave entry <span class="badge red">On leave</span></h2>
-      <div class="hint">When did the employee take leave? (from → to). Leave days are cut from that month's salary.</div>
+      <div class="hint">When did the employee take leave? (from → to). Leave days are cut from the salary period. For 24-hr duty employees, a time option appears so leave is counted by 24-hour shifts.</div>
       <div class="grid">
-        <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect"></select></div>
+        <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
         <div class="field"><label>From date</label><input id="lFrom" type="date"></div>
         <div class="field"><label>To date</label><input id="lTo" type="date"></div>
+        <div id="lTimeFields" style="display:none;">
+          <div class="field"><label>From time (24-hr duty)</label><input id="lFromT" type="time"></div>
+          <div class="field"><label>To time (24-hr duty)</label><input id="lToT" type="time"></div>
+        </div>
       </div>
       <div class="actions"><button class="btn red" onclick="saveDutyLeave('leave')">✔ Submit leave</button><span class="msg" id="lMsg"></span></div>
     </div>
@@ -235,20 +239,25 @@
 <!-- ============ SALARY CALCULATOR ============ -->
 <section class="tab" id="tab-salary">
   <div class="card">
-    <h2>Salary calculator (calendar month)</h2>
+    <h2>Salary calculator (date range)</h2>
     <div class="hint">
-      Salary is calculated from the <b>duty days you have entered</b> in the Duty/Leave tab (leave days are cut automatically).
-      Rule: duty for the whole calendar month (30 or 31 days, 28/29 in Feb) = full month salary.
-      Fewer days = per-day calculation (monthly wage ÷ days in that month × duty days). Per-day employees = rate × duty days.
+      Salary is calculated for the <b>date range</b> you choose (From → To). The <b>From date auto-fills</b>: to the <b>last salary paid</b> to that employee, or to the <b>joining date</b> if the employee is a <b>new hire</b> with no salary paid yet.
+      Leave days in the range are cut automatically. Monthly employees: per-day pro-rata (monthly wage ÷ days in that month × duty days), summed across any months in the range — a full month with no leave equals full salary.
+      Per-day employees: rate × duty days. For 24-hr duty employees a time option appears so days are counted by 24-hour shifts (e.g. 8 AM → 8 AM = 1 day).
     </div>
     <div class="grid">
-      <div class="field"><label>Employee</label><select id="sEmpSel" class="empSelect"></select></div>
-      <div class="field"><label>Month</label><input id="sMonth" type="month"></div>
+      <div class="field"><label>Employee</label><select id="sEmpSel" class="empSelect" onchange="onSalaryEmpChange()"></select></div>
+      <div class="field"><label>From date (auto: last paid salary / joining date)</label><input id="sFrom" type="date"></div>
+      <div class="field"><label>To date</label><input id="sTo" type="date"></div>
+      <div id="sTimeFields" style="display:none;">
+        <div class="field"><label>From time (24-hr duty)</label><input id="sFromT" type="time"></div>
+        <div class="field"><label>To time (24-hr duty)</label><input id="sToT" type="time"></div>
+      </div>
     </div>
     <div class="actions" style="margin-top:8px;">
       <label style="font-size:.83rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
-        <input type="checkbox" id="sAssumeFull" style="width:16px;height:16px;">
-        No duty entries for this month? Count full month duty (starts from joining date, minus leaves)
+        <input type="checkbox" id="sAssumeFull" checked style="width:16px;height:16px;">
+        No duty entries for this period? Count the full period as duty (from joining date if later, minus leaves)
       </label>
     </div>
     <div class="actions"><button class="btn primary" onclick="calcSalary()">🧾 Calculate salary</button></div>
@@ -503,14 +512,14 @@ function toggleDutyField(){
 function saveDutyLeave(type){
   const p=type==='duty'?{emp:'dEmpSel',f:'dFrom',t:'dTo',m:'dMsg'}:{emp:'lEmpSel',f:'lFrom',t:'lTo',m:'lMsg'};
   const rec={id:uid(),empName:val(p.emp),type,from:val(p.f),to:val(p.t)||val(p.f),
-    fromTime:type==='duty'?val('dFromT'):'',toTime:type==='duty'?val('dToT'):'',
+    fromTime:type==='duty'?val('dFromT'):val('lFromT'),toTime:type==='duty'?val('dToT'):val('lToT'),
     client:type==='duty'?val('dClient'):'',savedAt:new Date().toLocaleString()};
   rec.days=dutyDayCount(rec);
   if(!anyFilled([rec.empName,rec.from,rec.to,rec.client])){flash(p.m,'Fill at least one field.',false);return;}
   DB.dutyLeave.push(rec);persist();
   flash(p.m,(type==='duty'?'Duty':'Leave')+' entry saved.');
   sendRecord('DutyLeave',rec);
-  clear(p.f,p.t);if(type==='duty')clear('dClient','dFromT','dToT');
+  clear(p.f,p.t);if(type==='duty')clear('dClient','dFromT','dToT');else clear('lFromT','lToT');
   renderAll();
 }
 /* 24-hr time-based day count: 18 Aug 08:00 -> 19 Aug 08:00 = 1 day */
@@ -557,98 +566,248 @@ function saveExpense(){
 
 /* ================= SALARY CALC ================= */
 let lastSalary=null;
-function daysSetInMonth(recs,ym){
+/* Does a duty/leave record overlap the chosen date range? */
+function overlaps(r,from,to){
+  const rf=r.from,rt=r.to||r.from;
+  return rf&&rt&&rf<=to&&rt>=from;
+}
+/* All YYYY-MM-DD dates a record covers, clipped to [from,to] */
+function recordDates(r,from,to){
   const set=new Set();
-  recs.forEach(r=>{
-    if(!r.from)return;
-    const n=(r.fromTime&&r.days)?Number(r.days):dayCount(r.from,r.to||r.from);
-    for(let i=0;i<n;i++){
-      const ds=addDaysStr(r.from,i);
-      if(ds.slice(0,7)===ym)set.add(Number(ds.slice(8,10)));
-    }
-  });
+  if(!r.from)return set;
+  const n=(r.fromTime&&r.days)?Math.round(Number(r.days)):dayCount(r.from,r.to||r.from);
+  for(let i=0;i<n;i++){
+    const ds=addDaysStr(r.from,i);
+    if(ds<from||ds>to)continue;
+    set.add(ds);
+  }
   return set;
 }
-function calcSalary(){
-  const name=val('sEmpSel'),ym=val('sMonth');
-  const box=document.getElementById('sResult'),saveRow=document.getElementById('sSaveRow');
-  if(!name||!ym){box.style.display='block';box.innerHTML='Please choose an employee and a month.';saveRow.style.display='none';return;}
-  const emp=DB.employees.find(e=>e.name===name);
-  const dim=daysInMonth(ym);
-  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='duty');
-  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave');
-  let dutySet=daysSetInMonth(dutyRecs,ym);
-  const leaveSet=daysSetInMonth(leaveRecs,ym);
-  let assumed=false,joinNote='';
-  if(dutySet.size===0&&document.getElementById('sAssumeFull').checked){
-    assumed=true;
-    let startDay=1;
-    const jd=emp?.joinDate||'';
-    if(jd){
-      if(monthOf(jd)===ym){startDay=Number(jd.slice(8,10));joinNote=` (counted from joining date ${jd})`;}
-      else if(jd>ym+'-31'){startDay=dim+1;joinNote=` (joining date ${jd} is after this month)`;}
-    }
-    dutySet=new Set();
-    for(let d=startDay;d<=dim;d++)dutySet.add(d);
+function groupByMonth(dateSet){
+  const m={};
+  dateSet.forEach(d=>{const ym=d.slice(0,7);m[ym]=(m[ym]||0)+1;});
+  return m;
+}
+/* Split a whole number of days across the calendar months of [from,to] (proportional, last month absorbs rounding) */
+function splitAcrossMonths(from,to,total){
+  const out={},cal=dayCount(from,to);
+  if(cal<=0||total<=0)return out;
+  const counts={};
+  for(let d=from;d<=to;d=addDaysStr(d,1)){const ym=d.slice(0,7);counts[ym]=(counts[ym]||0)+1;}
+  const yms=Object.keys(counts).sort();let assigned=0;
+  yms.forEach((ym,i)=>{
+    const v=(i===yms.length-1)?total-assigned:Math.round(total*counts[ym]/cal);
+    assigned+=v;out[ym]=v;
+  });
+  return out;
+}
+/* 24-hr shift count between two datetimes (8 AM → 8 AM = 1 day). Falls back to inclusive calendar days without a time. */
+function shiftCount(fromStr,fromTime,toStr,toTime){
+  if(fromTime){
+    const start=new Date(fromStr+'T'+fromTime);
+    const end=new Date(toStr+'T'+(toTime||fromTime));
+    const hrs=(end-start)/3600000;
+    if(hrs>0)return Math.max(1,Math.round(hrs/24));
   }
-  leaveSet.forEach(d=>dutySet.delete(d));
-  const dutyDays=dutySet.size,leaveDays=leaveSet.size;
+  return dayCount(fromStr,toStr);
+}
+/* Starting "From" date: last salary payment date, or joining date for a new hire (no salary paid yet) */
+function salaryFromDate(name,emp){
+  const pays=DB.payments.filter(p=>p.empName===name&&p.date&&/salary/i.test(p.payType||''))
+    .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+  if(pays.length)return pays[0].date;             // existing employee → last salary paid
+  if(emp&&emp.joinDate)return emp.joinDate;       // new hire → joining date
+  return '';                                      // unknown → let user pick manually
+}
+/* Toggle 24-hr time fields + auto-fill From date when employee changes in salary calc */
+function onSalaryEmpChange(){
+  const name=val('sEmpSel');
+  const emp=DB.employees.find(e=>e.name===name);
+  const is24=!!(emp&&emp.dutyHours==='24');
+  document.getElementById('sTimeFields').style.display=is24?'contents':'none';
+  if(!is24){clear('sFromT','sToT');}
+  else{
+    const t0=emp.dutyTime||'';
+    if(!val('sFromT'))document.getElementById('sFromT').value=t0;
+    if(!val('sToT'))document.getElementById('sToT').value=val('sFromT')||t0;
+  }
+  document.getElementById('sFrom').value=salaryFromDate(name,emp);
+  if(!val('sTo'))document.getElementById('sTo').value=todayStr();
+}
+/* Toggle 24-hr time fields in the Leave entry */
+function onLeaveEmpChange(){
+  const name=val('lEmpSel');
+  const emp=DB.employees.find(e=>e.name===name);
+  const is24=!!(emp&&emp.dutyHours==='24');
+  document.getElementById('lTimeFields').style.display=is24?'contents':'none';
+  if(!is24){clear('lFromT','lToT');}
+  else if(emp.dutyTime&&!val('lFromT'))document.getElementById('lFromT').value=emp.dutyTime;
+}
+function prevMonthStr(ym){const [y,m]=ym.split('-').map(Number);const d=new Date(y,m-2,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
+function monthLabel(ym){const [y,m]=ym.split('-').map(Number);return new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});}
+/* Build the plain-text copy message: duty & leave details (from → to), day totals, and balance to pay (no salary figure) */
+function buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,bal,assumed){
+  const lines=[];
+  lines.push('Salary details — '+name);
+  lines.push('Period: '+from+' to '+to);
+  lines.push('');
+  lines.push('Duty:');
+  if(assumed&&!dutyRecs.length){
+    lines.push('- '+from+(from!==to?' to '+to:''));
+  }else{
+    dutyRecs.forEach(r=>{
+      let l='- '+r.from;
+      if(r.fromTime)l+=' '+r.fromTime;
+      if(r.to&&r.to!==r.from)l+=' to '+r.to;
+      if(r.toTime)l+=' '+r.toTime;
+      lines.push(l);
+    });
+  }
+  lines.push('Total duty days: '+dutyDays);
+  lines.push('');
+  lines.push('Leave:');
+  if(leaveRecs.length){
+    leaveRecs.forEach(r=>{
+      let l='- '+r.from;
+      if(r.fromTime)l+=' '+r.fromTime;
+      if(r.to&&r.to!==r.from)l+=' to '+r.to;
+      if(r.toTime)l+=' '+r.toTime;
+      lines.push(l);
+    });
+  }else{
+    lines.push('- none');
+  }
+  lines.push('Total leave days: '+leaveDays);
+  lines.push('');
+  lines.push(bal>=0?('Balance to pay: '+fmt(bal)):('Overpaid / advance: '+fmt(Math.abs(bal))));
+  return lines.join('\n');
+}
+function fallbackCopy(txt){
+  const ta=document.createElement('textarea');
+  ta.value=txt;ta.style.position='fixed';ta.style.top='0';ta.style.left='0';ta.style.opacity='0';
+  document.body.appendChild(ta);ta.focus();ta.select();
+  let ok=false;
+  try{ok=document.execCommand('copy');}catch(e){}
+  document.body.removeChild(ta);
+  toast(ok?'✅ Copied to clipboard':'❌ Copy failed — please select the text manually.');
+}
+function copyText(txt){
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(txt).then(()=>toast('✅ Copied to clipboard'),()=>fallbackCopy(txt));
+  }else fallbackCopy(txt);
+}
+function copySalaryMessage(){
+  if(!lastSalary||!lastSalary.copyText){toast('Calculate salary first.');return;}
+  copyText(lastSalary.copyText);
+}
+function calcSalary(){
+  const name=val('sEmpSel'),from=val('sFrom'),to=val('sTo');
+  const fromTime=val('sFromT'),toTime=val('sToT');
+  const box=document.getElementById('sResult'),saveRow=document.getElementById('sSaveRow');
+  lastSalary=null;saveRow.style.display='none';
+  if(!name||!from||!to){box.style.display='block';box.innerHTML='Please choose an employee, a from date and a to date.';return;}
+  if(from>to){box.style.display='block';box.innerHTML='From date must be before (or same as) the To date.';return;}
+  const emp=DB.employees.find(e=>e.name===name);
+  const is24=!!(emp&&emp.dutyHours==='24');
+  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='duty'&&overlaps(r,from,to));
+  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to));
+  const rawDuty=new Set();dutyRecs.forEach(r=>recordDates(r,from,to).forEach(d=>rawDuty.add(d)));
+  const leaveSet=new Set();leaveRecs.forEach(r=>recordDates(r,from,to).forEach(d=>leaveSet.add(d)));
+  let assumed=false,joinNote='';
+  if(rawDuty.size===0&&document.getElementById('sAssumeFull').checked){
+    assumed=true;
+    let start=from;
+    const jd=emp?.joinDate||'';
+    if(jd&&jd>from&&jd<=to){start=jd;joinNote=` (counted from joining date ${jd})`;}
+    for(let d=start;d<=to;d=addDaysStr(d,1))rawDuty.add(d);
+  }
+  const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
+  let dutyDays,leaveDays,dutyPerMonth,leavePerMonth;
+  if(is24&&fromTime&&assumed){
+    const shifts=shiftCount(from,fromTime,to,toTime);
+    const leaveShifts=leaveRecs.reduce((s,r)=>s+(Number(r.days)||dayCount(r.from,r.to||r.from)),0);
+    dutyDays=Math.max(0,shifts-leaveShifts);
+    leaveDays=leaveShifts;
+    dutyPerMonth=splitAcrossMonths(from,to,dutyDays);
+    leavePerMonth=splitAcrossMonths(from,to,leaveDays);
+  }else{
+    dutyDays=dutySet.size;
+    leaveDays=leaveSet.size;
+    dutyPerMonth=groupByMonth(dutySet);
+    leavePerMonth=groupByMonth(leaveSet);
+  }
   if(dutyDays===0&&!assumed){
-    const paid0=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym).reduce((s,p)=>s+Number(p.amount||0),0);
+    const paidRange=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
     box.style.display='block';
-    box.innerHTML=`<b>${esc(name)}</b> — no duty days entered for this month, so salary = <b>₹0</b>.<br>
-      Add his duty dates (from → to) in the <b>Duty / Leave</b> tab, or tick the checkbox above to count the full month.`+
-      (paid0?`<br>Already paid this month: <b>${fmt(paid0)}</b>`:'');
-    lastSalary=null;saveRow.style.display='none';return;
+    box.innerHTML=`<b>${esc(name)}</b> — no duty days for this period, so salary = <b>₹0</b>.<br>
+      Add duty dates (from → to) in the <b>Duty / Leave</b> tab, or tick the checkbox above to count the full period.`+
+      (paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
+    return;
   }
   const wage=Number(emp?.wageAmount||0),wt=emp?.wageType||'';
-  let salary=0,ruleTxt='';
+  const salaryPerMonth={};let salary=0,ruleTxt='';
+  const months=Object.keys(dutyPerMonth).sort();
   if(wt==='monthly'){
-    if(dutyDays>=dim){salary=wage;ruleTxt=`Full calendar month duty (${dutyDays}/${dim} days) → full monthly salary.`;}
-    else{salary=wage/dim*dutyDays;ruleTxt=`Part month: ₹${wage.toLocaleString('en-IN')} ÷ ${dim} days × ${dutyDays} duty days.`;}
+    months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
+    ruleTxt='Per-day pro-rata: '+months.map(ym=>`₹${wage.toLocaleString('en-IN')} ÷ ${daysInMonth(ym)} days × ${dutyPerMonth[ym]}`).join(' + ');
   }else if(wt==='daily'){
-    salary=wage*dutyDays;ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`;
+    months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
+    ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`;
   }else{
     ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
   }
-  salary=Math.round(salary);
-  const monthPays=DB.payments.filter(p=>p.empName===name&&monthOf(p.date)===ym)
+  const rangeLabel=from+(from!==to?' → '+to:'');
+  const periodPays=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to)
     .sort((x,z)=>String(x.date).localeCompare(String(z.date)));
-  const paid=monthPays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const paid=periodPays.reduce((s,p)=>s+Number(p.amount||0),0);
   const allPays=DB.payments.filter(p=>p.empName===name);
   const paidAll=allPays.reduce((s,p)=>s+Number(p.amount||0),0);
-  const [y,m]=ym.split('-');
-  const monthName=new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});
-  const payRows=monthPays.length
+  const bal=salary-paid;
+  const copyText=buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,bal,assumed);
+  const curM=to.slice(0,7),prevM=prevMonthStr(curM);
+  const monthRows=Object.keys(salaryPerMonth).sort().map(ym=>{
+    let tag='';
+    if(ym===curM)tag=' <span class="badge blue">current</span>';
+    else if(ym===prevM)tag=' <span class="badge amber">previous</span>';
+    return `<tr><td>${monthLabel(ym)}${tag}</td><td class="right">${dutyPerMonth[ym]||0}</td><td class="right">${leavePerMonth[ym]||0}</td><td class="right money">${fmt(salaryPerMonth[ym]||0)}</td></tr>`;
+  }).join('');
+  const breakdown=`<table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
+    <thead><tr><th>Month</th><th class="right">Duty days</th><th class="right">Leave</th><th class="right">Salary</th></tr></thead>
+    <tbody>${monthRows}</tbody></table>`;
+  const payRows=periodPays.length
     ? `<table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
         <thead><tr><th>Date</th><th>Type</th><th>Mode</th><th class="right">Amount</th></tr></thead>
-        <tbody>${monthPays.map(p=>`<tr><td>${esc(p.date)||''}</td><td>${esc(p.payType)||''}</td><td>${esc(p.mode)||''}</td><td class="right money">${p.amount?fmt(p.amount):''}</td></tr>`).join('')}
-        <tr><td colspan="3"><b>Total paid in ${monthName}</b></td><td class="right money"><b>${fmt(paid)}</b></td></tr></tbody></table>`
-    : `<i>No payment given to ${esc(name)} in ${monthName} yet.</i><br>`;
-  const bal=salary-paid;
+        <tbody>${periodPays.map(p=>`<tr><td>${esc(p.date)||''}</td><td>${esc(p.payType)||''}</td><td>${esc(p.mode)||''}</td><td class="right money">${p.amount?fmt(p.amount):''}</td></tr>`).join('')}
+        <tr><td colspan="3"><b>Total paid in ${esc(rangeLabel)}</b></td><td class="right money"><b>${fmt(paid)}</b></td></tr></tbody></table>`
+    : `<i>No payment given to ${esc(name)} in this period yet.</i><br>`;
   box.style.display='block';
   box.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="btn green" onclick="copySalaryMessage()">📋 Copy message</button>
+      <span style="font-size:.78rem;color:var(--muted);">Month-wise salary — ready to paste in WhatsApp / SMS.</span>
+    </div>
     <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
-      <b style="font-size:1.05rem;">${esc(name)}</b> — ${monthName} (${dim} days)<br>
+      <b style="font-size:1.05rem;">${esc(name)}</b> — ${esc(rangeLabel)}<br>
       ${emp?`${emp.phone?`📞 ${esc(emp.phone)} &nbsp;`:''}Wage: <b>${fmt(emp.wageAmount)} ${emp.wageType==='monthly'?'/ month':emp.wageType==='daily'?'/ day':''}</b>
       ${emp.dutyHours?` &nbsp;•&nbsp; Duty: <b>${esc(emp.dutyHours)} hr${emp.dutyTime?' from '+esc(emp.dutyTime):''}</b>`:''}
       ${emp.joinDate?` &nbsp;•&nbsp; Joined: <b>${esc(emp.joinDate)}</b>`:''}
       ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`:'<i>⚠ Not found in Employees tab</i>'}
     </div>
-    Duty days: <b>${dutyDays}</b>${assumed?` <i>(no duty entry — month counted automatically${joinNote})</i>`:' <i>(from your duty entries)</i>'} &nbsp;|&nbsp; Leave days: <b>${leaveDays}</b><br>
-    ${ruleTxt}<br>
-    Salary for ${monthName}: <b style="font-size:1.15rem;">${fmt(salary)}</b>
-    <div style="margin-top:8px;"><b>Payment history — ${monthName}:</b></div>
-    ${payRows}
+    ${breakdown}
+    ${assumed?`<span style="color:var(--muted);font-size:.8rem;">Note: no duty entries — full period counted automatically${joinNote}${is24&&fromTime?' as 24-hr shifts':''}.</span><br>`:''}
+    <span style="color:var(--muted);font-size:.8rem;">${ruleTxt}</span><br>
+    <span style="font-size:1.02rem;">Total salary: <b style="font-size:1.15rem;">${fmt(salary)}</b></span><br>
     <span style="font-size:1.02rem;">Balance ${bal>=0?'to pay':'overpaid / advance'}: <b class="${bal>0?'neg':'pos'}" style="font-size:1.15rem;">${fmt(Math.abs(bal))}</b></span><br>
+    <div style="margin-top:8px;"><b>Payment history — ${esc(rangeLabel)}:</b></div>
+    ${payRows}
     <span style="color:var(--muted);font-size:.8rem;">Total paid to ${esc(name)} till date (all months): ${fmt(paidAll)} in ${allPays.length} payment${allPays.length===1?'':'s'}</span>`;
-  lastSalary={name,ym,salary:bal>0?bal:salary,monthName};
+  lastSalary={name,from,to,salary:bal>0?bal:salary,rangeLabel,copyText};
   saveRow.style.display=bal>0?'flex':'none';
   document.querySelector('#sSaveRow .btn').textContent='💸 Record balance '+fmt(bal>0?bal:0)+' as payment given today';
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
-  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.monthName,mode:'',savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:'',savedAt:new Date().toLocaleString()};
   DB.payments.push(rec);persist();flash('sMsg','Recorded as payment given today.');
   sendRecord('EmployeePayments',rec);renderAll();
 }
@@ -772,7 +931,7 @@ if(BUILT_IN_SCRIPT_URL){
   const inp=document.getElementById('scriptUrl');
   inp.value=BUILT_IN_SCRIPT_URL;inp.disabled=true;
 }
-document.getElementById('sMonth').value=todayStr().slice(0,7);
+document.getElementById('sTo').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 updateSheetStatus();renderAll();
 </script>
