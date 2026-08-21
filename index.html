@@ -408,22 +408,61 @@ async function syncAll(){
   else{flash('shMsg','❌ Could not reach the Sheet. Check the URL / internet.',false);toast('❌ Could not reach Google Sheet.');}
   updateSheetStatus();
 }
+const TIME_COLS=new Set(['dutyTime','fromTime','toTime']);
+async function fetchSheetData(){
+  const res=await fetch(DB.scriptUrl+'?action=getAll');
+  const j=await res.json();
+  if(!j.ok)throw new Error(j.error||'load failed');
+  const map=(sheet,cols)=> (j.data[sheet]||[]).map(row=>{
+    const o={synced:true};
+    cols.forEach((c,i)=>{
+      let v=row[i]??'';
+      // Google Sheets stores time-only cells as dates in 1899 — older script
+      // versions send them back as "1899-12-30"; hide that garbage.
+      if(TIME_COLS.has(c)&&/^1899-\d{2}-\d{2}/.test(String(v)))v='';
+      o[c]=v;
+    });
+    return o;
+  });
+  return {
+    employees:map('Employees',SHEET_COLS.Employees),
+    dutyLeave:map('DutyLeave',SHEET_COLS.DutyLeave),
+    payments:map('EmployeePayments',SHEET_COLS.EmployeePayments),
+    receipts:map('ClientReceipts',SHEET_COLS.ClientReceipts),
+    expenses:map('Expenses',SHEET_COLS.Expenses)
+  };
+}
+function applySheetData(fresh,keepUnsynced){
+  ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>{
+    const rows=fresh[k];
+    if(keepUnsynced){
+      const ids=new Set(rows.map(r=>String(r.id)));
+      (DB[k]||[]).forEach(r=>{if(!r.synced&&r.id&&!ids.has(String(r.id)))rows.push(r);});
+    }
+    DB[k]=rows;
+  });
+  persist();renderAll();
+}
 async function loadFromSheet(){
   if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
   if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
   flash('shMsg','Loading from Sheet…');
   try{
-    const res=await fetch(DB.scriptUrl+'?action=getAll');
-    const j=await res.json();
-    if(!j.ok)throw 0;
-    const map=(sheet,cols)=> (j.data[sheet]||[]).map(row=>{const o={synced:true};cols.forEach((c,i)=>o[c]=row[i]??'');return o;});
-    DB.employees=map('Employees',SHEET_COLS.Employees);
-    DB.dutyLeave=map('DutyLeave',SHEET_COLS.DutyLeave);
-    DB.payments=map('EmployeePayments',SHEET_COLS.EmployeePayments);
-    DB.receipts=map('ClientReceipts',SHEET_COLS.ClientReceipts);
-    DB.expenses=map('Expenses',SHEET_COLS.Expenses);
-    persist();renderAll();flash('shMsg','✅ Data loaded from Google Sheet.');toast('✅ Data loaded from Google Sheet.');
+    applySheetData(await fetchSheetData(),false);
+    flash('shMsg','✅ Data loaded from Google Sheet.');toast('✅ Data loaded from Google Sheet.');
   }catch(e){flash('shMsg','❌ Could not load. Check URL / deployment access = Anyone.',false);toast('❌ Could not load from Google Sheet.');}
+}
+/* On every app start, silently pull the latest data from the Google Sheet
+   so the interface always shows what is in the Sheet — on any device.
+   Local entries that were never synced are kept and merged in. */
+async function autoLoadFromSheet(){
+  if(!DB.scriptUrl)return;
+  try{
+    applySheetData(await fetchSheetData(),true);
+    toast('✅ Data refreshed from Google Sheet');
+  }catch(e){
+    toast('⚠ Could not reach Google Sheet — showing data saved on this device');
+  }
 }
 async function saveScriptUrl(){
   if(BUILT_IN_SCRIPT_URL){flash('shMsg','URL is permanently built into the app - nothing to save. Already connected.');return;}
@@ -928,6 +967,7 @@ if(BUILT_IN_SCRIPT_URL){
 document.getElementById('sTo').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 updateSheetStatus();renderAll();
+autoLoadFromSheet();
 </script>
 </body>
 </html>

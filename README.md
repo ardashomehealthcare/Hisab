@@ -32,4 +32,4 @@ The Apps Script is already locked to spreadsheet ID `1VV5TZyNEpBHS6gnaBU7XujuBdt
 
 The script auto-creates tabs: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab.
 
-To use the same data on a second phone/computer: connect the same URL there and press **Load data FROM Sheet** — or use the JSON backup export/import in All Records.
+To use the same data on a second phone/computer: just open the app there — it now **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records).

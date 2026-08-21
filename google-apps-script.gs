@@ -70,7 +70,12 @@ function doGet(e) {
       out[name] = vals.map(function (row) {
         return row.map(function (c) {
           if (c instanceof Date) {
-            return Utilities.formatDate(c, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+            var tz = Session.getScriptTimeZone();
+            // Time-only cells are stored by Sheets as dates in Dec 1899.
+            if (c.getFullYear() < 1900) {
+              return Utilities.formatDate(c, tz, 'HH:mm');
+            }
+            return Utilities.formatDate(c, tz, 'yyyy-MM-dd');
           }
           return String(c);
         });
