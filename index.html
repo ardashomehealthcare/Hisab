@@ -96,7 +96,7 @@
 <nav id="nav">
   <button data-tab="dash" class="active">📊 Dashboard</button>
   <button data-tab="emp">👤 Employees</button>
-  <button data-tab="duty">📅 Duty / Leave</button>
+  <button data-tab="duty">📅 Leave Entry</button>
   <button data-tab="money">💰 Money Entry</button>
   <button data-tab="salary">🧾 Salary Calculator</button>
   <button data-tab="pl">⚖️ Profit / Loss</button>
@@ -156,36 +156,21 @@
   </div>
 </section>
 
-<!-- ============ DUTY / LEAVE ============ -->
+<!-- ============ LEAVE ENTRY ============ -->
 <section class="tab" id="tab-duty">
-  <div class="twoCol">
-    <div class="card">
-      <h2>Duty entry <span class="badge green">On duty</span></h2>
-      <div class="hint">When did the employee do duty? (from → to). Single day: keep both dates same, or fill only “From”.</div>
-      <div class="grid">
-        <div class="field"><label>Employee</label><select id="dEmpSel" class="empSelect"></select></div>
-        <div class="field"><label>From date</label><input id="dFrom" type="date"></div>
-        <div class="field"><label>From time (24-hr duty)</label><input id="dFromT" type="time"></div>
-        <div class="field"><label>To date</label><input id="dTo" type="date"></div>
-        <div class="field"><label>To time (24-hr duty)</label><input id="dToT" type="time"></div>
-        <div class="field"><label>Client name</label><input id="dClient" list="clientList" placeholder="Choose from list or type new"></div>
+  <div class="card">
+    <h2>Leave entry <span class="badge red">On leave</span></h2>
+    <div class="hint">When did the employee take leave? (from → to). Leave days are cut from the salary period. For 24-hr duty employees, a time option appears so leave is counted by 24-hour shifts.</div>
+    <div class="grid">
+      <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
+      <div class="field"><label>From date</label><input id="lFrom" type="date"></div>
+      <div class="field"><label>To date</label><input id="lTo" type="date"></div>
+      <div id="lTimeFields" style="display:none;">
+        <div class="field"><label>From time (24-hr duty)</label><input id="lFromT" type="time"></div>
+        <div class="field"><label>To time (24-hr duty)</label><input id="lToT" type="time"></div>
       </div>
-      <div class="actions"><button class="btn green" onclick="saveDutyLeave('duty')">✔ Submit duty</button><span class="msg" id="dMsg"></span></div>
     </div>
-    <div class="card">
-      <h2>Leave entry <span class="badge red">On leave</span></h2>
-      <div class="hint">When did the employee take leave? (from → to). Leave days are cut from the salary period. For 24-hr duty employees, a time option appears so leave is counted by 24-hour shifts.</div>
-      <div class="grid">
-        <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
-        <div class="field"><label>From date</label><input id="lFrom" type="date"></div>
-        <div class="field"><label>To date</label><input id="lTo" type="date"></div>
-        <div id="lTimeFields" style="display:none;">
-          <div class="field"><label>From time (24-hr duty)</label><input id="lFromT" type="time"></div>
-          <div class="field"><label>To time (24-hr duty)</label><input id="lToT" type="time"></div>
-        </div>
-      </div>
-      <div class="actions"><button class="btn red" onclick="saveDutyLeave('leave')">✔ Submit leave</button><span class="msg" id="lMsg"></span></div>
-    </div>
+    <div class="actions"><button class="btn red" onclick="saveDutyLeave('leave')">✔ Submit leave</button><span class="msg" id="lMsg"></span></div>
   </div>
   <div class="card">
     <h2>Duty &amp; leave records</h2>
@@ -200,9 +185,9 @@
 <section class="tab" id="tab-money">
   <div class="card">
     <h2>Client payment received <span class="badge green">Money IN</span></h2>
-    <div class="hint">Received money from a client? Enter just the amount if that's all you have — every field is optional.</div>
+    <div class="hint">Received money from a client? Select a client saved in the Employees tab, then enter just the amount if that's all you have — every field is optional.</div>
     <div class="grid">
-      <div class="field"><label>Client name</label><input id="rClient" list="clientList" placeholder="Choose from list or type new"></div>
+      <div class="field"><label>Client name</label><select id="rClient" class="clientSelect"><option value="">— select client —</option></select></div>
       <div class="field"><label>Date</label><input id="rDate" type="date"></div>
       <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000"></div>
       <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect"></select></div>
@@ -740,7 +725,7 @@ function calcSalary(){
     const paidRange=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
     box.style.display='block';
     box.innerHTML=`<b>${esc(name)}</b> — no duty days for this period, so salary = <b>₹0</b>.<br>
-      Add duty dates (from → to) in the <b>Duty / Leave</b> tab, or tick the checkbox above to count the full period.`+
+      Tick the checkbox above to count the full period as duty, or use existing duty history loaded from the Google Sheet.`+
       (paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
     return;
   }
@@ -855,11 +840,20 @@ function fillEmpSelects(){
     sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name).map(e=>`<option>${esc(e.name)}</option>`).join('');
     sel.value=cur;
   });
-  // client dropdown list — collected from client payments + duty entries
-  const names=new Set();
-  DB.receipts.forEach(r=>{if(r.client)names.add(r.client.trim());});
-  DB.dutyLeave.forEach(r=>{if(r.client)names.add(r.client.trim());});
-  DB.employees.forEach(e=>{if(e.client)names.add(e.client.trim());});
+  // Money Entry client dropdown — populated from the Client name saved on employees.
+  const employeeClients=new Set();
+  DB.employees.forEach(e=>{if(e.client&&e.client.trim())employeeClients.add(e.client.trim());});
+  const clientOptions=[...employeeClients].sort((a,b)=>a.localeCompare(b));
+  document.querySelectorAll('.clientSelect').forEach(sel=>{
+    const cur=sel.value;
+    sel.innerHTML='<option value="">— select client —</option>'+clientOptions.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
+    sel.value=clientOptions.includes(cur)?cur:'';
+  });
+
+  // Keep the employee and leave-entry client suggestions in sync as well.
+  const names=new Set(employeeClients);
+  DB.receipts.forEach(r=>{if(r.client&&r.client.trim())names.add(r.client.trim());});
+  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim())names.add(r.client.trim());});
   document.getElementById('clientList').innerHTML=[...names].sort((a,b)=>a.localeCompare(b)).map(n=>`<option value="${esc(n)}">`).join('');
 }
 function delRec(list,id){

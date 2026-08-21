@@ -9,8 +9,8 @@ each submit to **your Google Sheet** in its respective tab.
 | Section | What you enter |
 |---|---|
 | **Employees** | Name, phone, monthly / per-day wage, wage amount, 24 hr / 12 hr duty (with duty start time for 24 hr), joining date, client name |
-| **Duty / Leave** | When an employee did duty or took leave (from → to dates; for 24-hr duty employees a time option always appears so days are counted by 24-hour shifts) |
-| **Money Entry** | Client payment received • Payment given to employee (with date) • Other expenses — each with its **own Submit button**, **no field is compulsory** |
+| **Leave Entry** | Record when an employee took leave (from → to dates; for 24-hr duty employees a time option always appears so days are counted by 24-hour shifts) |
+| **Money Entry** | Client payment received — the client is selected from the client names saved on Employees • Payment given to employee (with date) • Other expenses — each with its **own Submit button**, **no field is compulsory** |
 | **Salary Calculator** | Pick employee + a date range (From → To). The From date auto-fills to the employee's **last paid salary** date (or joining date). Shows full employee details, duty/leave days, salary, complete payment history for the range, and balance to pay. Monthly employees: per-day pro-rata (wage ÷ days-in-month × duty days, summed across any months in the range) — a full month with no leave equals full salary. Per-day employees = rate × duty days. Leave days deducted. For 24-hr duty employees a time option appears so days are counted by 24-hour shifts (8 AM → next day 8 AM = 1 day). |
 | **Profit / Loss** | Per calendar month: Received − Employee payments − Expenses, split **50-50 between the two partners** |
 | **All Records** | Every saved entry, filter by employee/month, delete entries, download / import JSON backup |
