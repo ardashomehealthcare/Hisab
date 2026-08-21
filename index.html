@@ -198,15 +198,18 @@
 
   <div class="card">
     <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
-    <div class="hint">Salary / advance / any payment given to an employee, with date. Saved in that employee's ledger.</div>
+    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts.</div>
     <div class="grid">
-      <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect"></select></div>
-      <div class="field"><label>Date</label><input id="pDate" type="date"></div>
+      <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect" onchange="onPaymentEmpChange()"></select></div>
+      <div class="field"><label>Salary period — From</label><input id="pFrom" type="date"></div>
+      <div class="field"><label>Salary period — To</label><input id="pTo" type="date"></div>
       <div class="field"><label>Amount paid (₹)</label><input id="pAmt" type="number" min="0" placeholder="e.g. 15000"></div>
       <div class="field"><label>Payment type</label><select id="pType"><option value="">— select —</option><option>Salary</option><option>Advance</option><option>Bonus</option><option>Other</option></select></div>
       <div class="field"><label>Mode</label><select id="pMode"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
     </div>
-    <div class="actions"><button class="btn red" onclick="savePayment()">✔ Submit employee payment</button><span class="msg" id="pMsg"></span></div>
+    <div class="actions">
+      <button class="btn red" onclick="savePayment()">✔ Submit employee payment</button><span class="msg" id="pMsg"></span>
+    </div>
   </div>
 
   <div class="card">
@@ -289,7 +292,7 @@
     </div>
   </div>
   <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
-  <div class="card"><h2>Payments given to employees</h2><div class="tableWrap"><table id="recPayments"><thead><tr><th>Date</th><th>Employee</th><th>Type</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Payments given to employees</h2><div class="tableWrap"><table id="recPayments"><thead><tr><th>Salary period</th><th>Employee</th><th>Type</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
   <div class="card"><h2>Duty / Leave</h2><div class="tableWrap"><table id="recDuty"><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Client</th><th></th></tr></thead><tbody></tbody></table></div></div>
   <div class="card"><h2>Other expenses</h2><div class="tableWrap"><table id="recExpenses"><thead><tr><th>Date</th><th>Item</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
 </section>
@@ -374,7 +377,7 @@ document.getElementById('nav').addEventListener('click',e=>{
 const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt'],
-  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt'],
+  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo'],
   ClientReceipts:['id','client','date','amount','empName','mode','savedAt'],
   Expenses:['id','item','date','amount','savedAt']
 };
@@ -571,13 +574,18 @@ function saveReceipt(){
   sendRecord('ClientReceipts',rec);
   clear('rClient','rDate','rAmt','rEmpSel','rMode');renderAll();
 }
+function onPaymentEmpChange(){
+  const name=val('pEmpSel'),emp=DB.employees.find(e=>e.name===name);
+  document.getElementById('pFrom').value=salaryFromDate(name,emp);
+  document.getElementById('pTo').value=todayStr();
+}
 function savePayment(){
-  const rec={id:uid(),empName:val('pEmpSel'),date:val('pDate'),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.empName,rec.date,rec.amount,rec.payType,rec.mode])){flash('pMsg','Fill at least one field.',false);return;}
-  if(rec.amount&&!rec.date)rec.date=todayStr();
+  const rec={id:uid(),empName:val('pEmpSel'),date:todayStr(),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),periodFrom:val('pFrom'),periodTo:val('pTo'),savedAt:new Date().toLocaleString()};
+  if(rec.periodFrom&&rec.periodTo&&rec.periodFrom>rec.periodTo){flash('pMsg','Salary period From date must be before the To date.',false);return;}
+  if(!anyFilled([rec.empName,rec.amount,rec.payType,rec.mode,rec.periodFrom,rec.periodTo])){flash('pMsg','Fill at least one field.',false);return;}
   DB.payments.push(rec);persist();flash('pMsg','Employee payment saved.');
   sendRecord('EmployeePayments',rec);
-  clear('pEmpSel','pDate','pAmt','pType','pMode');renderAll();
+  clear('pEmpSel','pFrom','pTo','pAmt','pType','pMode');renderAll();
 }
 function saveExpense(){
   const rec={id:uid(),item:val('xItem'),date:val('xDate'),amount:val('xAmt'),savedAt:new Date().toLocaleString()};
@@ -831,7 +839,7 @@ function calcSalary(){
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
-  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:'',savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:'',periodFrom:lastSalary.from,periodTo:lastSalary.to,savedAt:new Date().toLocaleString()};
   DB.payments.push(rec);persist();flash('sMsg','Recorded as payment given today.');
   sendRecord('EmployeePayments',rec);renderAll();
 }
@@ -928,7 +936,7 @@ function renderRecords(){
   document.querySelector('#recReceipts tbody').innerHTML=DB.receipts.filter(r=>okM(r)&&(!fe||r.empName===fe)).slice().reverse().map(r=>
     `<tr><td>${esc(r.date)}</td><td>${esc(r.client)}</td><td>${esc(r.empName)}</td><td>${esc(r.mode)}</td><td class="right money pos">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('receipts','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recPayments tbody').innerHTML=DB.payments.filter(r=>okEmp(r)&&okM(r)).slice().reverse().map(r=>
-    `<tr><td>${esc(r.date)}</td><td>${esc(r.empName)}</td><td>${esc(r.payType)}</td><td>${esc(r.mode)}</td><td class="right money neg">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('payments','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
+    `<tr><td>${r.periodFrom||r.periodTo?`${esc(r.periodFrom)||'—'} to ${esc(r.periodTo)||'—'}`:esc(r.date)}</td><td>${esc(r.empName)}</td><td>${esc(r.payType)}</td><td>${esc(r.mode)}</td><td class="right money neg">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('payments','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recDuty tbody').innerHTML=DB.dutyLeave.filter(r=>okEmp(r)&&okMDuty(r)).slice().reverse().map(r=>dutyRow(r,'dutyLeave')).join('')||'<tr><td colspan="7" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recExpenses tbody').innerHTML=DB.expenses.filter(okM).slice().reverse().map(r=>
     `<tr><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td class="right money">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('expenses','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">Nothing here.</td></tr>';
