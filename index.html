@@ -85,6 +85,41 @@
   @media(min-width:860px){.twoCol{grid-template-columns:1fr 1fr;}}
   .filterRow{display:flex; gap:10px; flex-wrap:wrap; align-items:end; margin-bottom:12px;}
   .filterRow .field{min-width:150px;}
+
+  /* ---- Auto-generated invoice ---- */
+  .invoiceBox{background:#fff;border:1px solid var(--line);border-radius:10px;padding:22px;font-size:.92rem;max-width:760px;box-shadow:0 1px 3px rgba(20,40,80,.05);}
+  .invHead{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--brand);padding-bottom:10px;margin-bottom:12px;}
+  .invCo{font-size:1.2rem;color:var(--brand-dark);font-weight:800;}
+  .invSub{font-size:.78rem;color:var(--muted);}
+  .invHead img{height:52px;width:52px;border-radius:8px;background:#fff;padding:3px;border:1px solid var(--line);object-fit:contain;}
+  .invMeta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .invTitle{font-size:1.05rem;font-weight:800;letter-spacing:2px;color:var(--brand-dark);margin-bottom:6px;}
+  .invRow{font-size:.82rem;color:var(--muted);margin-top:3px;}
+  .invRow b{color:var(--ink);}
+  .invTo{text-align:right;font-size:.9rem;}
+  .invAddr{color:var(--muted);font-size:.82rem;margin-top:2px;}
+  .invTable{width:100%;border-collapse:collapse;margin:8px 0 4px;}
+  .invTable th{background:var(--soft);padding:8px 9px;font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--brand-dark);}
+  .invTable td{padding:8px 9px;border-top:1px solid var(--line);}
+  .invWords{font-size:.85rem;color:var(--muted);margin-top:8px;}
+  .invFoot{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px;font-size:.8rem;color:var(--muted);text-align:center;}
+
+  /* Round PAID stamp — company name curved on the border, PAID + date in the centre */
+  .invTableWrap{position:relative;}
+  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
+  .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
+  .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
+  .stampDate{font-size:13px; font-weight:700; letter-spacing:1px; fill:currentColor;}
+  .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:8px 12px; background:var(--soft); border-radius:8px;}
+  .payImgWrap{margin-top:12px; text-align:center;}
+  .payImgWrap img{max-width:340px; max-height:440px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
+  .payImgCap{font-size:.74rem; color:var(--muted); margin-top:4px;}
+  @media print{
+    body *{visibility:hidden !important;}
+    #invoicePrintArea,#invoicePrintArea *,#payInvoicePrintArea,#payInvoicePrintArea *{visibility:visible !important;}
+    #invoicePrintArea,#payInvoicePrintArea{position:absolute;left:0;top:0;width:100%;max-width:none;border:none;box-shadow:none;border-radius:0;padding:24px;margin:0;}
+    body.printClient #payInvCard, body.printPay #invoiceCard{display:none !important;}
+  }
 </style>
 </head>
 <body>
@@ -190,16 +225,71 @@
 <section class="tab" id="tab-money">
   <div class="card">
     <h2>Client payment received <span class="badge green">Money IN</span></h2>
-    <div class="hint">Received money from a client? Select a client saved in the Employees tab, then enter just the amount if that's all you have — every field is optional.</div>
+    <div class="hint">Type or choose a client, add the address if you have it — the invoice below auto-generates from this form (amount, date, mode, employee). Client name &amp; address are editable; everything else comes from the saved data.</div>
     <div class="grid">
-      <div class="field"><label>Client name</label><select id="rClient" class="clientSelect"><option value="">— select client —</option></select></div>
-      <div class="field"><label>Date</label><input id="rDate" type="date"></div>
-      <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000"></div>
-      <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect"></select></div>
-      <div class="field"><label>Mode</label><select id="rMode"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+      <div class="field"><label>Client name (editable)</label><input id="rClient" class="clientSelect" list="clientList" placeholder="Type or choose client" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Client address (editable)</label><input id="rAddr" placeholder="House no, street, city, PIN" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Date</label><input id="rDate" type="date" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect" onchange="updateInvoicePreview()"></select></div>
+      <div class="field"><label>Mode</label><select id="rMode" onchange="updateInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
     </div>
-    <div class="actions"><button class="btn green" onclick="saveReceipt()">✔ Submit client payment</button><span class="msg" id="rMsg"></span></div>
+    <div class="actions">
+      <button class="btn green" onclick="saveReceipt()">✔ Submit client payment</button>
+      <button class="btn primary" onclick="updateInvoicePreview(true)">🧾 Generate invoice</button>
+      <span class="msg" id="rMsg"></span>
+    </div>
   </div>
+
+  <div class="card" id="invoiceCard" style="display:none;">
+    <h2>Invoice preview <span class="badge blue">Auto-generated</span></h2>
+    <div class="hint">Invoice number, date, amount, amount-in-words, employee &amp; mode are filled automatically — only client name and address are editable (above).</div>
+    <div id="invoicePrintArea" class="invoiceBox">
+      <div class="invHead">
+        <div>
+          <b class="invCo">Ardaas Home Health Care</b><br>
+          <span class="invSub">Caretaker Services — reliable home care</span>
+        </div>
+        <img src="logo.png" alt="Ardaas Home Health Care">
+      </div>
+      <div class="invMeta">
+        <div>
+          <div class="invTitle">INVOICE</div>
+          <div class="invRow">Invoice #: <b id="invNo">—</b></div>
+          <div class="invRow">Date: <b id="invDate">—</b></div>
+        </div>
+        <div class="invTo">
+          <div class="invRow">Bill To:</div>
+          <b id="invClient">—</b>
+          <div class="invAddr" id="invAddr">—</div>
+        </div>
+      </div>
+      <div class="invTableWrap">
+        <table class="invTable">
+          <thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
+          <tbody><tr><td id="invDesc">Caretaker services</td><td class="right money" id="invAmt">—</td></tr></tbody>
+          <tfoot><tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr></tfoot>
+        </table>
+        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
+          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path id="stampTop" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
+          <path id="stampBot" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
+          <text class="stampArc"><textPath href="#stampTop" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
+          <text class="stampArc"><textPath href="#stampBot" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
+          <text class="stampPaid" x="100" y="92" text-anchor="middle">PAID</text>
+          <text class="stampDate" id="invStampDate" x="100" y="120" text-anchor="middle"></text>
+        </svg>
+      </div>
+      <div class="invWords">In words: <b id="invWords">—</b></div>
+      <div class="invFoot">Thank you! Payment received via <span id="invMode">—</span>.</div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
+    </div>
+  </div>
+
 
   <div class="card">
     <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
@@ -260,6 +350,67 @@
       <span class="msg" id="sMsg"></span>
     </div>
   </div>
+
+  <div class="card" id="payInvCard" style="display:none;">
+    <h2>Payment receipt preview <span class="badge blue">Auto-generated</span></h2>
+    <div class="hint">Receipt number, date, duty &amp; leave details (same as the copy message), salary, amount paid &amp; balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.</div>
+    <div class="grid" style="max-width:620px;">
+      <div class="field"><label>Payment mode</label><select id="piMode" onchange="updatePayInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+      <div class="field" id="piUploadField" style="display:none;"><label>Online payment screenshot</label><input type="file" id="piImg" accept="image/*" onchange="onPayImgUpload(this)"></div>
+    </div>
+    <div id="payInvoicePrintArea" class="invoiceBox">
+      <div class="invHead">
+        <div>
+          <b class="invCo">Ardaas Home Health Care</b><br>
+          <span class="invSub">Caretaker Services — reliable home care</span>
+        </div>
+        <img src="logo.png" alt="Ardaas Home Health Care">
+      </div>
+      <div class="invMeta">
+        <div>
+          <div class="invTitle">SALARY PAYMENT RECEIPT</div>
+          <div class="invRow">Receipt #: <b id="piNo">—</b></div>
+          <div class="invRow">Date: <b id="piDate">—</b></div>
+        </div>
+        <div class="invTo">
+          <div class="invRow">Paid To:</div>
+          <b id="piEmp">—</b>
+          <div class="invRow">Salary period: <b id="piPeriod">—</b></div>
+        </div>
+      </div>
+      <div class="payDetail" id="piDetails"></div>
+      <div class="invTableWrap">
+        <table class="invTable">
+          <thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
+          <tbody>
+            <tr><td id="piDescSalary">Salary</td><td class="right money" id="piSalary">—</td></tr>
+            <tr><td id="piDescPaid">Amount paid</td><td class="right money" id="piPaid">—</td></tr>
+          </tbody>
+          <tfoot><tr><td class="right"><b id="piBalLbl">Balance to pay</b></td><td class="right money"><b id="piBal">—</b></td></tr></tfoot>
+        </table>
+        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
+          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path id="stampTop2" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
+          <path id="stampBot2" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
+          <text class="stampArc"><textPath href="#stampTop2" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
+          <text class="stampArc"><textPath href="#stampBot2" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
+          <text class="stampPaid" x="100" y="92" text-anchor="middle">PAID</text>
+          <text class="stampDate" id="piStampDate" x="100" y="120" text-anchor="middle"></text>
+        </svg>
+      </div>
+      <div class="invWords">In words: <b id="piWords">—</b></div>
+      <div class="payImgWrap" id="piImgWrap" style="display:none;">
+        <img id="piImgView" alt="Online payment screenshot">
+        <div class="payImgCap">Online payment screenshot</div>
+      </div>
+      <div class="invFoot">Thank you! Payment via <span id="piModeTxt">—</span>.</div>
+    </div>
+    <div class="actions">
+      <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
+    </div>
+  </div>
 </section>
 
 <!-- ============ PROFIT / LOSS ============ -->
@@ -296,8 +447,8 @@
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
     </div>
   </div>
-  <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
-  <div class="card"><h2>Payments given to employees</h2><div class="tableWrap"><table id="recPayments"><thead><tr><th>Salary period</th><th>Employee</th><th>Type</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Invoice</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
+  <div class="card"><h2>Payments given to employees</h2><div class="tableWrap"><table id="recPayments"><thead><tr><th>Salary period</th><th>Employee</th><th>Type</th><th>Mode</th><th>Receipt</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
   <div class="card"><h2>Duty / Leave</h2><div class="tableWrap"><table id="recDuty"><thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Client</th><th></th></tr></thead><tbody></tbody></table></div></div>
   <div class="card"><h2>Other expenses</h2><div class="tableWrap"><table id="recExpenses"><thead><tr><th>Date</th><th>Item</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
 </section>
@@ -382,8 +533,8 @@ document.getElementById('nav').addEventListener('click',e=>{
 const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt'],
-  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo'],
-  ClientReceipts:['id','client','date','amount','empName','mode','savedAt'],
+  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
+  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo'],
   Expenses:['id','item','date','amount','savedAt']
 };
 function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
@@ -571,13 +722,91 @@ function addDaysStr(dateStr,n){
 }
 
 /* ================= MONEY ================= */
+let invoiceNoOverride='';
+/* Next invoice number: highest saved number + 1 (INV-0001, INV-0002, …) */
+function nextInvoiceNo(){
+  let max=0;
+  DB.receipts.forEach(r=>{const m=String(r.invoiceNo||'').match(/(\d+)\s*$/);if(m)max=Math.max(max,parseInt(m[1],10));});
+  return 'INV-'+String(max+1).padStart(4,'0');
+}
+/* Amount in words — Indian numbering (thousand / lakh / crore) */
+function amountInWords(n){
+  n=Math.round(Number(n)||0);
+  if(n===0)return 'Zero Rupees Only';
+  const ones=['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten','Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens=['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  const two=x=>x<20?ones[x]:tens[Math.floor(x/10)]+(x%10?' '+ones[x%10]:'');
+  const three=x=>{const h=Math.floor(x/100),r=x%100;return (h?ones[h]+' Hundred':'')+(h&&r?' ':'')+(r?two(r):'');};
+  const crore=Math.floor(n/10000000);n%=10000000;
+  const lakh=Math.floor(n/100000);n%=100000;
+  const thousand=Math.floor(n/1000);n%=1000;
+  const parts=[];
+  if(crore)parts.push(two(crore)+' Crore');
+  if(lakh)parts.push(two(lakh)+' Lakh');
+  if(thousand)parts.push(two(thousand)+' Thousand');
+  if(n)parts.push(three(n));
+  return parts.join(' ')+' Rupees Only';
+}
+/* Date for the stamp, e.g. 2026-08-20 → 20 AUG 2026 */
+function formatStampDate(dateStr){
+  const d=new Date((dateStr||todayStr())+'T12:00:00');
+  return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}).toUpperCase().replace(/,/g,'');
+}
+/* Live invoice preview — auto-fills from the payment form; only client name & address are editable */
+function updateInvoicePreview(force){
+  const card=document.getElementById('invoiceCard');
+  const client=val('rClient'),amt=val('rAmt'),date=val('rDate');
+  if(!force&&!client&&!amt&&!date){card.style.display='none';return;}
+  card.style.display='';
+  document.getElementById('invNo').textContent=invoiceNoOverride||nextInvoiceNo();
+  document.getElementById('invDate').textContent=date||todayStr();
+  document.getElementById('invStampDate').textContent=formatStampDate(date);
+  document.getElementById('invClient').textContent=client||'—';
+  document.getElementById('invAddr').textContent=val('rAddr')||'—';
+  const emp=val('rEmpSel'),mode=val('rMode');
+  document.getElementById('invDesc').textContent='Caretaker services'+(emp?' — attendant: '+emp:'');
+  const amtTxt=amt?fmt(amt):'—';
+  document.getElementById('invAmt').textContent=amtTxt;
+  document.getElementById('invTotal').textContent=amtTxt;
+  document.getElementById('invWords').textContent=amt?amountInWords(amt):'—';
+  document.getElementById('invMode').textContent=mode||'—';
+}
+function printInvoice(){
+  const card=document.getElementById('invoiceCard');
+  if(card.style.display==='none'){toast('Fill the client payment details first — the invoice preview appears automatically.');return;}
+  document.body.classList.add('printClient');
+  window.print();
+  setTimeout(()=>document.body.classList.remove('printClient'),300);
+}
+function closeInvoice(){document.getElementById('invoiceCard').style.display='none';}
 function saveReceipt(){
-  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode])){flash('rMsg','Fill at least one field.',false);return;}
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress])){flash('rMsg','Fill at least one field.',false);return;}
   if(rec.amount&&!rec.date)rec.date=todayStr();
-  DB.receipts.push(rec);persist();flash('rMsg','Client payment saved.');
+  DB.receipts.push(rec);persist();flash('rMsg','Client payment saved — invoice '+rec.invoiceNo+'.');
   sendRecord('ClientReceipts',rec);
-  clear('rClient','rDate','rAmt','rEmpSel','rMode');renderAll();
+  clear('rClient','rAddr','rDate','rAmt','rEmpSel','rMode');invoiceNoOverride='';
+  closeInvoice();renderAll();
+}
+/* Re-open a saved receipt's invoice from All Records (data as stored in the sheet) */
+function openInvoiceFromRecord(id){
+  const r=DB.receipts.find(x=>x.id===id);if(!r)return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab==='money'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-money'));
+  document.getElementById('rClient').value=r.client||'';
+  document.getElementById('rAddr').value=r.clientAddress||'';
+  document.getElementById('rDate').value=r.date||'';
+  document.getElementById('rAmt').value=r.amount||'';
+  setSelectValue(document.getElementById('rEmpSel'),r.empName||'');
+  setSelectValue(document.getElementById('rMode'),r.mode||'');
+  invoiceNoOverride=r.invoiceNo||'';
+  updateInvoicePreview(true);
+  document.getElementById('invoiceCard').scrollIntoView({behavior:'smooth'});
+}
+function setSelectValue(sel,val){
+  if(!val){sel.value='';return;}
+  if([...sel.options].some(o=>o.value===val)){sel.value=val;return;}
+  const o=document.createElement('option');o.value=val;o.textContent=val;sel.appendChild(o);sel.value=val;
 }
 function onPaymentEmpChange(){
   const name=val('pEmpSel'),emp=DB.employees.find(e=>e.name===name);
@@ -603,6 +832,19 @@ function saveExpense(){
 
 /* ================= SALARY CALC ================= */
 let lastSalary=null;
+let payInvData=null;   // current payment-receipt data (preview / reprint)
+let payInvImg='';      // pending online-payment screenshot (data URL) for the receipt
+const PAY_IMG_KEY='hisabPayImages_v1';
+function savePayImg(id,dataUrl){
+  try{const m=JSON.parse(localStorage.getItem(PAY_IMG_KEY)||'{}');m[id]=dataUrl;localStorage.setItem(PAY_IMG_KEY,JSON.stringify(m));}
+  catch(e){toast('⚠ Screenshot too large to store — it will show only in this preview.');}
+}
+function getPayImg(id){
+  try{const m=JSON.parse(localStorage.getItem(PAY_IMG_KEY)||'{}');return m[id]||'';}catch(e){return '';}
+}
+function delPayImg(id){
+  try{const m=JSON.parse(localStorage.getItem(PAY_IMG_KEY)||'{}');if(m[id]){delete m[id];localStorage.setItem(PAY_IMG_KEY,JSON.stringify(m));}}catch(e){}
+}
 /* Does a duty/leave record overlap the chosen date range? */
 function overlaps(r,from,to){
   const rf=r.from,rt=r.to||r.from;
@@ -821,7 +1063,8 @@ function calcSalary(){
   box.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
       <button class="btn green" onclick="copySalaryMessage()">📋 Copy message</button>
-      <span style="font-size:.78rem;color:var(--muted);">Month-wise salary — ready to paste in WhatsApp / SMS.</span>
+      <button class="btn primary" onclick="openPayInvoice()">🧾 Payment receipt</button>
+      <span style="font-size:.78rem;color:var(--muted);">Month-wise salary — ready to paste in WhatsApp / SMS. Payment receipt shows a preview first.</span>
     </div>
     <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
       <b style="font-size:1.05rem;">${esc(name)}</b> — ${esc(rangeLabel)}<br>
@@ -838,15 +1081,186 @@ function calcSalary(){
     <div style="margin-top:8px;"><b>Payment history — ${esc(rangeLabel)}:</b></div>
     ${payRows}
     <span style="color:var(--muted);font-size:.8rem;">Total paid to ${esc(name)} till date (all months): ${fmt(paidAll)} in ${allPays.length} payment${allPays.length===1?'':'s'}</span>`;
-  lastSalary={name,from,to,salary:bal>0?bal:salary,rangeLabel,copyText};
+  lastSalary={name,from,to,salary:bal>0?bal:salary,fullSalary:salary,bal,rangeLabel,copyText,dutyRecs,leaveRecs,dutyDays,leaveDays,assumed};
   saveRow.style.display=bal>0?'flex':'none';
   document.querySelector('#sSaveRow .btn').textContent='💸 Record balance '+fmt(bal>0?bal:0)+' as payment given today';
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
-  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:'',periodFrom:lastSalary.from,periodTo:lastSalary.to,savedAt:new Date().toLocaleString()};
-  DB.payments.push(rec);persist();flash('sMsg','Recorded as payment given today.');
+  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:val('piMode'),periodFrom:lastSalary.from,periodTo:lastSalary.to,invoiceNo:(payInvData&&payInvData.no)||nextPayInvoiceNo(),summary:lastSalary.copyText,balance:lastSalary.bal,savedAt:new Date().toLocaleString()};
+  DB.payments.push(rec);persist();
+  if(payInvImg)savePayImg(rec.id,payInvImg);
+  flash('sMsg','Recorded as payment given today — receipt '+(payInvData?payInvData.no:rec.invoiceNo)+'.');
   sendRecord('EmployeePayments',rec);renderAll();
+}
+
+/* ================= EMPLOYEE PAYMENT RECEIPT ================= */
+/* Next payment receipt number: highest saved number + 1 (PAY-0001, PAY-0002, …) */
+function nextPayInvoiceNo(){
+  let max=0;
+  DB.payments.forEach(r=>{const m=String(r.invoiceNo||'').match(/(\d+)\s*$/);if(m)max=Math.max(max,parseInt(m[1],10));});
+  return 'PAY-'+String(max+1).padStart(4,'0');
+}
+/* Duty/leave detail lines for the receipt — same content as the copy message */
+function buildPayDetailsHtml(dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,from,to){
+  const L=[];
+  L.push('<b>Duty:</b>');
+  if(assumed&&!dutyRecs.length){
+    L.push('&nbsp;&nbsp;• '+esc(from)+(from!==to?' → '+esc(to):''));
+  }else if(!dutyRecs.length){
+    L.push('&nbsp;&nbsp;• none');
+  }else{
+    dutyRecs.forEach(r=>{
+      let l='&nbsp;&nbsp;• '+esc(r.from);
+      if(r.fromTime)l+=' '+esc(r.fromTime);
+      if(r.to&&r.to!==r.from)l+=' → '+esc(r.to);
+      if(r.toTime)l+=' '+esc(r.toTime);
+      L.push(l);
+    });
+  }
+  L.push('Total duty days: <b>'+dutyDays+'</b><br>');
+  L.push('<b>Leave:</b>');
+  if(leaveRecs.length){
+    leaveRecs.forEach(r=>{
+      let l='&nbsp;&nbsp;• '+esc(r.from);
+      if(r.fromTime)l+=' '+esc(r.fromTime);
+      if(r.to&&r.to!==r.from)l+=' → '+esc(r.to);
+      if(r.toTime)l+=' '+esc(r.toTime);
+      L.push(l);
+    });
+  }else{
+    L.push('&nbsp;&nbsp;• none');
+  }
+  L.push('Total leave days: <b>'+leaveDays+'</b>');
+  return L.join('<br>');
+}
+/* Recompute salary pieces for a saved payment (used when re-printing old receipts) */
+function salaryDetailsFor(name,from,to){
+  const emp=DB.employees.find(e=>e.name===name);
+  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='duty'&&overlaps(r,from,to));
+  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to));
+  const rawDuty=new Set();dutyRecs.forEach(r=>recordDates(r,from,to).forEach(d=>rawDuty.add(d)));
+  const leaveSet=new Set();leaveRecs.forEach(r=>recordDates(r,from,to).forEach(d=>leaveSet.add(d)));
+  let assumed=false;
+  if(rawDuty.size===0&&from&&to){
+    assumed=true;
+    let start=from;const jd=(emp&&emp.joinDate)||'';
+    if(jd&&jd>from&&jd<=to)start=jd;
+    for(let d=start;d<=to;d=addDaysStr(d,1))rawDuty.add(d);
+  }
+  const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
+  const dutyDays=dutySet.size,leaveDays=leaveSet.size;
+  let salary=0;
+  const wage=Number((emp&&emp.wageAmount)||0),wt=(emp&&emp.wageType)||'';
+  const perMonth=groupByMonth(dutySet);
+  if(wt==='monthly'){Object.keys(perMonth).forEach(ym=>{salary+=Math.round(wage/daysInMonth(ym)*perMonth[ym]);});}
+  else if(wt==='daily'){salary=Math.round(wage*dutyDays);}
+  return {dutyRecs,leaveRecs,dutyDays,leaveDays,salary,assumed};
+}
+/* Show the payment receipt preview from the current salary calculation */
+function openPayInvoice(){
+  if(!lastSalary){toast('Calculate salary first.');return;}
+  const paid=lastSalary.bal>0?lastSalary.bal:0;
+  payInvData={
+    no:nextPayInvoiceNo(),
+    date:todayStr(),
+    name:lastSalary.name,
+    period:lastSalary.rangeLabel,
+    detailsHtml:buildPayDetailsHtml(lastSalary.dutyRecs||[],lastSalary.leaveRecs||[],lastSalary.dutyDays||0,lastSalary.leaveDays||0,lastSalary.assumed,lastSalary.from,lastSalary.to),
+    salary:lastSalary.fullSalary,
+    paid,
+    bal:lastSalary.bal
+  };
+  payInvImg='';
+  document.getElementById('piMode').value='';
+  document.getElementById('piImg').value='';
+  document.getElementById('payInvCard').style.display='';
+  updatePayInvoicePreview();
+  document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
+}
+/* Refresh the receipt preview from payInvData + mode + screenshot */
+function updatePayInvoicePreview(){
+  if(!payInvData)return;
+  document.getElementById('piNo').textContent=payInvData.no;
+  document.getElementById('piDate').textContent=payInvData.date;
+  document.getElementById('piStampDate').textContent=formatStampDate(payInvData.date);
+  document.getElementById('piEmp').textContent=payInvData.name;
+  document.getElementById('piPeriod').textContent=payInvData.period;
+  document.getElementById('piDetails').innerHTML=payInvData.detailsHtml||'';
+  document.getElementById('piDescSalary').textContent='Salary — '+payInvData.period;
+  document.getElementById('piSalary').textContent=payInvData.salary?fmt(payInvData.salary):'—';
+  document.getElementById('piDescPaid').textContent='Amount paid ('+payInvData.date+')';
+  document.getElementById('piPaid').textContent=payInvData.paid?fmt(payInvData.paid):'—';
+  const balLbl=document.getElementById('piBalLbl'),balEl=document.getElementById('piBal');
+  if(payInvData.bal===null||payInvData.bal===undefined){balLbl.textContent='Balance';balEl.textContent='—';}
+  else if(payInvData.bal>0){balLbl.textContent='Balance to pay';balEl.textContent=fmt(payInvData.bal);}
+  else{balLbl.textContent='Overpaid / advance';balEl.textContent=fmt(Math.abs(payInvData.bal));}
+  document.getElementById('piWords').textContent=payInvData.paid?amountInWords(payInvData.paid):'—';
+  const mode=val('piMode')||'—';
+  document.getElementById('piModeTxt').textContent=mode;
+  document.getElementById('piUploadField').style.display=(mode!=='—'&&mode!=='Cash')?'':'none';
+  const wrap=document.getElementById('piImgWrap');
+  if(payInvImg){wrap.style.display='';document.getElementById('piImgView').src=payInvImg;}
+  else{wrap.style.display='none';}
+}
+/* Attach an online-payment screenshot — downscaled so it stays small on the device */
+function onPayImgUpload(inp){
+  const f=inp.files&&inp.files[0];if(!f)return;
+  if(!/^image\//.test(f.type)){toast('❌ Please choose an image file.');inp.value='';return;}
+  const rd=new FileReader();
+  rd.onload=()=>{
+    const img=new Image();
+    img.onload=()=>{
+      const maxW=800;
+      const sc=Math.min(1,maxW/img.width);
+      const c=document.createElement('canvas');
+      c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      c.getContext('2d').drawImage(img,0,0,c.width,c.height);
+      const url=c.toDataURL('image/jpeg',0.72);
+      if(url.length>380000){toast('⚠ Screenshot kept only for this preview (too large to store).');}
+      else{toast('✅ Screenshot attached to the receipt.');}
+      payInvImg=url;
+      updatePayInvoicePreview();
+    };
+    img.onerror=()=>{toast('❌ Could not read that image.');inp.value='';};
+    img.src=rd.result;
+  };
+  rd.readAsDataURL(f);
+}
+function printPayInvoice(){
+  const card=document.getElementById('payInvCard');
+  if(card.style.display==='none'){toast('Generate the payment receipt first (from the salary result).');return;}
+  document.body.classList.add('printPay');
+  window.print();
+  setTimeout(()=>document.body.classList.remove('printPay'),300);
+}
+function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
+/* Re-open a saved payment's receipt from All Records */
+function openPayInvoiceFromRecord(id){
+  const r=DB.payments.find(x=>x.id===id);if(!r)return;
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab==='salary'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-salary'));
+  const from=r.periodFrom||'',to=r.periodTo||r.date||'';
+  const d=salaryDetailsFor(r.empName,from,to);
+  const detailsHtml=r.summary
+    ? '<div style="white-space:pre-wrap;">'+esc(r.summary)+'</div>'
+    : buildPayDetailsHtml(d.dutyRecs,d.leaveRecs,d.dutyDays,d.leaveDays,d.assumed,from,to);
+  payInvData={
+    no:r.invoiceNo||nextPayInvoiceNo(),
+    date:r.date||todayStr(),
+    name:r.empName,
+    period:(r.periodFrom||'—')+' → '+(r.periodTo||'—'),
+    detailsHtml,
+    salary:d.salary||null,
+    paid:Number(r.amount||0),
+    bal:(r.balance!==undefined&&r.balance!==null&&String(r.balance).trim()!=='')?Number(r.balance):null
+  };
+  payInvImg=getPayImg(r.id);
+  document.getElementById('piMode').value=r.mode||'';
+  document.getElementById('piImg').value='';
+  document.getElementById('payInvCard').style.display='';
+  updatePayInvoicePreview();
+  document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
 }
 
 /* ================= PROFIT / LOSS ================= */
@@ -892,11 +1306,13 @@ function fillEmpSelects(){
     sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name).map(e=>`<option>${esc(e.name)}</option>`).join('');
     sel.value=cur;
   });
-  // Money Entry client dropdown — populated from the Client name saved on employees.
+  // Money Entry client field — an editable input with suggestions (datalist), so the
+  // client name can be typed freely. Only actual <select>s need re-populating.
   const employeeClients=new Set();
   DB.employees.forEach(e=>{if(e.client&&e.client.trim())employeeClients.add(e.client.trim());});
   const clientOptions=[...employeeClients].sort((a,b)=>a.localeCompare(b));
   document.querySelectorAll('.clientSelect').forEach(sel=>{
+    if(sel.tagName!=='SELECT')return;
     const cur=sel.value;
     sel.innerHTML='<option value="">— select client —</option>'+clientOptions.map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join('');
     sel.value=clientOptions.includes(cur)?cur:'';
@@ -910,7 +1326,9 @@ function fillEmpSelects(){
 }
 function delRec(list,id){
   if(!confirm('Delete this entry?'))return;
-  DB[list]=DB[list].filter(r=>r.id!==id);persist();renderAll();
+  DB[list]=DB[list].filter(r=>r.id!==id);persist();
+  if(list==='payments')delPayImg(id);
+  renderAll();
   if(DB.scriptUrl){toast('Deleted — updating Google Sheet…');syncAll();}
   else toast('Deleted.');
 }
@@ -939,9 +1357,9 @@ function renderRecords(){
   const okM=r=>!fm||monthOf(r.date)===fm;
   const okMDuty=r=>!fm||monthOf(r.from)===fm||monthOf(r.to)===fm;
   document.querySelector('#recReceipts tbody').innerHTML=DB.receipts.filter(r=>okM(r)&&(!fe||r.empName===fe)).slice().reverse().map(r=>
-    `<tr><td>${esc(r.date)}</td><td>${esc(r.client)}</td><td>${esc(r.empName)}</td><td>${esc(r.mode)}</td><td class="right money pos">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('receipts','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
+    `<tr><td>${esc(r.date)}</td><td>${esc(r.client)}</td><td>${esc(r.invoiceNo)||''}</td><td>${esc(r.empName)}</td><td>${esc(r.mode)}</td><td class="right money pos">${r.amount?fmt(r.amount):''}</td><td style="white-space:nowrap;"><button class="del" style="color:var(--brand-dark);" onclick="openInvoiceFromRecord('${r.id}')" title="Print invoice">🧾</button> <button class="del" onclick="delRec('receipts','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recPayments tbody').innerHTML=DB.payments.filter(r=>okEmp(r)&&okM(r)).slice().reverse().map(r=>
-    `<tr><td>${r.periodFrom||r.periodTo?`${esc(r.periodFrom)||'—'} to ${esc(r.periodTo)||'—'}`:esc(r.date)}</td><td>${esc(r.empName)}</td><td>${esc(r.payType)}</td><td>${esc(r.mode)}</td><td class="right money neg">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('payments','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="6" style="color:var(--muted);">Nothing here.</td></tr>';
+    `<tr><td>${r.periodFrom||r.periodTo?`${esc(r.periodFrom)||'—'} to ${esc(r.periodTo)||'—'}`:esc(r.date)}</td><td>${esc(r.empName)}</td><td>${esc(r.payType)}</td><td>${esc(r.mode)}</td><td>${esc(r.invoiceNo)||''}</td><td class="right money neg">${r.amount?fmt(r.amount):''}</td><td style="white-space:nowrap;"><button class="del" style="color:var(--brand-dark);" onclick="openPayInvoiceFromRecord('${r.id}')" title="Print payment receipt">🧾</button> <button class="del" onclick="delRec('payments','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="7" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recDuty tbody').innerHTML=DB.dutyLeave.filter(r=>okEmp(r)&&okMDuty(r)).slice().reverse().map(r=>dutyRow(r,'dutyLeave')).join('')||'<tr><td colspan="7" style="color:var(--muted);">Nothing here.</td></tr>';
   document.querySelector('#recExpenses tbody').innerHTML=DB.expenses.filter(okM).slice().reverse().map(r=>
     `<tr><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td class="right money">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('expenses','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">Nothing here.</td></tr>';
