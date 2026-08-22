@@ -13,11 +13,11 @@
 //    -> "Google Sheet" tab -> Save & test connection.
 //
 // Tabs created automatically:
-// Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses
+// Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses, ClientReminders
 
 var SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
 
-var SHEETS = ['Employees', 'DutyLeave', 'EmployeePayments', 'ClientReceipts', 'Expenses'];
+var SHEETS = ['Employees', 'DutyLeave', 'EmployeePayments', 'ClientReceipts', 'Expenses', 'ClientReminders'];
 
 function getSpreadsheet() {
   if (SPREADSHEET_ID) {
