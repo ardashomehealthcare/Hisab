@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Hisab – Caretaker Services Manager</title>
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="apple-touch-icon" href="logo.png">
 <style>
   :root{
     --bg:#f4f6fb; --card:#ffffff; --ink:#1d2433; --muted:#68738a;
@@ -14,7 +16,9 @@
   *{box-sizing:border-box; margin:0; padding:0;}
   body{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif; background:var(--bg); color:var(--ink);}
   header{background:linear-gradient(120deg,#174ea6,#1f6feb); color:#fff; padding:14px 18px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
-  header h1{font-size:1.25rem; letter-spacing:.3px;}
+  header h1{font-size:1.25rem; letter-spacing:.3px; display:flex; align-items:center; gap:10px;}
+  header .logo{height:40px; width:40px; border-radius:10px; background:#fff; padding:3px; object-fit:contain; box-shadow:0 1px 4px rgba(0,0,0,.18);}
+  header .titleWrap{display:flex; flex-direction:column; line-height:1.2;}
   header .sub{font-size:.8rem; opacity:.85;}
   #sheetStatus{margin-left:auto; font-size:.78rem; background:rgba(255,255,255,.15); padding:5px 12px; border-radius:999px; display:flex; align-items:center; gap:6px;}
   #sheetStatus .dot{width:9px; height:9px; border-radius:50%; background:#ffb020;}
@@ -86,8 +90,9 @@
 <body>
 
 <header>
-  <div>
-    <h1>🧮 Hisab — Caretaker Services</h1>
+  <img class="logo" src="logo.png" alt="Ardaas Home Health Care logo">
+  <div class="titleWrap">
+    <h1>Hisab — Caretaker Services</h1>
     <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
   </div>
   <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google Sheet: not connected</span></div>
