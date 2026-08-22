@@ -104,11 +104,12 @@
   .invWords{font-size:.85rem;color:var(--muted);margin-top:8px;}
   .invFoot{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px;font-size:.8rem;color:var(--muted);text-align:center;}
 
-  /* Round PAID stamp — company name curved on the border, PAID + date in the centre */
+  /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
   .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
   .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
   .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
+  .stampRcvd{font-size:27px; font-weight:900; letter-spacing:1px; fill:currentColor;}
   .stampDate{font-size:13px; font-weight:700; letter-spacing:1px; fill:currentColor;}
   .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:8px 12px; background:var(--soft); border-radius:8px;}
   .payImgWrap{margin-top:12px; text-align:center;}
@@ -277,7 +278,7 @@
           <path id="stampBot" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
           <text class="stampArc"><textPath href="#stampTop" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
           <text class="stampArc"><textPath href="#stampBot" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
-          <text class="stampPaid" x="100" y="92" text-anchor="middle">PAID</text>
+          <text class="stampRcvd" x="100" y="92" text-anchor="middle">RECEIVED</text>
           <text class="stampDate" id="invStampDate" x="100" y="120" text-anchor="middle"></text>
         </svg>
       </div>
