@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hisab Demo - End Duty Feature</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <style>
+    :root {
+      --bg: #f4f6fb;
+      --card: #ffffff;
+      --ink: #1d2433;
+      --muted: #68738a;
+      --brand: #1f6feb;
+      --brand-dark: #174ea6;
+      --green: #188a42;
+      --red: #c53030;
+      --amber: #b7791f;
+      --line: #e3e8f2;
+      --soft: #eef3fc;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: var(--brand-dark);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      margin-bottom: 30px;
+      font-size: 0.95rem;
+    }
+
+    .demo-section {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(20, 40, 80, 0.05);
+    }
+
+    .demo-header {
+      font-size: 1.1rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--brand-dark);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .field {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.74rem;
+      font-weight: 700;
+      color: var(--muted);
+      margin-bottom: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+
+    input,
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #cdd6e6;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      background: #fff;
+      color: var(--ink);
+      font-family: inherit;
+    }
+
+    input:focus,
+    select:focus {
+      outline: 2px solid #bcd4ff;
+      border-color: var(--brand);
+    }
+
+    .actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 16px;
+    }
+
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 11px 18px;
+      font-size: 0.9rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn.primary {
+      background: var(--brand);
+      color: #fff;
+    }
+
+    .btn.primary:hover:not(:disabled) {
+      background: var(--brand-dark);
+    }
+
+    .btn.amber {
+      background: var(--amber);
+      color: #fff;
+    }
+
+    .btn.amber:hover:not(:disabled) {
+      background: #a66d1a;
+    }
+
+    .btn.red {
+      background: var(--red);
+      color: #fff;
+    }
+
+    .btn.red:hover:not(:disabled) {
+      background: #a02020;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      letter-spacing: 0.3px;
+    }
+
+    .badge.green {
+      background: #e2f5e9;
+      color: var(--green);
+    }
+
+    .badge.amber {
+      background: #fdf1dc;
+      color: var(--amber);
+    }
+
+    .badge.red {
+      background: #fde8e8;
+      color: var(--red);
+    }
+
+    .badge.gray {
+      background: #f0f1f3;
+      color: var(--muted);
+    }
+
+    .status-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--line);
+    }
+
+    .status-item {
+      background: var(--soft);
+      padding: 12px;
+      border-radius: 8px;
+      border-left: 4px solid var(--brand);
+    }
+
+    .status-label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .status-value {
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    .note {
+      background: #fef3c7;
+      border-left: 4px solid var(--amber);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      margin-top: 12px;
+      color: #78350f;
+    }
+
+    .info {
+      background: #dbeafe;
+      border-left: 4px solid var(--brand);
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      margin-top: 12px;
+      color: #1e3a8a;
+    }
+
+    .dropdown-item {
+      padding: 8px 0;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .dropdown-item:last-child {
+      border-bottom: none;
+    }
+
+    .dropdown-item.ended {
+      opacity: 0.6;
+      color: var(--muted);
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .comparison-box {
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+    }
+
+    .comparison-box.before {
+      background: #fef2f2;
+    }
+
+    .comparison-box.after {
+      background: #f0fdf4;
+    }
+
+    .comparison-title {
+      font-weight: 700;
+      margin-bottom: 8px;
+      font-size: 0.9rem;
+    }
+
+    .comparison-box.before .comparison-title {
+      color: var(--red);
+    }
+
+    .comparison-box.after .comparison-title {
+      color: var(--green);
+    }
+
+    .flow {
+      background: var(--soft);
+      padding: 16px;
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 0.9rem;
+      line-height: 1.8;
+    }
+
+    .flow strong {
+      color: var(--brand-dark);
+    }
+
+    .step {
+      margin-bottom: 12px;
+      padding-left: 24px;
+      position: relative;
+    }
+
+    .step:before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--brand);
+      font-weight: 700;
+    }
+
+    @media (max-width: 768px) {
+      .comparison {
+        grid-template-columns: 1fr;
+      }
+
+      .actions {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 Client Billing Calculator - End Duty Feature Demo</h1>
+    <p class="subtitle">Interactive demonstration of the new "End Employee Duty" and "End Client Duty" buttons</p>
+
+    <!-- SCENARIO 1 -->
+    <div class="demo-section">
+      <div class="demo-header">📌 Scenario 1: End Employee Duty Only</div>
+
+      <p style="font-size: 0.95rem; color: var(--muted); margin-bottom: 16px;">
+        Employee Rajesh is assigned to Client Mr. Sharma. After a few months, Rajesh leaves but Mr. Sharma needs another employee.
+      </p>
+
+      <div class="field">
+        <label>Client</label>
+        <select>
+          <option value="">— select —</option>
+          <option value="sharma">Mr. Sharma (active)</option>
+          <option value="patel">Mrs. Patel (active)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Service Period</label>
+        <input type="date" value="2026-06-15">
+        <span style="font-size: 0.85rem; color: var(--muted); margin-top: 4px; display: block;">to</span>
+        <input type="date" value="2026-08-25" style="margin-top: 8px;">
+      </div>
+
+      <div class="actions">
+        <button class="btn primary">🧮 Calculate client bill</button>
+        <button class="btn amber">⏹ End Employee Duty</button>
+        <button class="btn red" disabled>🛑 End Client Duty</button>
+      </div>
+
+      <div class="note">
+        ℹ️ When you click <strong>"End Employee Duty"</strong>:
+        <ul style="margin-top: 8px; margin-left: 20px;">
+          <li>Marks Rajesh's duty as ended on today's date</li>
+          <li>"End Employee Duty" button disappears</li>
+          <li>"End Client Duty" button still available (client may continue with another employee)</li>
+          <li>Entry saved to Duty/Leave records</li>
+        </ul>
+      </div>
+
+      <div class="status-row">
+        <div class="status-item">
+          <div class="status-label">Employee Status</div>
+          <div class="status-value">Rajesh - <span class="badge amber">Active</span></div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Client Status</div>
+          <div class="status-value">Mr. Sharma - <span class="badge green">Active</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENARIO 2 -->
+    <div class="demo-section">
+      <div class="demo-header">📌 Scenario 2: End Client Duty (Both Ended)</div>
+
+      <p style="font-size: 0.95rem; color: var(--muted); margin-bottom: 16px;">
+        Client Mr. Patel's service ends completely. No more need for employees. Both employee and client duty end.
+      </p>
+
+      <div class="field">
+        <label>Client</label>
+        <select>
+          <option value="">— select —</option>
+          <option value="sharma">Mr. Sharma (active)</option>
+          <option value="patel" selected>Mrs. Patel (active)</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Service Period</label>
+        <input type="date" value="2026-03-01">
+        <span style="font-size: 0.85rem; color: var(--muted); margin-top: 4px; display: block;">to</span>
+        <input type="date" value="2026-08-25" style="margin-top: 8px;">
+      </div>
+
+      <div class="actions">
+        <button class="btn primary">🧮 Calculate client bill</button>
+        <button class="btn amber">⏹ End Employee Duty</button>
+        <button class="btn red">🛑 End Client Duty</button>
+      </div>
+
+      <div class="note">
+        ℹ️ When you click <strong>"End Client Duty"</strong>:
+        <ul style="margin-top: 8px; margin-left: 20px;">
+          <li>Marks <strong>BOTH</strong> employee and client duty as ended</li>
+          <li>Both "End Employee Duty" and "End Client Duty" buttons disappear</li>
+          <li>Two separate entries saved to Duty/Leave records</li>
+          <li>Client can no longer be selected in active dropdowns</li>
+        </ul>
+      </div>
+
+      <div class="status-row">
+        <div class="status-item">
+          <div class="status-label">Employee Status</div>
+          <div class="status-value">Priya - <span class="badge green">Active</span></div>
+        </div>
+        <div class="status-item">
+          <div class="status-label">Client Status</div>
+          <div class="status-value">Mrs. Patel - <span class="badge green">Active</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER END DUTY -->
+    <div class="demo-section">
+      <div class="demo-header">✅ After Clicking End Duty Buttons</div>
+
+      <p style="font-size: 0.95rem; color: var(--muted); margin-bottom: 16px;">
+        Here's how the dropdown and records look after ending duties:
+      </p>
+
+      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 16px 0 12px; color: var(--ink);">Dropdown List in Client Selection:</h3>
+
+      <div style="background: var(--soft); border: 1px solid var(--line); border-radius: 8px; padding: 12px;">
+        <div class="dropdown-item">
+          <span>👤 Mr. Sharma - ₹25,000/mo</span>
+          <span class="badge green">ACTIVE</span>
+        </div>
+        <div class="dropdown-item ended">
+          <span>👤 Mrs. Patel - ENDED on 2026-08-25</span>
+          <span class="badge gray">ENDED</span>
+        </div>
+        <div class="dropdown-item">
+          <span>👤 New Client Setup</span>
+          <span class="badge" style="background: #f0f1f3; color: var(--muted);">WAITING</span>
+        </div>
+      </div>
+
+      <h3 style="font-size: 0.95rem; font-weight: 600; margin: 20px 0 12px; color: var(--ink);">Duty/Leave Records Table:</h3>
+
+      <div style="overflow-x: auto; border: 1px solid var(--line); border-radius: 8px;">
+        <table style="width: 100%; font-size: 0.85rem;">
+          <thead style="background: var(--soft);">
+            <tr>
+              <th style="padding: 10px; text-align: left; font-weight: 700; color: var(--brand-dark);">Employee</th>
+              <th style="padding: 10px; text-align: left; font-weight: 700; color: var(--brand-dark);">Type</th>
+              <th style="padding: 10px; text-align: left; font-weight: 700; color: var(--brand-dark);">From</th>
+              <th style="padding: 10px; text-align: left; font-weight: 700; color: var(--brand-dark);">To</th>
+              <th style="padding: 10px; text-align: left; font-weight: 700; color: var(--brand-dark);">Client</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="border-top: 1px solid var(--line);">
+              <td style="padding: 10px;">Rajesh Kumar</td>
+              <td style="padding: 10px;"><span class="badge amber">Duty</span></td>
+              <td style="padding: 10px;">2026-06-15</td>
+              <td style="padding: 10px;">2026-08-10</td>
+              <td style="padding: 10px;">Mr. Sharma</td>
+            </tr>
+            <tr style="border-top: 1px solid var(--line);">
+              <td style="padding: 10px;">Rajesh Kumar</td>
+              <td style="padding: 10px;"><span class="badge red">End Employee Duty</span></td>
+              <td style="padding: 10px;">—</td>
+              <td style="padding: 10px;">2026-08-25</td>
+              <td style="padding: 10px;">Mr. Sharma</td>
+            </tr>
+            <tr style="border-top: 1px solid var(--line);">
+              <td style="padding: 10px;">Priya Singh</td>
+              <td style="padding: 10px;"><span class="badge amber">Duty</span></td>
+              <td style="padding: 10px;">2026-03-01</td>
+              <td style="padding: 10px;">2026-08-20</td>
+              <td style="padding: 10px;">Mrs. Patel</td>
+            </tr>
+            <tr style="border-top: 1px solid var(--line);">
+              <td style="padding: 10px;">Priya Singh</td>
+              <td style="padding: 10px;"><span class="badge red">End Client Duty</span></td>
+              <td style="padding: 10px;">—</td>
+              <td style="padding: 10px;">2026-08-25</td>
+              <td style="padding: 10px;">Mrs. Patel</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- LOGIC FLOW -->
+    <div class="demo-section">
+      <div class="demo-header">⚙️ Button Logic & Behavior</div>
+
+      <div class="comparison">
+        <div class="comparison-box before">
+          <div class="comparison-title">❌ Before Clicking</div>
+          <div style="font-size: 0.88rem;">
+            <div style="margin-bottom: 8px;">✓ Both buttons visible</div>
+            <div style="margin-bottom: 8px;">✓ Can select either action</div>
+            <div style="margin-bottom: 8px;">✓ Client active in lists</div>
+          </div>
+        </div>
+
+        <div class="comparison-box after">
+          <div class="comparison-title">✅ After Clicking</div>
+          <div style="font-size: 0.88rem;">
+            <div style="margin-bottom: 8px;">✓ Buttons hidden</div>
+            <div style="margin-bottom: 8px;">✓ Duty record created</div>
+            <div style="margin-bottom: 8px;">✓ Marked as ENDED</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow">
+        <strong>End Employee Duty Flow:</strong>
+        <div class="step">Client remains active</div>
+        <div class="step">Employee duty ends on today's date</div>
+        <div class="step">Can still assign same/new employee to client</div>
+        <div class="step">"End Client Duty" button still available</div>
+        <div class="step">Saved as type: "endEmployeeDuty"</div>
+
+        <br>
+
+        <strong>End Client Duty Flow:</strong>
+        <div class="step">BOTH employee and client duty end</div>
+        <div class="step">Both buttons disappear permanently</div>
+        <div class="step">Client removed from active dropdown</div>
+        <div class="step">Shows in dropdown as "[Client] - ENDED"</div>
+        <div class="step">Saved as type: "endClientDuty" (+ employee end record)</div>
+      </div>
+    </div>
+
+    <!-- DROPDOWN BEHAVIOR -->
+    <div class="demo-section">
+      <div class="demo-header">📋 Dropdown Behavior After End Duty</div>
+
+      <p style="font-size: 0.95rem; color: var(--muted); margin-bottom: 16px;">
+        The client dropdown automatically updates to show duty status:
+      </p>
+
+      <h3 style="font-size: 0.9rem; font-weight: 600; margin: 12px 0; color: var(--ink);">Initial Active Clients:</h3>
+      <div style="background: #f0fdf4; padding: 12px; border-radius: 6px; border-left: 4px solid var(--green); font-size: 0.9rem; margin-bottom: 16px;">
+        ✓ Mr. Sharma<br>
+        ✓ Mrs. Patel<br>
+        ✓ Mr. Verma
+      </div>
+
+      <h3 style="font-size: 0.9rem; font-weight: 600; margin: 12px 0; color: var(--ink);">After Ending Mrs. Patel (Client Duty):</h3>
+      <div style="background: #fef2f2; padding: 12px; border-radius: 6px; border-left: 4px solid var(--red); font-size: 0.9rem;">
+        ✓ Mr. Sharma<br>
+        <span style="opacity: 0.6;">✗ Mrs. Patel - <span class="badge gray">ENDED 2026-08-25</span> (grayed out)</span><br>
+        ✓ Mr. Verma
+      </div>
+
+      <div class="info" style="margin-top: 16px;">
+        💡 <strong>Why?</strong> The dropdown is smart:
+        <ul style="margin-top: 8px; margin-left: 20px;">
+          <li>Shows all clients (both active and ended)</li>
+          <li>Active clients appear normally (usable)</li>
+          <li>Ended clients appear grayed out and labeled "[Name] - ENDED"</li>
+          <li>Users can still view ended duty history</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- CONFIRMATION -->
+    <div class="demo-section" style="background: #f0fdf4; border-color: var(--green);">
+      <div class="demo-header" style="color: var(--green);">✨ Ready to Implement?</div>
+
+      <p style="margin-bottom: 16px;">
+        The feature includes:
+      </p>
+
+      <ul style="margin-left: 20px; font-size: 0.95rem; line-height: 1.8;">
+        <li>✅ Two new buttons: "End Employee Duty" (amber) & "End Client Duty" (red)</li>
+        <li>✅ Smart button visibility (hide when duty ended)</li>
+        <li>✅ Automatic record creation in Duty/Leave table</li>
+        <li>✅ Dropdown filtering (active vs ended clients)</li>
+        <li>✅ Google Sheet sync support</li>
+        <li>✅ Dropdown shows "[Client Name] - ENDED" for ended duties</li>
+      </ul>
+
+      <div style="margin-top: 20px; padding: 12px; background: #dbeafe; border-radius: 6px; border-left: 4px solid var(--brand);">
+        <strong>Next Step:</strong> Confirm this behavior matches your requirements, and I'll implement it in the live website.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
