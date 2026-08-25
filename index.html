@@ -226,11 +226,12 @@
 <section class="tab" id="tab-money">
   <div class="card">
     <h2>Client payment received <span class="badge green">Money IN</span></h2>
-    <div class="hint">Type or choose a client, add the address if you have it — the invoice below auto-generates from this form (amount, date, mode, employee). Client name &amp; address are editable; everything else comes from the saved data.</div>
+    <div class="hint">Type or choose a client, add the address if you have it — the invoice below auto-generates from this form. The <b>Deal amount</b> is the client's agreed monthly package; it is remembered per client and used by the client-billing calculator (Salary Calculator tab) if a client leaves mid-month. Client name &amp; address are editable.</div>
     <div class="grid">
-      <div class="field"><label>Client name (editable)</label><input id="rClient" class="clientSelect" list="clientList" placeholder="Type or choose client" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Client name (editable)</label><input id="rClient" list="clientList" placeholder="Type or choose client" oninput="onClientNameChange();updateInvoicePreview()"></div>
       <div class="field"><label>Client address (editable)</label><input id="rAddr" placeholder="House no, street, city, PIN" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Date</label><input id="rDate" type="date" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Deal amount — monthly package (₹)</label><input id="rDeal" type="number" min="0" placeholder="e.g. 25000 / month" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect" onchange="updateInvoicePreview()"></select></div>
       <div class="field"><label>Mode</label><select id="rMode" onchange="updateInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
@@ -268,8 +269,14 @@
       <div class="invTableWrap">
         <table class="invTable">
           <thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
-          <tbody><tr><td id="invDesc">Caretaker services</td><td class="right money" id="invAmt">—</td></tr></tbody>
-          <tfoot><tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr></tfoot>
+          <tbody>
+            <tr id="invDealRow" style="display:none;"><td id="invDealLabel">Monthly deal / package</td><td class="right money" id="invDealAmt">—</td></tr>
+            <tr><td id="invDesc">Caretaker services</td><td class="right money" id="invAmt">—</td></tr>
+          </tbody>
+          <tfoot>
+            <tr id="invBalRow" style="display:none;"><td class="right"><b id="invBalLabel">Balance due</b></td><td class="right money"><b id="invBal">—</b></td></tr>
+            <tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr>
+          </tfoot>
         </table>
         <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
           <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
@@ -412,6 +419,27 @@
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
   </div>
+
+  <div class="card">
+    <h2>Client billing calculator <span class="badge green">Mid-month deal</span></h2>
+    <div class="hint">
+      If a client <b>starts or discontinues service in the middle of a month</b>, pick the client and the service period (From → To).
+      For <b>each calendar month</b> in the range the bill is <b>deal amount ÷ days in that month × service days</b>.
+      Whatever the client <b>already paid in that same month</b> is subtracted from that month's bill, so each month shows its own balance; the balances are then totalled.
+      The deal amount is the client's agreed monthly package — set it once in Money Entry and it is remembered here.
+    </div>
+    <div class="grid">
+      <div class="field"><label>Client</label><select id="cbClient" class="clientSelect" onchange="onClientBillClientChange()"></select></div>
+      <div class="field"><label>Monthly deal amount (₹)</label><input id="cbDeal" type="number" min="0" placeholder="Auto from last payment — edit if needed"></div>
+      <div class="field"><label>Service from</label><input id="cbFrom" type="date"></div>
+      <div class="field"><label>Service to</label><input id="cbTo" type="date"></div>
+    </div>
+    <div class="actions"><button class="btn primary" onclick="calcClientBill()">🧮 Calculate client bill</button></div>
+    <div class="resultBox" id="cbResult" style="display:none;"></div>
+    <div class="actions" id="cbSaveRow" style="display:none;">
+      <button class="btn green" onclick="fillMoneyFromClientBill()">💰 Take this to Money Entry</button>
+    </div>
+  </div>
 </section>
 
 <!-- ============ PROFIT / LOSS ============ -->
@@ -535,7 +563,7 @@ const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
-  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo'],
+  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
   Expenses:['id','item','date','amount','savedAt']
 };
 function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
@@ -753,11 +781,32 @@ function formatStampDate(dateStr){
   const d=new Date((dateStr||todayStr())+'T12:00:00');
   return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}).toUpperCase().replace(/,/g,'');
 }
+/* When the user picks/types a client, auto-fill the deal amount from that client's
+   last saved receipt (their agreed monthly package), so it only has to be entered once. */
+function onClientNameChange(){
+  const client=val('rClient');
+  const dealEl=document.getElementById('rDeal');
+  if(client && !dealEl.value){
+    const last=lastDealForClient(client);
+    if(last)dealEl.value=last;
+  }
+}
+function lastDealForClient(client){
+  const key=String(client||'').trim().toLowerCase();
+  if(!key)return '';
+  let best='';
+  DB.receipts.forEach(r=>{
+    if(String(r.client||'').trim().toLowerCase()===key && r.dealAmount && Number(r.dealAmount)>0){
+      if(!best || String(r.date||'')>String(best.date||''))best=r.dealAmount;
+    }
+  });
+  return best;
+}
 /* Live invoice preview — auto-fills from the payment form; only client name & address are editable */
 function updateInvoicePreview(force){
   const card=document.getElementById('invoiceCard');
-  const client=val('rClient'),amt=val('rAmt'),date=val('rDate');
-  if(!force&&!client&&!amt&&!date){card.style.display='none';return;}
+  const client=val('rClient'),amt=val('rAmt'),date=val('rDate'),deal=val('rDeal');
+  if(!force&&!client&&!amt&&!date&&!deal){card.style.display='none';return;}
   card.style.display='';
   document.getElementById('invNo').textContent=invoiceNoOverride||nextInvoiceNo();
   document.getElementById('invDate').textContent=date||todayStr();
@@ -765,7 +814,35 @@ function updateInvoicePreview(force){
   document.getElementById('invClient').textContent=client||'—';
   document.getElementById('invAddr').textContent=val('rAddr')||'—';
   const emp=val('rEmpSel'),mode=val('rMode');
-  document.getElementById('invDesc').textContent='Caretaker services'+(emp?' — attendant: '+emp:'');
+  const descEl=document.getElementById('invDesc');
+  let desc='Caretaker services'+(emp?' — attendant: '+emp:'');
+  if(deal)desc+=' — payment against monthly deal';
+  descEl.textContent=desc;
+
+  const dealRow=document.getElementById('invDealRow'),dealAmtEl=document.getElementById('invDealAmt');
+  const balRow=document.getElementById('invBalRow'),balEl=document.getElementById('invBal'),balLbl=document.getElementById('invBalLabel');
+  const nDeal=Number(deal)||0,nAmt=Number(amt)||0;
+  if(nDeal>0){
+    dealRow.style.display='';
+    dealAmtEl.textContent=fmt(nDeal);
+    if(nAmt>0 && nAmt<nDeal){
+      balRow.style.display='';
+      balLbl.textContent='Balance due';
+      balEl.textContent=fmt(nDeal-nAmt);
+      balEl.className='right money neg';
+    }else if(nAmt>nDeal){
+      balRow.style.display='';
+      balLbl.textContent='Advance / overpayment';
+      balEl.textContent=fmt(nAmt-nDeal);
+      balEl.className='right money pos';
+    }else{
+      balRow.style.display='none';
+    }
+  }else{
+    dealRow.style.display='none';
+    balRow.style.display='none';
+  }
+
   const amtTxt=amt?fmt(amt):'—';
   document.getElementById('invAmt').textContent=amtTxt;
   document.getElementById('invTotal').textContent=amtTxt;
@@ -781,12 +858,12 @@ function printInvoice(){
 }
 function closeInvoice(){document.getElementById('invoiceCard').style.display='none';}
 function saveReceipt(){
-  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress])){flash('rMsg','Fill at least one field.',false);return;}
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
+  if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress,rec.dealAmount])){flash('rMsg','Fill at least one field.',false);return;}
   if(rec.amount&&!rec.date)rec.date=todayStr();
   DB.receipts.push(rec);persist();flash('rMsg','Client payment saved — invoice '+rec.invoiceNo+'.');
   sendRecord('ClientReceipts',rec);
-  clear('rClient','rAddr','rDate','rAmt','rEmpSel','rMode');invoiceNoOverride='';
+  clear('rClient','rAddr','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
   closeInvoice();renderAll();
 }
 /* Re-open a saved receipt's invoice from All Records (data as stored in the sheet) */
@@ -798,6 +875,7 @@ function openInvoiceFromRecord(id){
   document.getElementById('rAddr').value=r.clientAddress||'';
   document.getElementById('rDate').value=r.date||'';
   document.getElementById('rAmt').value=r.amount||'';
+  document.getElementById('rDeal').value=r.dealAmount||lastDealForClient(r.client)||'';
   setSelectValue(document.getElementById('rEmpSel'),r.empName||'');
   setSelectValue(document.getElementById('rMode'),r.mode||'');
   invoiceNoOverride=r.invoiceNo||'';
@@ -1264,6 +1342,153 @@ function openPayInvoiceFromRecord(id){
   document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
 }
 
+/* ================= CLIENT BILLING CALCULATOR ================= */
+let lastClientBill=null;
+/* When a client is chosen in the billing calculator, auto-fill their monthly deal
+   amount from the most recent saved receipt (the agreed package rate). */
+function onClientBillClientChange(){
+  const client=val('cbClient');
+  const dealEl=document.getElementById('cbDeal');
+  if(client){
+    const last=lastDealForClient(client);
+    if(last)dealEl.value=last;
+    else if(!dealEl.value)dealEl.value='';
+  }
+  if(!val('cbFrom'))document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
+  if(!val('cbTo'))document.getElementById('cbTo').value=todayStr();
+}
+/* Per-month service days + pro-rata deal amount over [from,to].
+   Rule per month: deal ÷ days-in-month × service days (same as monthly salary). */
+function proRateDeal(deal,from,to){
+  const daysPerMonth={},amountPerMonth={};let total=0;
+  if(!from||!to||!(deal>0))return {daysPerMonth,amountPerMonth,total};
+  for(let d=from;d<=to;d=addDaysStr(d,1)){
+    const ym=d.slice(0,7);
+    daysPerMonth[ym]=(daysPerMonth[ym]||0)+1;
+  }
+  Object.keys(daysPerMonth).forEach(ym=>{
+    amountPerMonth[ym]=Math.round(deal/daysInMonth(ym)*daysPerMonth[ym]);
+    total+=amountPerMonth[ym];
+  });
+  return {daysPerMonth,amountPerMonth,total};
+}
+function calcClientBill(){
+  const client=val('cbClient'),deal=Number(val('cbDeal'))||0,from=val('cbFrom'),to=val('cbTo');
+  const box=document.getElementById('cbResult'),saveRow=document.getElementById('cbSaveRow');
+  lastClientBill=null;saveRow.style.display='none';
+  if(!client){box.style.display='block';box.innerHTML='Please choose a client.';return;}
+  if(!deal||deal<=0){box.style.display='block';box.innerHTML='Enter the monthly deal amount for <b>'+esc(client)+'</b> (set it once in Money Entry and it is remembered).';return;}
+  if(!from||!to){box.style.display='block';box.innerHTML='Pick the service From and To dates.';return;}
+  if(from>to){box.style.display='block';box.innerHTML='From date must be before (or same as) the To date.';return;}
+  const {daysPerMonth,amountPerMonth,total}=proRateDeal(deal,from,to);
+  const key=client.trim().toLowerCase();
+  const isClient=r=>String(r.client||'').trim().toLowerCase()===key;
+
+  // Split per-month bill and per-month receipts; each month's payments offset that month's bill.
+  const monthRows=[];
+  let totalBill=0,totalPaid=0,totalBal=0;
+  const perMonth={};
+  Object.keys(daysPerMonth).sort().forEach(ym=>{
+    const days=daysInMonth(ym),svc=daysPerMonth[ym];
+    const bill=amountPerMonth[ym];
+    const pays=DB.receipts.filter(r=>isClient(r)&&monthOf(r.date)===ym)
+      .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const paid=pays.reduce((s,p)=>s+Number(p.amount||0),0);
+    const bal=bill-paid;
+    perMonth[ym]={days,svc,bill,paid,bal,pays};
+    totalBill+=bill;totalPaid+=paid;totalBal+=bal;
+    monthRows.push(
+      `<tr>
+        <td><b>${monthLabel(ym)}</b><div style="font-size:.74rem;color:var(--muted);">${svc} of ${days} days</div></td>
+        <td class="right money">${fmt(bill)}<div style="font-size:.74rem;color:var(--muted);">${fmt(deal)} ÷ ${days} × ${svc}</div></td>
+        <td class="right money pos">${paid?fmt(paid):'—'}</td>
+        <td class="right money ${bal>0?'neg':(bal<0?'pos':'')}"><b>${bal?fmt(Math.abs(bal))+(bal<0?' adv':' due'):'—'}</b></td>
+      </tr>`);
+  });
+  const breakdown=`<div class="tableWrap"><table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
+    <thead><tr><th>Month</th><th class="right">Bill (deal ÷ days × days)</th><th class="right">Paid this month</th><th class="right">Balance</th></tr></thead>
+    <tbody>${monthRows.join('')}
+      <tr style="background:var(--soft);">
+        <td><b>Total</b></td>
+        <td class="right money"><b>${fmt(totalBill)}</b></td>
+        <td class="right money pos"><b>${totalPaid?fmt(totalPaid):'—'}</b></td>
+        <td class="right money ${totalBal>0?'neg':'pos'}"><b>${totalBal?fmt(Math.abs(totalBal))+(totalBal<0?' advance':' due'):'—'}</b></td>
+      </tr>
+    </tbody></table></div>`;
+
+  // Detailed list of every receipt that fell in the selected months
+  const inRange=DB.receipts.filter(r=>isClient(r)&&r.date>=from&&r.date<=to)
+    .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+  const payRows=inRange.length
+    ? `<table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
+        <thead><tr><th>Date</th><th>Month</th><th>Invoice</th><th>Mode</th><th class="right">Amount</th></tr></thead>
+        <tbody>${inRange.map(p=>`<tr><td>${esc(p.date)||''}</td><td>${esc(monthLabel(monthOf(p.date)))}</td><td>${esc(p.invoiceNo)||''}</td><td>${esc(p.mode)||''}</td><td class="right money pos">${p.amount?fmt(p.amount):''}</td></tr>`).join('')}
+        <tr><td colspan="4"><b>Total received in period</b></td><td class="right money"><b>${fmt(totalPaid)}</b></td></tr></tbody></table>`
+    : `<i>No payment received from ${esc(client)} in this period yet.</i><br>`;
+
+  const allPays=DB.receipts.filter(isClient);
+  const paidAll=allPays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const rangeLabel=from+(from!==to?' → '+to:'');
+  box.style.display='block';
+  box.innerHTML=`
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
+      <button class="btn green" onclick="copyClientBillMessage()">📋 Copy message</button>
+      <span style="font-size:.78rem;color:var(--muted);">Each month: deal ÷ calendar days × service days, minus what was paid that month.</span>
+    </div>
+    <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
+      <b style="font-size:1.05rem;">${esc(client)}</b> — ${esc(rangeLabel)}<br>
+      Monthly deal: <b>${fmt(deal)}</b>
+    </div>
+    ${breakdown}
+    <span style="font-size:1.02rem;">Total bill: <b>${fmt(totalBill)}</b> &nbsp;•&nbsp; Received: <b class="pos">${fmt(totalPaid)}</b></span><br>
+    <span style="font-size:1.1rem;">Balance ${totalBal>=0?'to collect':'overpaid / advance'}: <b class="${totalBal>0?'neg':'pos'}" style="font-size:1.25rem;">${fmt(Math.abs(totalBal))}</b></span><br>
+    <div style="margin-top:8px;"><b>Payments received — ${esc(rangeLabel)}:</b></div>
+    ${payRows}
+    <span style="color:var(--muted);font-size:.8rem;">Total received from ${esc(client)} till date (all periods): ${fmt(paidAll)} in ${allPays.length} receipt${allPays.length===1?'':'s'}</span>`;
+  lastClientBill={client,deal,from,to,total:totalBill,paid:totalPaid,bal:totalBal,perMonth,rangeLabel};
+  saveRow.style.display=totalBal!==0?'flex':'none';
+  document.querySelector('#cbSaveRow .btn').textContent= totalBal>0
+    ? '💰 Record balance '+fmt(totalBal)+' in Money Entry'
+    : '💸 Record advance '+fmt(Math.abs(totalBal))+' in Money Entry';
+}
+/* Plain-text copy message — same style as the salary copy message */
+function buildClientBillMessage(b){
+  const lines=[];
+  lines.push('Client bill — '+b.client);
+  lines.push('Service period: '+b.from+' to '+b.to);
+  lines.push('Monthly deal: '+fmt(b.deal));
+  lines.push('');
+  lines.push('Month-wise (deal ÷ days × service days − paid):');
+  Object.keys(b.perMonth).sort().forEach(ym=>{
+    const m=b.perMonth[ym];
+    lines.push('- '+monthLabel(ym)+' ('+m.svc+'/'+m.days+' days): bill '+fmt(m.bill)+', paid '+fmt(m.paid)+', balance '+fmt(Math.abs(m.bal))+(m.bal<0?' advance':' due'));
+  });
+  lines.push('');
+  lines.push('Total bill: '+fmt(b.total));
+  lines.push('Already received: '+fmt(b.paid));
+  lines.push(b.bal>=0?('Balance to collect: '+fmt(b.bal)):('Overpaid / advance: '+fmt(Math.abs(b.bal))));
+  return lines.join('\n');
+}
+function copyClientBillMessage(){
+  if(!lastClientBill){toast('Calculate the client bill first.');return;}
+  copyText(buildClientBillMessage(lastClientBill));
+}
+/* Load the calculated balance straight into the Money Entry client payment form */
+function fillMoneyFromClientBill(){
+  if(!lastClientBill){toast('Calculate the client bill first.');return;}
+  document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab==='money'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-money'));
+  document.getElementById('rClient').value=lastClientBill.client;
+  document.getElementById('rDeal').value=lastClientBill.deal;
+  document.getElementById('rDate').value=todayStr();
+  document.getElementById('rAmt').value=lastClientBill.bal!==0?Math.abs(lastClientBill.bal):'';
+  document.getElementById('rAddr').value='';
+  setSelectValue(document.getElementById('rEmpSel'),'');
+  setSelectValue(document.getElementById('rMode'),'');
+  updateInvoicePreview(true);
+  document.getElementById('invoiceCard').scrollIntoView({behavior:'smooth'});
+}
+
 /* ================= PROFIT / LOSS ================= */
 function plForMonth(ym){
   const inn=DB.receipts.filter(r=>monthOf(r.date)===ym).reduce((s,r)=>s+Number(r.amount||0),0);
@@ -1307,11 +1532,14 @@ function fillEmpSelects(){
     sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name).map(e=>`<option>${esc(e.name)}</option>`).join('');
     sel.value=cur;
   });
-  // Money Entry client field — an editable input with suggestions (datalist), so the
-  // client name can be typed freely. Only actual <select>s need re-populating.
-  const employeeClients=new Set();
-  DB.employees.forEach(e=>{if(e.client&&e.client.trim())employeeClients.add(e.client.trim());});
-  const clientOptions=[...employeeClients].sort((a,b)=>a.localeCompare(b));
+  // Build the full client list from every source (employees, receipts, duty/leave).
+  // The Money Entry client field is an editable text input with a datalist; the
+  // client billing calculator uses a real <select>, both populated from this list.
+  const clientNames=new Set();
+  DB.employees.forEach(e=>{if(e.client&&e.client.trim())clientNames.add(e.client.trim());});
+  DB.receipts.forEach(r=>{if(r.client&&r.client.trim())clientNames.add(r.client.trim());});
+  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim())clientNames.add(r.client.trim());});
+  const clientOptions=[...clientNames].sort((a,b)=>a.localeCompare(b));
   document.querySelectorAll('.clientSelect').forEach(sel=>{
     if(sel.tagName!=='SELECT')return;
     const cur=sel.value;
@@ -1319,11 +1547,8 @@ function fillEmpSelects(){
     sel.value=clientOptions.includes(cur)?cur:'';
   });
 
-  // Keep the employee and leave-entry client suggestions in sync as well.
-  const names=new Set(employeeClients);
-  DB.receipts.forEach(r=>{if(r.client&&r.client.trim())names.add(r.client.trim());});
-  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim())names.add(r.client.trim());});
-  document.getElementById('clientList').innerHTML=[...names].sort((a,b)=>a.localeCompare(b)).map(n=>`<option value="${esc(n)}">`).join('');
+  // Keep the editable client inputs' suggestion list in sync as well.
+  document.getElementById('clientList').innerHTML=clientOptions.map(n=>`<option value="${esc(n)}">`).join('');
 }
 function delRec(list,id){
   if(!confirm('Delete this entry?'))return;
@@ -1398,6 +1623,8 @@ if(BUILT_IN_SCRIPT_URL){
 }
 document.getElementById('sTo').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
+document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
+document.getElementById('cbTo').value=todayStr();
 updateSheetStatus();renderAll();
 autoLoadFromSheet();
 </script>
