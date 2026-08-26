@@ -112,8 +112,27 @@ function doPost(e) {
     var body = JSON.parse(e.postData.contents);
 
     if (body.action === 'append') {
+      // Upsert by id (column A): updating an employee (e.g. End duty)
+      // used to APPEND a second row. On the next load both rows came back —
+      // the old one without dutyEndDate looked "active" again and the
+      // employee count went up by 1. Update the existing row instead, and
+      // drop any leftover duplicate ids.
       var sh = getSheet(body.sheet, body.headers);
-      sh.appendRow(body.row);
+      var id = body.row && body.row.length ? String(body.row[0]) : '';
+      var last = sh.getLastRow();
+      var matches = [];
+      if (id && last >= 2) {
+        var ids = sh.getRange(2, 1, last - 1, 1).getValues();
+        for (var i = 0; i < ids.length; i++) {
+          if (String(ids[i][0]) === id) matches.push(i + 2);
+        }
+      }
+      if (matches.length) {
+        sh.getRange(matches[0], 1, 1, body.row.length).setValues([body.row]);
+        for (var d = matches.length - 1; d >= 1; d--) sh.deleteRow(matches[d]);
+      } else {
+        sh.appendRow(body.row);
+      }
       return json({ ok: true });
     }
 
