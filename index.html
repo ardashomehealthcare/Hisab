@@ -228,15 +228,23 @@
 <section class="tab" id="tab-duty">
   <div class="card">
     <h2>Leave entry <span class="badge red">On leave</span></h2>
-    <div class="hint">Enter only the <b>leave start</b> (date + time for 24-hr duty). The employee stays <b>ON LEAVE</b> until you press <b>🤝 Join duty</b> in the list below — leave days are counted automatically from start to join. While on leave you can also <b>➕ add a substitute</b> employee in their place.</div>
+    <div class="hint">Choose the entry type below. For <b>going on leave</b>: enter only the leave start (date + time for 24-hr duty) — the employee stays ON LEAVE until you press <b>🤝 Join duty</b> in the list below. For <b>substitute</b>: pick who is on leave and who covers in their place.</div>
     <div class="grid">
-      <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
-      <div class="field"><label>Leave start date</label><input id="lFrom" type="date"></div>
+      <div class="field"><label>Entry type</label>
+        <select id="lType" onchange="onLeaveTypeChange()">
+          <option value="leave">🔁 Employee going on leave</option>
+          <option value="substitute">🤝 Substitute in place of employee on leave</option>
+        </select>
+      </div>
+      <div class="field" id="lForField" style="display:none;"><label>In place of (on leave)</label><select id="lForSel" onchange="onForEmpChange()"></select></div>
+      <div class="field"><label id="lEmpLbl">Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
+      <div class="field"><label id="lFromLbl">Leave start date</label><input id="lFrom" type="date"></div>
       <div id="lTimeFields" style="display:none;">
         <div class="field"><label>Leave start time (24-hr duty)</label><input id="lFromT" type="time"></div>
       </div>
+      <div class="field" id="lSubToField" style="display:none;"><label>End date (blank = till join duty)</label><input id="lSubTo" type="date"></div>
     </div>
-    <div class="actions"><button class="btn red" onclick="saveDutyLeave('leave')">✔ Employee is on leave</button><span class="msg" id="lMsg"></span></div>
+    <div class="actions"><button id="lBtn" class="btn red" onclick="submitLeaveForm()">✔ Employee is on leave</button><span class="msg" id="lMsg"></span></div>
   </div>
   <div class="card" id="onLeaveCard" style="display:none;">
     <h2>On leave now <span class="badge red">live</span></h2>
@@ -769,7 +777,7 @@ function toggleDutyField(){
 
 /* ================= DUTY / LEAVE ================= */
 function saveDutyLeave(type){
-  if(type==='leave')return saveLeaveStart();
+  if(type==='leave')return submitLeaveForm();
   const p={emp:'dEmpSel',f:'dFrom',t:'dTo',m:'dMsg'};
   const rec={id:uid(),empName:val(p.emp),type,from:val(p.f),to:val(p.t)||val(p.f),
     fromTime:val('dFromT'),toTime:val('dToT'),client:val('dClient'),savedAt:new Date().toLocaleString()};
@@ -779,6 +787,62 @@ function saveDutyLeave(type){
   flash(p.m,'Duty entry saved.');
   sendRecord('DutyLeave',rec);
   clear(p.f,p.t);clear('dClient','dFromT','dToT');
+  renderAll();
+}
+/* ---- Leave-entry form: type dropdown (on leave / substitute) ---- */
+function submitLeaveForm(){return val('lType')==='substitute'?saveSubstituteForm():saveLeaveStart();}
+function onLeaveTypeChange(){
+  const sub=val('lType')==='substitute';
+  document.getElementById('lForField').style.display=sub?'':'none';
+  document.getElementById('lSubToField').style.display=sub?'':'none';
+  document.getElementById('lEmpLbl').textContent=sub?'Substitute employee':'Employee';
+  document.getElementById('lFromLbl').textContent=sub?'Substitute from date':'Leave start date';
+  const b=document.getElementById('lBtn');
+  b.textContent=sub?'✔ Add substitute':'✔ Employee is on leave';
+  b.className=sub?'btn primary':'btn red';
+  document.getElementById('lTimeFields').style.display='none';
+  if(sub){fillForSel();filterSubEmpOptions();}
+  else onLeaveEmpChange();
+}
+/* Fill the "in place of" dropdown with employees currently on leave */
+function fillForSel(){
+  const sel=document.getElementById('lForSel');
+  const open=DB.dutyLeave.filter(isOnLeaveRec);
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— employee on leave —</option>'+open.map(r=>`<option value="${esc(r.empName)}">${esc(r.empName)} — on leave since ${esc(r.from)}</option>`).join('');
+  sel.value=(cur&&[...sel.options].some(o=>o.value===cur))?cur:(open.length===1?open[0].empName:'');
+  onForEmpChange();
+}
+/* Keep the substitute list clean: remove the person who is on leave */
+function filterSubEmpOptions(){
+  const sel=document.getElementById('lEmpSel');
+  const forName=val('lForSel');
+  [...sel.options].forEach(o=>{if(o.value===forName)o.remove();});
+}
+function onForEmpChange(){
+  const sel=document.getElementById('lForSel');
+  const lv=ongoingLeaveOf(sel.value);
+  /* default the from date to the leave start, but only when the choice changes
+     (so a manually edited date survives re-renders) */
+  if(lv&&sel.dataset.lastFor!==sel.value){document.getElementById('lFrom').value=lv.from;sel.dataset.lastFor=sel.value;}
+  filterSubEmpOptions();
+}
+/* Add a substitute straight from the Leave entry form */
+function saveSubstituteForm(){
+  const forName=val('lForSel'),name=val('lEmpSel'),from=val('lFrom'),to=val('lSubTo');
+  if(!forName){flash('lMsg','Choose the employee who is on leave (In place of).',false);return;}
+  if(!name){flash('lMsg','Choose the substitute employee.',false);return;}
+  if(name===forName){flash('lMsg','Substitute and the employee on leave cannot be the same person.',false);return;}
+  if(!from){flash('lMsg','Choose the substitute from date.',false);return;}
+  if(to&&to<from){flash('lMsg','End date is before the start date.',false);return;}
+  const lv=ongoingLeaveOf(forName);
+  if(!lv){flash('lMsg',forName+' has no open leave record — mark them on leave first.',false);return;}
+  const rec={id:uid(),empName:name,type:'substitute',forEmp:forName,from,to:to||'',fromTime:'',toTime:'',
+    days:to?dayCount(from,to):'',client:lv.client||'',savedAt:new Date().toLocaleString()};
+  DB.dutyLeave.push(rec);persist();
+  sendRecord('DutyLeave',rec);
+  flash('lMsg','🤝 '+name+' added as substitute for '+forName+(rec.client?' at '+rec.client:'')+'.');
+  clear('lSubTo');
   renderAll();
 }
 /* ---- On-leave → join-duty → substitute flow ---- */
@@ -1935,9 +1999,10 @@ function dutyRow(r,list,withActions){
   const days=(open||subOpen)?liveLeaveDays(r):(r.days||'');
   const toTxt=open?'<span style="color:var(--red);font-weight:700;">on leave…</span>'
     :(subOpen?'<i style="color:var(--muted);">till join</i>':esc(r.to)||'');
-  const empTxt=esc(r.empName||'—')+(r.forEmp?` <span style="color:#7c3aed;font-size:.73rem;">for ${esc(r.forEmp)}</span>`:'');
+  /* substitute info lives in the TYPE column: badge + "for <employee>" */
+  const typeTxt=dutyTypeBadge(r)+(r.forEmp?`<div style="font-size:.7rem;color:#7c3aed;margin-top:3px;font-weight:600;">for ${esc(r.forEmp)}</div>`:'');
   const joinBtn=(withActions&&open)?`<button class="miniBtn green" onclick="openJoinDuty('${r.id}')" title="Close this leave — employee is back">🤝 Join duty</button> `:'';
-  return `<tr><td>${empTxt}</td><td>${dutyTypeBadge(r)}</td>
+  return `<tr><td>${esc(r.empName)||'—'}</td><td>${typeTxt}</td>
     <td>${esc(r.from)||''}${r.fromTime?' '+esc(r.fromTime):''}</td><td>${toTxt}${(!open&&r.toTime)?' '+esc(r.toTime):''}</td><td>${days}</td><td>${esc(r.client||r.note)||''}</td>
     <td style="white-space:nowrap;">${joinBtn}<button class="del" onclick="delRec('${list}','${r.id}')">✕</button></td></tr>`;
 }
@@ -1947,6 +2012,8 @@ function renderDuty(){
 }
 /* Live "On leave now" panel — join duty / add substitute from here */
 function renderOnLeave(){
+  /* keep the Leave-entry form's "in place of" + substitute dropdowns fresh */
+  if(val('lType')==='substitute'){fillForSel();filterSubEmpOptions();}
   const card=document.getElementById('onLeaveCard'),listEl=document.getElementById('onLeaveList');
   const open=DB.dutyLeave.filter(isOnLeaveRec);
   card.style.display=open.length?'':'none';
