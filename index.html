@@ -53,6 +53,7 @@
   .btn.primary:hover{background:var(--brand-dark);}
   .btn.green{background:var(--green); color:#fff;}
   .btn.red{background:var(--red); color:#fff;}
+  .btn.amber{background:var(--amber); color:#fff;}
   .btn.ghost{background:var(--soft); color:var(--brand-dark);}
   .btn:disabled{opacity:.55; cursor:not-allowed;}
   .msg{font-size:.82rem; font-weight:600;}
@@ -190,6 +191,10 @@
   </div>
   <div class="card">
     <h2>Employee list</h2>
+    <div class="hint">Only active employees are listed below. Employees whose duty has ended are hidden from every list — but their records, salary history and invoices are all kept. Tick “Show ended” to view or re-activate them.</div>
+    <label style="font-size:.83rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer; margin-bottom:10px;">
+      <input type="checkbox" id="showEnded" style="width:16px;height:16px;" onchange="renderEmployees()"> Show ended employees
+    </label>
     <div class="tableWrap"><table id="empTable">
       <thead><tr><th>Name</th><th>Phone</th><th>Wage</th><th>Duty</th><th>Joined</th><th>Client name</th><th></th></tr></thead>
       <tbody></tbody>
@@ -433,8 +438,13 @@
       <div class="field"><label>Monthly deal amount (₹)</label><input id="cbDeal" type="number" min="0" placeholder="Auto from last payment — edit if needed"></div>
       <div class="field"><label>Service from</label><input id="cbFrom" type="date"></div>
       <div class="field"><label>Service to</label><input id="cbTo" type="date"></div>
+      <div class="field"><label>Employee (to end that employee's duty)</label><select id="cbEmpSel" class="empSelect"></select></div>
     </div>
-    <div class="actions"><button class="btn primary" onclick="calcClientBill()">🧮 Calculate client bill</button></div>
+    <div class="actions">
+      <button class="btn primary" onclick="calcClientBill()">🧮 Calculate client bill</button>
+      <button class="btn amber" onclick="endEmployeeDuty()">⏹ End employee duty</button>
+      <button class="btn red" onclick="endClientDuty()">🛑 End client duty</button>
+    </div>
     <div class="resultBox" id="cbResult" style="display:none;"></div>
     <div class="actions" id="cbSaveRow" style="display:none;">
       <button class="btn green" onclick="fillMoneyFromClientBill()">💰 Take this to Money Entry</button>
@@ -1523,22 +1533,89 @@ function renderPLTable(){
   if(!months.size)tb.innerHTML='<tr><td colspan="6" style="color:var(--muted);">No dated money entries yet.</td></tr>';
 }
 
+/* ================= END DUTY (active / ended) ================= */
+/* "End duty" is saved as a normal Duty/Leave record of type
+   'endEmployeeDuty' or 'endClientDuty'. Those records already sync to the
+   Google Sheet in the existing DutyLeave tab, so NO change to the Apps Script
+   is needed — and the ended state survives refresh, auto-load from Sheet, and
+   other devices. Nothing is ever deleted: the records, salary history,
+   invoices and accounts are all left untouched. */
+function endedState(){
+  const endedClients={},endedEmployees={};
+  DB.dutyLeave.forEach(r=>{
+    const date=r.to||r.from||'';
+    if(r.type==='endClientDuty'&&r.client)endedClients[String(r.client).trim().toLowerCase()]=date;
+    if(r.type==='endEmployeeDuty'&&r.empName)endedEmployees[String(r.empName).trim().toLowerCase()]=date;
+  });
+  return {endedClients,endedEmployees};
+}
+function isClientEnded(name){return !!endedState().endedClients[String(name||'').trim().toLowerCase()];}
+function isEmployeeEnded(e){
+  if(!e)return false;
+  const {endedClients,endedEmployees}=endedState();
+  if(endedEmployees[String(e.name||'').trim().toLowerCase()])return true;
+  if(e.client&&endedClients[String(e.client).trim().toLowerCase()])return true;
+  return false;
+}
+function activeEmployees(){return DB.employees.filter(e=>e.name&&!isEmployeeEnded(e));}
+function endEmployeeDuty(){
+  const empName=val('cbEmpSel');
+  if(!empName){toast('Choose an employee first to end their duty.');return;}
+  const emp=DB.employees.find(e=>e.name===empName);
+  const client=(emp&&emp.client)||val('cbClient')||'';
+  if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime by deleting the "End employee duty" row in Duty & Leave records.'))return;
+  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,savedAt:new Date().toLocaleString()};
+  DB.dutyLeave.push(rec);persist();
+  sendRecord('DutyLeave',rec);
+  renderAll();toast('⏹ Employee duty ended — '+empName);
+}
+function endClientDuty(){
+  const client=val('cbClient');
+  if(!client){toast('Choose a client first to end their duty.');return;}
+  const emps=DB.employees.filter(e=>e.client&&String(e.client).trim().toLowerCase()===client.trim().toLowerCase());
+  const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name).join('\n• ')):'';
+  if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" row in Duty & Leave records.'))return;
+  const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,savedAt:new Date().toLocaleString()};
+  DB.dutyLeave.push(rec);persist();
+  sendRecord('DutyLeave',rec);
+  renderAll();toast('🛑 Client duty ended — '+client);
+}
+function reactivateEmployee(id){
+  const e=DB.employees.find(x=>x.id===id);
+  if(!e)return;
+  const key=String(e.name||'').trim().toLowerCase();
+  if(!confirm('Re-activate employee "'+e.name+'"?'))return;
+  DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key));
+  persist();renderAll();
+  if(DB.scriptUrl){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
+  else toast('↩ Employee re-activated.');
+}
+function dutyTypeBadge(r){
+  if(r.type==='duty')return '<span class="badge green">DUTY</span>';
+  if(r.type==='leave')return '<span class="badge red">LEAVE</span>';
+  if(r.type==='endEmployeeDuty')return '<span class="badge amber">END EMPLOYEE DUTY</span>';
+  if(r.type==='endClientDuty')return '<span class="badge red">END CLIENT DUTY</span>';
+  return '<span class="badge">'+esc(String(r.type||'').toUpperCase())+'</span>';
+}
+
 /* ================= RENDER ================= */
 function val(id){return document.getElementById(id).value.trim();}
 function clear(...ids){ids.forEach(i=>document.getElementById(i).value='');}
 function fillEmpSelects(){
+  const actives=activeEmployees();
   document.querySelectorAll('.empSelect').forEach(sel=>{
     const cur=sel.value;
-    sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name).map(e=>`<option>${esc(e.name)}</option>`).join('');
-    sel.value=cur;
+    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option>${esc(e.name)}</option>`).join('');
+    sel.value=[...sel.options].some(o=>o.value===cur)?cur:'';
   });
-  // Build the full client list from every source (employees, receipts, duty/leave).
-  // The Money Entry client field is an editable text input with a datalist; the
-  // client billing calculator uses a real <select>, both populated from this list.
+  // Build the ACTIVE client list from every source (employees, receipts, duty/leave),
+  // excluding any client whose duty has ended. The Money Entry client field is an
+  // editable text input with a datalist; the client billing calculator uses a real
+  // <select>, both populated from this list.
   const clientNames=new Set();
-  DB.employees.forEach(e=>{if(e.client&&e.client.trim())clientNames.add(e.client.trim());});
-  DB.receipts.forEach(r=>{if(r.client&&r.client.trim())clientNames.add(r.client.trim());});
-  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim())clientNames.add(r.client.trim());});
+  DB.employees.forEach(e=>{if(e.client&&e.client.trim()&&!isClientEnded(e.client))clientNames.add(e.client.trim());});
+  DB.receipts.forEach(r=>{if(r.client&&r.client.trim()&&!isClientEnded(r.client))clientNames.add(r.client.trim());});
+  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim()&&r.type!=='endClientDuty'&&!isClientEnded(r.client))clientNames.add(r.client.trim());});
   const clientOptions=[...clientNames].sort((a,b)=>a.localeCompare(b));
   document.querySelectorAll('.clientSelect').forEach(sel=>{
     if(sel.tagName!=='SELECT')return;
@@ -1560,16 +1637,19 @@ function delRec(list,id){
 }
 function renderEmployees(){
   const tb=document.querySelector('#empTable tbody');tb.innerHTML='';
-  DB.employees.forEach(e=>{
-    tb.insertAdjacentHTML('beforeend',`<tr><td><b>${esc(e.name)||'—'}</b></td><td>${esc(e.phone)||''}</td>
+  const showEnded=document.getElementById('showEnded').checked;
+  const rows=DB.employees.filter(e=>showEnded||!isEmployeeEnded(e));
+  rows.forEach(e=>{
+    const ended=isEmployeeEnded(e);
+    tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
       <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):''):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
-      <td><button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
+      <td style="white-space:nowrap;">${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
-  if(!DB.employees.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
+  if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }
 function dutyRow(r,list){
-  return `<tr><td>${esc(r.empName)||'—'}</td><td><span class="badge ${r.type==='duty'?'green':'red'}">${r.type.toUpperCase()}</span></td>
+  return `<tr><td>${esc(r.empName)||'—'}</td><td>${dutyTypeBadge(r)}</td>
     <td>${esc(r.from)||''}${r.fromTime?' '+esc(r.fromTime):''}</td><td>${esc(r.to)||''}${r.toTime?' '+esc(r.toTime):''}</td><td>${r.days||''}</td><td>${esc(r.client||r.note)||''}</td>
     <td><button class="del" onclick="delRec('${list}','${r.id}')">✕</button></td></tr>`;
 }
@@ -1593,7 +1673,7 @@ function renderRecords(){
 function renderDash(){
   const ym=todayStr().slice(0,7);
   const {inn,out,exp,profit}=plForMonth(ym);
-  document.getElementById('dEmp').textContent=DB.employees.length;
+  document.getElementById('dEmp').textContent=activeEmployees().length;
   document.getElementById('dIn').textContent=fmt(inn);
   document.getElementById('dOut').textContent=fmt(out+exp);
   const pr=document.getElementById('dPr');pr.textContent=fmt(profit);pr.className='val '+(profit>=0?'pos':'neg');
@@ -1602,7 +1682,7 @@ function renderDash(){
   DB.receipts.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge green">IN</span>',det:'Client: '+esc(r.client||'—')+(r.empName?' ('+esc(r.empName)+')':''),amt:r.amount,cls:'pos'}));
   DB.payments.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge red">OUT</span>',det:'Paid '+esc(r.empName||'—')+(r.payType?' • '+esc(r.payType):''),amt:r.amount,cls:'neg'}));
   DB.expenses.forEach(r=>rows.push({d:r.date||r.savedAt,type:'<span class="badge amber">EXP</span>',det:esc(r.item||'—'),amt:r.amount,cls:'neg'}));
-  DB.dutyLeave.forEach(r=>rows.push({d:r.from||r.savedAt,type:`<span class="badge ${r.type==='duty'?'blue':'red'}">${r.type.toUpperCase()}</span>`,det:esc(r.empName||'—')+(r.client?' @ '+esc(r.client):'')+' '+esc(r.from||'')+' → '+esc(r.to||''),amt:'',cls:''}));
+  DB.dutyLeave.forEach(r=>rows.push({d:r.to||r.from||r.savedAt,type:dutyTypeBadge(r),det:esc(r.empName||r.client||'—')+(r.client&&r.empName?' @ '+esc(r.client):'')+(r.type==='endClientDuty'||r.type==='endEmployeeDuty'?' (ended '+esc(r.to||'')+')':' ('+esc(r.from||'')+' → '+esc(r.to||'')+')'),amt:'',cls:''}));
   rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
