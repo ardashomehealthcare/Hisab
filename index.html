@@ -237,7 +237,8 @@
         </select>
       </div>
       <div class="field" id="lForField" style="display:none;"><label>In place of (on leave)</label><select id="lForSel" onchange="onForEmpChange()"></select></div>
-      <div class="field"><label id="lEmpLbl">Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
+      <div class="field" id="lEmpField"><label id="lEmpLbl">Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
+      <div class="field" id="lSubNameField" style="display:none;"><label>Substitute employee (type name)</label><input id="lSubName" placeholder="Type any name — new / temporary person OK" oninput="updSubNameHint()"><div class="hint" id="lSubNameHint" style="margin:5px 0 0;"></div></div>
       <div class="field"><label id="lFromLbl">Leave start date</label><input id="lFrom" type="date"></div>
       <div id="lTimeFields" style="display:none;">
         <div class="field"><label>Leave start time (24-hr duty)</label><input id="lFromT" type="time"></div>
@@ -795,13 +796,15 @@ function onLeaveTypeChange(){
   const sub=val('lType')==='substitute';
   document.getElementById('lForField').style.display=sub?'':'none';
   document.getElementById('lSubToField').style.display=sub?'':'none';
-  document.getElementById('lEmpLbl').textContent=sub?'Substitute employee':'Employee';
+  document.getElementById('lEmpField').style.display=sub?'none':'';
+  document.getElementById('lSubNameField').style.display=sub?'':'none';
+  document.getElementById('lEmpLbl').textContent='Employee';
   document.getElementById('lFromLbl').textContent=sub?'Substitute from date':'Leave start date';
   const b=document.getElementById('lBtn');
   b.textContent=sub?'✔ Add substitute':'✔ Employee is on leave';
   b.className=sub?'btn primary':'btn red';
   document.getElementById('lTimeFields').style.display='none';
-  if(sub){fillForSel();filterSubEmpOptions();}
+  if(sub)fillForSel();
   else onLeaveEmpChange();
 }
 /* Fill the "in place of" dropdown with employees currently on leave */
@@ -813,25 +816,32 @@ function fillForSel(){
   sel.value=(cur&&[...sel.options].some(o=>o.value===cur))?cur:(open.length===1?open[0].empName:'');
   onForEmpChange();
 }
-/* Keep the substitute list clean: remove the person who is on leave */
-function filterSubEmpOptions(){
-  const sel=document.getElementById('lEmpSel');
-  const forName=val('lForSel');
-  [...sel.options].forEach(o=>{if(o.value===forName)o.remove();});
-}
 function onForEmpChange(){
   const sel=document.getElementById('lForSel');
   const lv=ongoingLeaveOf(sel.value);
   /* default the from date to the leave start, but only when the choice changes
      (so a manually edited date survives re-renders) */
   if(lv&&sel.dataset.lastFor!==sel.value){document.getElementById('lFrom').value=lv.from;sel.dataset.lastFor=sel.value;}
-  filterSubEmpOptions();
 }
-/* Add a substitute straight from the Leave entry form */
+/* Case-insensitive employee lookup (typed names like “ramesh” still match “Ramesh”) */
+function findEmpByName(name){const k=String(name||'').trim().toLowerCase();return DB.employees.find(e=>String(e.name||'').trim().toLowerCase()===k);}
+/* Live hint under the manually typed substitute name */
+function updSubNameHint(){
+  const h=document.getElementById('lSubNameHint');
+  const name=val('lSubName');
+  if(!name){h.innerHTML='';return;}
+  const e=findEmpByName(name);
+  h.innerHTML=e
+    ?`✅ <b>${esc(e.name)}</b>${e.client?' • at '+esc(e.client):''}${e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):''}${e.dutyHours?' • '+esc(e.dutyHours)+' hr duty':''}`
+    :`ℹ <b>${esc(name)}</b> is not in the Employees tab — they will still be recorded as the substitute. Add them in Employees (any time, same name) and their salary is calculated automatically at Join duty.`;
+}
+/* Add a substitute straight from the Leave entry form — name typed manually */
 function saveSubstituteForm(){
-  const forName=val('lForSel'),name=val('lEmpSel'),from=val('lFrom'),to=val('lSubTo');
+  const forName=val('lForSel'),typed=val('lSubName'),from=val('lFrom'),to=val('lSubTo');
+  const emp=findEmpByName(typed);
+  const name=emp?emp.name:typed;
   if(!forName){flash('lMsg','Choose the employee who is on leave (In place of).',false);return;}
-  if(!name){flash('lMsg','Choose the substitute employee.',false);return;}
+  if(!name){flash('lMsg','Type the substitute employee\u2019s name.',false);return;}
   if(name===forName){flash('lMsg','Substitute and the employee on leave cannot be the same person.',false);return;}
   if(!from){flash('lMsg','Choose the substitute from date.',false);return;}
   if(to&&to<from){flash('lMsg','End date is before the start date.',false);return;}
@@ -842,7 +852,8 @@ function saveSubstituteForm(){
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   flash('lMsg','🤝 '+name+' added as substitute for '+forName+(rec.client?' at '+rec.client:'')+'.');
-  clear('lSubTo');
+  clear('lSubTo','lSubName');
+  document.getElementById('lSubNameHint').innerHTML='';
   renderAll();
 }
 /* ---- On-leave → join-duty → substitute flow ---- */
@@ -1006,8 +1017,8 @@ function recordSubPayments(){
   persist();closeDlg();renderAll();
   toast(n?'💸 Substitute salary '+fmt(total)+' recorded as paid ('+mode+').':'No payment recorded.');
 }
-/* ---------- Add substitute dialog ---------- */
-/* Status note for the substitute dropdown — everyone stays selectable, tagged */
+/* ---------- Add substitute dialog (name typed manually — any person works) ---------- */
+/* Status note shown when the typed name matches an employee */
 function subOptionTag(e,exceptLeaveOf){
   const lv=DB.dutyLeave.find(x=>isOnLeaveRec(x)&&x.empName===e.name);
   if(lv)return '⚠ on leave since '+lv.from;
@@ -1017,12 +1028,11 @@ function subOptionTag(e,exceptLeaveOf){
 }
 function openAddSub(id){
   const r=DB.dutyLeave.find(x=>x.id===id);if(!r)return;
-  const others=activeEmployees().filter(e=>e.name!==r.empName);
   dlgCtx={kind:'sub',id};
   document.getElementById('dlgTitle').innerHTML='➕ Add substitute — in place of '+esc(r.empName);
-  document.getElementById('dlgHint').innerHTML='Who will cover the duty while <b>'+esc(r.empName)+'</b> is on leave? The substitute\u2019s days count in the substitute\u2019s own salary.';
+  document.getElementById('dlgHint').innerHTML='Type the name of the person covering for <b>'+esc(r.empName)+'</b>. New / temporary names are fine — if they\u2019re in your Employees list, their wage is used for the salary calculation.';
   document.getElementById('dlgBody').innerHTML=`
-    <div class="field"><label>Substitute employee</label><select id="subSel" onchange="updSubInfo()"><option value="">— select employee —</option>${others.map(e=>{const t=subOptionTag(e,r.empName);return `<option value="${esc(e.name)}">${esc(e.name)}${t?' — '+esc(t):''}</option>`;}).join('')}</select></div>
+    <div class="field"><label>Substitute employee (type name)</label><input id="subSel" placeholder="Type any name — new / temporary person OK" oninput="updSubInfo()" autocomplete="off"></div>
     <div class="dlgInfo" id="subInfo" style="display:none;"></div>
     <div class="grid">
       <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}"></div>
@@ -1032,19 +1042,19 @@ function openAddSub(id){
       <button class="btn primary" onclick="confirmAddSub()">✔ Add substitute</button>
       <button class="btn ghost" onclick="closeDlg()">Cancel</button>
     </div>`;
-  const info=document.getElementById('subInfo');
-  if(!others.length){
-    info.style.display='';
-    info.innerHTML='⚠ No other employee in your list yet — close this and add one in the <b>Employees</b> tab first, then come back.';
-  }
   showDlg();
 }
 function updSubInfo(){
-  const name=val('subSel'),info=document.getElementById('subInfo');
-  const e=DB.employees.find(x=>x.name===name);
-  if(!e){info.style.display='none';return;}
+  const typed=val('subSel'),info=document.getElementById('subInfo');
+  if(!typed){info.style.display='none';return;}
+  const e=findEmpByName(typed);
   info.style.display='';
-  const tag=subOptionTag(e,dlgCtx?DB.dutyLeave.find(x=>x.id===dlgCtx.id)?.empName:'');
+  if(!e){
+    info.innerHTML='ℹ <b>'+esc(typed)+'</b> is not in the Employees tab — they will still be recorded. Add them in Employees (same name) for automatic salary calculation.';
+    return;
+  }
+  const leaveOf=dlgCtx?DB.dutyLeave.find(x=>x.id===dlgCtx.id):null;
+  const tag=subOptionTag(e,leaveOf?leaveOf.empName:'');
   info.innerHTML='<b>'+esc(e.name)+'</b>'
     +(e.client?' • normally at '+esc(e.client):'')
     +(e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):'')
@@ -1054,13 +1064,15 @@ function updSubInfo(){
 function confirmAddSub(){
   if(!dlgCtx||dlgCtx.kind!=='sub')return;
   const r=DB.dutyLeave.find(x=>x.id===dlgCtx.id);if(!r)return;
-  const name=val('subSel'),from=val('subFrom'),to=val('subTo');
-  if(!name){toast('Choose the substitute employee.');return;}
+  const typed=val('subSel'),from=val('subFrom'),to=val('subTo');
+  const emp=findEmpByName(typed);
+  const name=emp?emp.name:typed;
+  if(!name){toast('Type the substitute employee\u2019s name.');return;}
+  if(name===r.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
   if(!from){toast('Choose the substitute from date.');return;}
   if(to&&to<from){toast('Substitute end date is before its start date.');return;}
-  const leaveEmp=DB.employees.find(e=>e.name===r.empName);
   const rec={id:uid(),empName:name,type:'substitute',forEmp:r.empName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?dayCount(from,to):'',client:r.client||(leaveEmp&&leaveEmp.client)||'',savedAt:new Date().toLocaleString()};
+    days:to?dayCount(from,to):'',client:r.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   closeDlg();
@@ -2012,8 +2024,8 @@ function renderDuty(){
 }
 /* Live "On leave now" panel — join duty / add substitute from here */
 function renderOnLeave(){
-  /* keep the Leave-entry form's "in place of" + substitute dropdowns fresh */
-  if(val('lType')==='substitute'){fillForSel();filterSubEmpOptions();}
+  /* keep the Leave-entry form's "in place of" dropdown fresh */
+  if(val('lType')==='substitute')fillForSel();
   const card=document.getElementById('onLeaveCard'),listEl=document.getElementById('onLeaveList');
   const open=DB.dutyLeave.filter(isOnLeaveRec);
   card.style.display=open.length?'':'none';
