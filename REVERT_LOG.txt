@@ -1,0 +1,9 @@
+Reverting PR #15 and PR #14
+
+PR #15: Fix end-duty resurrecting an employee on refresh
+Merge commit: 8c083ff0a9fc58e66400ea76d10d409d8c6983be
+
+PR #14: Add End employee duty / End client duty to client billing calculator
+Merge commit: afcbfc01d33a9afc3c81b4f68f4c7089ceacd163
+
+Reverting to commit: 2c080ed0881d964f5de29e0d7b120a3367e78be6
