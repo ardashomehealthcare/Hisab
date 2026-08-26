@@ -543,7 +543,6 @@
       <li>Google will ask permission — click <b>Authorize</b>, choose your account, click <b>Advanced → Go to project (unsafe)</b> → <b>Allow</b>. (It's your own script, this is safe.)</li>
       <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>) and paste it in the box above → <b>Save &amp; test connection</b>.</li>
       <li>Press <b>Send all saved data to Sheet</b> once. Done — from now on every submit goes to the sheet automatically.</li>
-      <li>Already deployed? After updating <code>google-apps-script.gs</code>, paste it again in Apps Script, then <b>Deploy → Manage deployments → Edit (pencil) → New version</b>. That stops End duty from adding a second employee row.</li>
     </ol>
   </div>
 </section>
@@ -561,43 +560,8 @@ const KEY='hisabData_v1';
 let DB=load();
 if(BUILT_IN_SCRIPT_URL)DB.scriptUrl=BUILT_IN_SCRIPT_URL;
 function load(){
-  try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees){d.clients=d.clients||[];return normalizeDB(d);}}catch(e){}
+  try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees){d.clients=d.clients||[];return d;}}catch(e){}
   return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[],clients:[],scriptUrl:''};
-}
-/* A date field is "set" only when it has a real value. Empty cells, spaces,
-   and Sheets' 1899 time-only leftover must not count as an end-duty date. */
-function isEndedDate(v){
-  const s=String(v??'').trim();
-  return !!(s&&!/^1899-/.test(s));
-}
-/* Later row wins. dutyEndDate / endDate take the later value even when empty
-   (so Restore duty is not overwritten by an older ended row). */
-function mergeRec(prev,next){
-  const out=Object.assign({},prev);
-  Object.keys(next||{}).forEach(k=>{
-    const v=next[k];
-    if(k==='dutyEndDate'||k==='endDate')out[k]=v;
-    else if(v!==''&&v!=null)out[k]=v;
-  });
-  return out;
-}
-/* Collapse duplicate ids (same employee written twice to the Sheet). */
-function dedupeById(rows){
-  const map=new Map();
-  let orphan=0;
-  (rows||[]).forEach(r=>{
-    const id=String(r&&r.id||'').trim();
-    const key=id||('__noid_'+(orphan++));
-    const prev=map.get(key);
-    map.set(key,prev?mergeRec(prev,r):r);
-  });
-  return [...map.values()];
-}
-function normalizeDB(d){
-  ['employees','dutyLeave','payments','receipts','expenses','clients'].forEach(k=>{
-    if(Array.isArray(d[k]))d[k]=dedupeById(d[k]);
-  });
-  return d;
 }
 function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
 function importBackup(inp){
@@ -695,19 +659,12 @@ async function fetchSheetData(){
 }
 function applySheetData(fresh,keepUnsynced){
   ['employees','dutyLeave','payments','receipts','expenses','clients'].forEach(k=>{
-    const rows=dedupeById(fresh[k]||[]);
+    const rows=fresh[k];
     if(keepUnsynced){
-      const byId=new Map(rows.map(r=>[String(r.id),r]));
-      (DB[k]||[]).forEach(r=>{
-        if(!r.synced&&r.id){
-          const id=String(r.id);
-          const sheetRow=byId.get(id);
-          if(!sheetRow)rows.push(r);
-          else Object.assign(sheetRow,r); // local unsynced edit is newer (e.g. just ended duty)
-        }
-      });
+      const ids=new Set(rows.map(r=>String(r.id)));
+      (DB[k]||[]).forEach(r=>{if(!r.synced&&r.id&&!ids.has(String(r.id)))rows.push(r);});
     }
-    DB[k]=dedupeById(rows);
+    DB[k]=rows;
   });
   persist();renderAll();
 }
@@ -1409,7 +1366,11 @@ function openPayInvoiceFromRecord(id){
     no:r.invoiceNo||nextPayInvoiceNo(),
     date:r.date||todayStr(),
     name:r.empName,
-    periol
+    period:(r.periodFrom||'—')+' → '+(r.periodTo||'—'),
+    detailsHtml,
+    salary:d.salary||null,
+    paid:Number(r.amount||0),
+    bal:(r.balance!==undefined&&r.balance!==null&&String(r.balance).trim()!=='')?Number(r.balance):null
   };
   payInvImg=getPayImg(r.id);
   document.getElementById('piMode').value=r.mode||'';
@@ -1569,10 +1530,10 @@ function fillMoneyFromClientBill(){
 /* ================= END DUTY (EMPLOYEE / CLIENT) ================= */
 /* An employee is "on duty" until dutyEndDate is set.
    A client is "on duty" unless their name appears in DB.clients with an endDate. */
-const isEmpActive=e=>!isEndedDate(e&&e.dutyEndDate);
+const isEmpActive=e=>!e.dutyEndDate;
 function endedClientKeys(){
   const s=new Set();
-  (DB.clients||[]).forEach(c=>{if(isEndedDate(c.endDate))s.add(String(c.name||'').trim().toLowerCase());});
+  (DB.clients||[]).forEach(c=>{if(c.endDate)s.add(String(c.name||'').trim().toLowerCase());});
   return s;
 }
 function isClientActive(name){
@@ -1614,7 +1575,7 @@ function endEmployeeDuty(name){
   name=(name||'').trim()||val('endEmpSel');
   const emp=DB.employees.find(e=>e.name===name);
   if(!emp){flash('edMsg','Choose an active employee first.',false);return;}
-  if(isEndedDate(emp.dutyEndDate)){flash('edMsg','Duty for '+emp.name+' is already ended.',false);return;}
+  if(emp.dutyEndDate){flash('edMsg','Duty for '+emp.name+' is already ended.',false);return;}
   if(!confirm('End duty of employee "'+emp.name+'" from today ('+todayStr()+')? They will stop appearing in every active dropdown list.'))return;
   emp.dutyEndDate=todayStr();emp.savedAt=new Date().toLocaleString();emp.synced=false;
   persist();flash('edMsg','✅ Duty ended for '+emp.name+' — '+emp.dutyEndDate+'.');
@@ -1703,7 +1664,7 @@ function renderActiveDuty(){
   at.innerHTML=rows.join('')||'<tr><td colspan="5" style="color:var(--muted);">No active duties right now.</td></tr>';
 
   const erows=[];
-  (DB.clients||[]).filter(c=>isEndedDate(c.endDate))
+  (DB.clients||[]).filter(c=>c.endDate)
     .sort((a,b)=>String(b.endDate).localeCompare(String(a.endDate)))
     .forEach(c=>{
       erows.push(`<tr data-kind="client" data-name="${esc(c.name)}">
@@ -1711,7 +1672,7 @@ function renderActiveDuty(){
         <td><button class="btn ghost" style="padding:5px 11px;font-size:.78rem;" onclick="restoreDutyFromRow(this)">↩ Restore</button></td>
       </tr>`);
     });
-  DB.employees.filter(e=>isEndedDate(e.dutyEndDate))
+  DB.employees.filter(e=>e.dutyEndDate)
     .sort((a,b)=>String(b.dutyEndDate).localeCompare(String(a.dutyEndDate)))
     .forEach(e=>{
       erows.push(`<tr data-kind="employee" data-name="${esc(e.name)}">
@@ -1763,7 +1724,7 @@ function fillEmpSelects(){
   // Only ACTIVE employees (duty not ended) appear in any employee dropdown.
   document.querySelectorAll('.empSelect').forEach(sel=>{
     const cur=sel.value;
-    sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name&&isEmpActive(e)).map(e=>`<option>${esc(e.name)}</option>`).join('');
+    sel.innerHTML='<option value="">— select employee —</option>'+DB.employees.filter(e=>e.name&&!e.dutyEndDate).map(e=>`<option>${esc(e.name)}</option>`).join('');
     sel.value=cur;
   });
   // Build the full client list from every source (employees, receipts, duty/leave),
@@ -1795,8 +1756,8 @@ function delRec(list,id){
 }
 function renderEmployees(){
   const tb=document.querySelector('#empTable tbody');tb.innerHTML='';
-  [...DB.employees].sort((a,b)=>Number(isEndedDate(a.dutyEndDate))-Number(isEndedDate(b.dutyEndDate))).forEach(e=>{
-    const ended=isEndedDate(e.dutyEndDate)?' <span class="badge red">Ended '+esc(e.dutyEndDate)+'</span>':'';
+  [...DB.employees].sort((a,b)=>(!!a.dutyEndDate)-(!!b.dutyEndDate)).forEach(e=>{
+    const ended=e.dutyEndDate?' <span class="badge red">Ended '+esc(e.dutyEndDate)+'</span>':'';
     tb.insertAdjacentHTML('beforeend',`<tr><td><b>${esc(e.name)||'—'}</b>${ended}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
       <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):''):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
@@ -1860,14 +1821,6 @@ if(BUILT_IN_SCRIPT_URL){
 }
 document.getElementById('sTo').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
-document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
-document.getElementById('cbTo').value=todayStr();
-updateSheetStatus();renderAll();
-autoLoadFromSheet();
-</script>
-</body>
-</html>
-;
 document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
 updateSheetStatus();renderAll();
