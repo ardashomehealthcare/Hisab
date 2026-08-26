@@ -30,8 +30,6 @@ The Apps Script is already locked to spreadsheet ID `1VV5TZyNEpBHS6gnaBU7XujuBdt
 5. Copy the **Web app URL** (ends in `/exec`).
 6. In the app → **Google Sheet** tab → paste the URL → **Save & test connection** → **Send all saved data to Sheet**.
 
-If the script was already deployed, paste the updated `google-apps-script.gs` and use **Deploy → Manage deployments → Edit → New version**. Older versions appended a second Employees row on End duty; the next refresh then showed that person as active again and the employee count went up by 1.
-
 The script auto-creates tabs: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab.
 
 To use the same data on a second phone/computer: just open the app there — it now **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records).
