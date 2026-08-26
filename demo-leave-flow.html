@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hisab — Demo: On leave → Substitute → Join duty</title>
+  <style>
+    body{font-family:"Segoe UI",system-ui,Arial,sans-serif;background:#f4f6fb;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;color:#1d2433;text-align:center;}
+    .box{background:#fff;border:1px solid #e3e8f2;border-radius:14px;padding:28px 32px;max-width:440px;box-shadow:0 1px 3px rgba(20,40,80,.06);}
+    h1{font-size:1.1rem;margin:0 0 8px;} p{font-size:.88rem;color:#68738a;line-height:1.6;margin:0 0 14px;}
+    a.btn{display:inline-block;background:#1f6feb;color:#fff;text-decoration:none;font-weight:700;padding:10px 20px;border-radius:9px;font-size:.9rem;}
+  </style>
+</head>
+<body>
+<div class="box">
+  <h1>🧪 Loading demo data…</h1>
+  <p>Sample employees with one employee <b>on leave</b> and a <b>substitute</b> already covering.
+     Opening the app now.</p>
+  <a class="btn" href="index.html">Open Hisab →</a>
+</div>
+<script>
+/* Seeds a small demo dataset (only when this device has no data yet), then opens the app.
+   Suresh is ON LEAVE (open leave, 24-hr duty) with Ramesh covering as substitute. */
+(function(){
+  function d(n){var x=new Date();x.setDate(x.getDate()+n);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
+  function firstOfMonth(n){var x=new Date();x.setDate(1);x.setMonth(x.getMonth()+n);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-01';}
+  var KEY='hisabData_v1';
+  var existing=null;
+  try{existing=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){}
+  if(existing&&existing.employees&&existing.employees.length){
+    location.replace('index.html');return;   // keep whatever data is already on this device
+  }
+  var DB={
+    scriptUrl:'',
+    employees:[
+      {id:'e1',name:'Suresh Kumar',phone:'98765 43210',wageType:'monthly',wageAmount:18000,dutyHours:'24',dutyTime:'08:00',joinDate:firstOfMonth(-1),client:'Sharma House',savedAt:'demo'},
+      {id:'e2',name:'Ramesh Yadav',phone:'98111 22334',wageType:'monthly',wageAmount:15000,dutyHours:'24',dutyTime:'08:00',joinDate:firstOfMonth(-1),client:'Mehta House',savedAt:'demo'},
+      {id:'e3',name:'Kishor Das',phone:'99887 66554',wageType:'daily',wageAmount:700,dutyHours:'12',dutyTime:'',joinDate:firstOfMonth(-1),client:'Kapoor House',savedAt:'demo'}
+    ],
+    dutyLeave:[
+      {id:'dl1',empName:'Kishor Das',type:'leave',from:d(-12),fromTime:'',to:d(-11),toTime:'',days:2,client:'Kapoor House',savedAt:'demo'},
+      {id:'dl2',empName:'Suresh Kumar',type:'leave',from:d(-2),fromTime:'08:00',to:'',toTime:'',days:'',client:'Sharma House',savedAt:'demo'},
+      {id:'dl3',empName:'Ramesh Yadav',type:'substitute',forEmp:'Suresh Kumar',from:d(-2),fromTime:'',to:'',toTime:'',days:'',client:'Sharma House',savedAt:'demo'}
+    ],
+    payments:[
+      {id:'p1',empName:'Suresh Kumar',date:firstOfMonth(0),amount:18000,payType:'Salary - '+firstOfMonth(-1)+' to '+d(-1),mode:'Cash',savedAt:'demo'}
+    ],
+    receipts:[
+      {id:'r1',client:'Sharma House',date:d(-15),amount:18000,empName:'Suresh Kumar',mode:'UPI',clientAddress:'12, Model Town, Ludhiana',invoiceNo:'INV-0001',savedAt:'demo'}
+    ],
+    expenses:[
+      {id:'x1',item:'Travel to Sharma House',date:d(-10),amount:500,savedAt:'demo'}
+    ]
+  };
+  try{localStorage.setItem(KEY,JSON.stringify(DB));}catch(e){}
+  setTimeout(function(){location.replace('index.html');},400);
+})();
+</script>
+</body>
+</html>
