@@ -25,9 +25,10 @@
   function d(n){var x=new Date();x.setDate(x.getDate()+n);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');}
   function firstOfMonth(n){var x=new Date();x.setDate(1);x.setMonth(x.getMonth()+n);return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-01';}
   var KEY='hisabData_v1';
+  var RESET=/[?&]reset/.test(location.search);   // demo-leave-flow.html?reset = start fresh
   var existing=null;
   try{existing=JSON.parse(localStorage.getItem(KEY)||'null');}catch(e){}
-  if(existing&&existing.employees&&existing.employees.length){
+  if(existing&&existing.employees&&existing.employees.length&&!RESET){
     location.replace('index.html');return;   // keep whatever data is already on this device
   }
   var DB={

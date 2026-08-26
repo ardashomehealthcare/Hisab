@@ -943,15 +943,22 @@ function recordSubPayments(){
   toast(n?'💸 Substitute salary '+fmt(total)+' recorded as paid ('+mode+').':'No payment recorded.');
 }
 /* ---------- Add substitute dialog ---------- */
+/* Status note for the substitute dropdown — everyone stays selectable, tagged */
+function subOptionTag(e,exceptLeaveOf){
+  const lv=DB.dutyLeave.find(x=>isOnLeaveRec(x)&&x.empName===e.name);
+  if(lv)return '⚠ on leave since '+lv.from;
+  const cv=DB.dutyLeave.find(s=>s.type==='substitute'&&!s.to&&s.empName===e.name&&s.forEmp!==exceptLeaveOf);
+  if(cv)return 'already covering for '+cv.forEmp;
+  return '';
+}
 function openAddSub(id){
   const r=DB.dutyLeave.find(x=>x.id===id);if(!r)return;
-  const onLeaveNames=new Set(DB.dutyLeave.filter(isOnLeaveRec).map(x=>x.empName));
-  const opts=activeEmployees().filter(e=>e.name!==r.empName&&!onLeaveNames.has(e.name));
+  const others=activeEmployees().filter(e=>e.name!==r.empName);
   dlgCtx={kind:'sub',id};
   document.getElementById('dlgTitle').innerHTML='➕ Add substitute — in place of '+esc(r.empName);
   document.getElementById('dlgHint').innerHTML='Who will cover the duty while <b>'+esc(r.empName)+'</b> is on leave? The substitute\u2019s days count in the substitute\u2019s own salary.';
   document.getElementById('dlgBody').innerHTML=`
-    <div class="field"><label>Substitute employee</label><select id="subSel" onchange="updSubInfo()"><option value="">— select employee —</option>${opts.map(e=>`<option>${esc(e.name)}</option>`).join('')}</select></div>
+    <div class="field"><label>Substitute employee</label><select id="subSel" onchange="updSubInfo()"><option value="">— select employee —</option>${others.map(e=>{const t=subOptionTag(e,r.empName);return `<option value="${esc(e.name)}">${esc(e.name)}${t?' — '+esc(t):''}</option>`;}).join('')}</select></div>
     <div class="dlgInfo" id="subInfo" style="display:none;"></div>
     <div class="grid">
       <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}"></div>
@@ -962,7 +969,10 @@ function openAddSub(id){
       <button class="btn ghost" onclick="closeDlg()">Cancel</button>
     </div>`;
   const info=document.getElementById('subInfo');
-  if(!opts.length){info.style.display='';info.innerHTML='⚠ No other active employee available — add one in the Employees tab first.';}
+  if(!others.length){
+    info.style.display='';
+    info.innerHTML='⚠ No other employee in your list yet — close this and add one in the <b>Employees</b> tab first, then come back.';
+  }
   showDlg();
 }
 function updSubInfo(){
@@ -970,10 +980,12 @@ function updSubInfo(){
   const e=DB.employees.find(x=>x.name===name);
   if(!e){info.style.display='none';return;}
   info.style.display='';
+  const tag=subOptionTag(e,dlgCtx?DB.dutyLeave.find(x=>x.id===dlgCtx.id)?.empName:'');
   info.innerHTML='<b>'+esc(e.name)+'</b>'
     +(e.client?' • normally at '+esc(e.client):'')
     +(e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):'')
-    +(e.dutyHours?' • '+esc(e.dutyHours)+' hr duty'+(e.dutyTime?' from '+esc(e.dutyTime):''):'');
+    +(e.dutyHours?' • '+esc(e.dutyHours)+' hr duty'+(e.dutyTime?' from '+esc(e.dutyTime):''):'')
+    +(tag?'<br><span style="color:var(--amber);font-weight:600;">Note: '+esc(tag)+'</span>':'');
 }
 function confirmAddSub(){
   if(!dlgCtx||dlgCtx.kind!=='sub')return;
