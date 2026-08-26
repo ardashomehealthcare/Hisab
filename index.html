@@ -597,7 +597,7 @@ function importBackup(inp){
   rd.readAsText(f);
 }
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
-const todayStr=()=>new Date().toISOString().slice(0,10);
+const todayStr=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');};  // local calendar day (not UTC)
 const fmt=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
@@ -1318,13 +1318,28 @@ function shiftCount(fromStr,fromTime,toStr,toTime){
   }
   return dayCount(fromStr,toStr);
 }
-/* Starting "From" date: last salary payment date, or joining date for a new hire (no salary paid yet) */
+/* Starting "From" date: last salary payment date, or joining date for a new hire (no salary paid yet),
+   or the earliest duty/substitute record for manually-added substitutes with no employee record */
 function salaryFromDate(name,emp){
   const pays=DB.payments.filter(p=>p.empName===name&&p.date&&/salary/i.test(p.payType||''))
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   if(pays.length)return pays[0].date;             // existing employee → last salary paid
   if(emp&&emp.joinDate)return emp.joinDate;       // new hire → joining date
+  const first=DB.dutyLeave.filter(r=>r.empName===name&&r.from&&r.type!=='endEmployeeDuty'&&r.type!=='endClientDuty')
+    .sort((a,b)=>String(a.from).localeCompare(String(b.from)))[0];
+  if(first)return first.from;                     // substitute-only person → first recorded duty
   return '';                                      // unknown → let user pick manually
+}
+/* Quick action from the Salary Calculator: send a manually-added substitute's name
+   to the Employees form so their wage can be saved (then Calculate again) */
+function addSubstituteToEmployees(name){
+  showTab('emp');
+  document.getElementById('eName').value=name;
+  const first=DB.dutyLeave.filter(r=>r.empName===name&&r.from&&r.type==='substitute')
+    .sort((a,b)=>String(a.from).localeCompare(String(b.from)))[0];
+  if(first&&!document.getElementById('eJoin').value)document.getElementById('eJoin').value=first.from;
+  document.getElementById('eName').focus();
+  toast('Enter the wage details and submit — then come back and Calculate again.');
 }
 /* Toggle 24-hr time fields + auto-fill From date when employee changes in salary calc */
 function onSalaryEmpChange(){
@@ -1508,7 +1523,9 @@ function calcSalary(){
       ${emp?`${emp.phone?`📞 ${esc(emp.phone)} &nbsp;`:''}Wage: <b>${fmt(emp.wageAmount)} ${emp.wageType==='monthly'?'/ month':emp.wageType==='daily'?'/ day':''}</b>
       ${emp.dutyHours?` &nbsp;•&nbsp; Duty: <b>${esc(emp.dutyHours)} hr${emp.dutyTime?' from '+esc(emp.dutyTime):''}</b>`:''}
       ${emp.joinDate?` &nbsp;•&nbsp; Joined: <b>${esc(emp.joinDate)}</b>`:''}
-      ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`:'<i>⚠ Not found in Employees tab</i>'}
+      ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`
+      :`<i>⚠ Not in the Employees tab (substitute-only) — no wage saved, so salary shows ₹0.</i><br>
+        <button class="btn ghost" style="padding:7px 14px;font-size:.82rem;" onclick="addSubstituteToEmployees('${esc(name)}')">👤 Add ${esc(name)} to Employees (save wage) → then Calculate again</button>`}
     </div>
     ${breakdown}
     ${assumed?`<span style="color:var(--muted);font-size:.8rem;">Note: no duty entries — full period counted automatically${joinNote}${is24&&fromTime?' as 24-hr shifts':''}.</span><br>`:''}
@@ -1964,6 +1981,16 @@ function fillEmpSelects(){
   document.querySelectorAll('.empSelect').forEach(sel=>{
     const cur=sel.value;
     sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option>${esc(e.name)}</option>`).join('');
+    /* Salary Calculator + All Records filter: also list people who appear only as
+       manually-added substitutes (temporary workers not in the Employees tab),
+       so their salary can be calculated and their records filtered */
+    if(sel.id==='sEmpSel'||sel.id==='fEmp'){
+      const known=new Set(actives.map(e=>e.name));
+      const ended=new Set(DB.employees.filter(isEmployeeEnded).map(e=>e.name));
+      const subs=[];
+      DB.dutyLeave.forEach(r=>{if(r.type==='substitute'&&r.empName&&!known.has(r.empName)&&!ended.has(r.empName)&&!subs.includes(r.empName))subs.push(r.empName);});
+      if(subs.length)sel.insertAdjacentHTML('beforeend',subs.map(n=>`<option>${esc(n)}</option>`).join(''));
+    }
     sel.value=[...sel.options].some(o=>o.value===cur)?cur:'';
   });
   // Build the ACTIVE client list from every source (employees, receipts, duty/leave),
