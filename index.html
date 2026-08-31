@@ -3,9 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Hisab – Caretaker Services Manager</title>
+<meta name="theme-color" content="#1f6feb">
+<meta name="description" content="Ardas Caretaker Manager helps manage caretaker employees, leave, salary, invoices, receipts, and Google Sheets sync.">
+<title>Ardas Caretaker Manager</title>
+<link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="logo.png">
-<link rel="apple-touch-icon" href="logo.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <style>
   :root{
     --bg:#f4f6fb; --card:#ffffff; --ink:#1d2433; --muted:#68738a;
@@ -166,9 +169,9 @@
 <body>
 
 <header>
-  <img class="logo" src="logo.png" alt="Ardaas Home Health Care logo">
+  <img class="logo" src="logo.png" alt="Ardas Caretaker Manager logo">
   <div class="titleWrap">
-    <h1>Hisab — Caretaker Services</h1>
+    <h1>Ardas Caretaker Manager</h1>
     <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
   </div>
   <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
@@ -314,10 +317,10 @@
     <div id="invoicePrintArea" class="invoiceBox">
       <div class="invHead">
         <div>
-          <b class="invCo">Ardaas Home Health Care</b><br>
-          <span class="invSub">Caretaker Services — reliable home care</span>
+          <b class="invCo">Ardas Caretaker Manager</b><br>
+          <span class="invSub">Caretaker services — reliable home care</span>
         </div>
-        <img src="logo.png" alt="Ardaas Home Health Care">
+        <img src="logo.png" alt="Ardas Caretaker Manager">
       </div>
       <div class="invMeta">
         <div>
@@ -436,10 +439,10 @@
     <div id="payInvoicePrintArea" class="invoiceBox">
       <div class="invHead">
         <div>
-          <b class="invCo">Ardaas Home Health Care</b><br>
-          <span class="invSub">Caretaker Services — reliable home care</span>
+          <b class="invCo">Ardas Caretaker Manager</b><br>
+          <span class="invSub">Caretaker services — reliable home care</span>
         </div>
-        <img src="logo.png" alt="Ardaas Home Health Care">
+        <img src="logo.png" alt="Ardas Caretaker Manager">
       </div>
       <div class="invMeta">
         <div>
@@ -2080,7 +2083,7 @@ async function shareInvoiceWhatsApp(){
     const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
     if(prev&&prev.clientPhone)phone=prev.clientPhone;
   }
-  const text='🧾 Invoice '+no+' — Ardaas Home Health Care\n'
+  const text='🧾 Invoice '+no+' — Ardas Caretaker Manager\n'
     +'Client: '+client+'\nDate: '+date+'\n'
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
     +(phone?'':'(Pick the client\'s chat — number not saved)\n')
@@ -2580,7 +2583,7 @@ async function sharePayInvoiceWhatsApp(){
   const phone=(emp&&emp.phone)||'';
   const paid=document.getElementById('piPaid').textContent;
   const mode=document.getElementById('piModeTxt').textContent;
-  const text='🧾 Salary receipt '+payInvData.no+' — Ardaas Home Health Care\n'
+  const text='🧾 Salary receipt '+payInvData.no+' — Ardas Caretaker Manager\n'
     +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
     +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
     +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
