@@ -276,6 +276,7 @@
     <div class="grid">
       <div class="field"><label>Client name (editable)</label><input id="rClient" list="clientList" placeholder="Type or choose client" oninput="onClientNameChange();updateInvoicePreview()"></div>
       <div class="field"><label>Client address (editable)</label><input id="rAddr" placeholder="House no, street, city, PIN" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Client WhatsApp number</label><input id="rPhone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210 (optional)" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Date</label><input id="rDate" type="date" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Deal amount — monthly package (₹)</label><input id="rDeal" type="number" min="0" placeholder="e.g. 25000 / month" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000" oninput="updateInvoicePreview()"></div>
@@ -340,6 +341,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn green" onclick="shareInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
     </div>
   </div>
@@ -462,6 +464,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn green" onclick="sharePayInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
   </div>
@@ -580,6 +583,7 @@
 </div>
 
 <script src="https://accounts.google.com/gsi/client" async defer onerror="window._gsiFailed=true"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
 <script src="config.js"></script>
 <script>
 /* ================= STORAGE ================= */
@@ -631,7 +635,7 @@ const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt','dutyShift'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts','subWage'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
-  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
+  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','clientPhone'],
   Expenses:['id','item','date','amount','savedAt']
 };
 function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
@@ -1305,6 +1309,15 @@ function onClientNameChange(){
     const last=lastDealForClient(client);
     if(last)dealEl.value=last;
   }
+  /* remember the address + WhatsApp number from the client's most recent receipt */
+  if(client){
+    const k=client.trim().toLowerCase();
+    const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
+    if(prev){
+      if(prev.clientAddress&&!val('rAddr'))document.getElementById('rAddr').value=prev.clientAddress;
+      if(prev.clientPhone&&!val('rPhone'))document.getElementById('rPhone').value=prev.clientPhone;
+    }
+  }
 }
 function lastDealForClient(client){
   const key=String(client||'').trim().toLowerCase();
@@ -1372,13 +1385,72 @@ function printInvoice(){
   setTimeout(()=>document.body.classList.remove('printClient'),300);
 }
 function closeInvoice(){document.getElementById('invoiceCard').style.display='none';}
+/* ================= WHATSAPP SHARE (invoice / receipt as image) ================= */
+/* Clean a phone number for WhatsApp (keep digits only). */
+function waDigits(phone){return String(phone||'').replace(/[^0-9]/g,'');}
+/* WhatsApp click-to-chat link. With a number the chat opens on that exact
+   client / employee; without one WhatsApp shows the contact chooser. */
+function waLink(phone,text){
+  const p=waDigits(phone),t=encodeURIComponent(text||'');
+  return p?('https://wa.me/'+p+'?text='+t):('https://api.whatsapp.com/send?text='+t);
+}
+function openWhatsAppChat(text,phone){window.open(waLink(phone,text),'_blank');}
+/* Render an element (invoice / receipt) to a PNG image and hand it to WhatsApp.
+   Phones: the system share sheet opens WITH the image attached — pick WhatsApp,
+   then the chat (image + message go together).
+   Computers: the PNG downloads automatically AND the WhatsApp chat with the
+   right number opens — attach the downloaded picture there. */
+async function shareNodeOnWhatsApp(nodeId,text,phone,filename){
+  const node=document.getElementById(nodeId);
+  if(!node){toast('Generate the invoice / receipt first.');return;}
+  if(!window.html2canvas){toast(window._h2cFailed?'❌ Image engine could not load — check internet.':'⏳ Image engine still loading — try again in a second.');return;}
+  let blob;
+  try{
+    toast('📸 Preparing image…');
+    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+    blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+    if(!blob)throw new Error('render failed');
+  }catch(e){toast('❌ Could not prepare the image.');return;}
+  const file=new File([blob],filename,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],text});}catch(e){/* user cancelled */}
+    return;
+  }
+  /* desktop fallback: download the image, then open the right WhatsApp chat */
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+  setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},5000);
+  openWhatsAppChat(text,phone);
+}
+/* Client invoice → WhatsApp image. Number: the field, else the number remembered
+   on the client's most recent receipt. */
+async function shareInvoiceWhatsApp(){
+  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
+  const client=document.getElementById('invClient').textContent;
+  const no=document.getElementById('invNo').textContent;
+  const date=document.getElementById('invDate').textContent;
+  const amt=document.getElementById('invTotal').textContent;
+  const mode=document.getElementById('invMode').textContent;
+  let phone=val('rPhone');
+  if(!phone){
+    const k=String(client||'').trim().toLowerCase();
+    const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
+    if(prev&&prev.clientPhone)phone=prev.clientPhone;
+  }
+  const text='🧾 Invoice '+no+' — Ardaas Home Health Care\n'
+    +'Client: '+client+'\nDate: '+date+'\n'
+    +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
+    +(phone?'':'(Pick the client\'s chat — number not saved)\n')
+    +'Invoice image attached. Thank you! 🙏';
+  await shareNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+}
 function saveReceipt(){
-  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
   if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress,rec.dealAmount])){flash('rMsg','Fill at least one field.',false);return;}
   if(rec.amount&&!rec.date)rec.date=todayStr();
   DB.receipts.push(rec);persist();flash('rMsg','Client payment saved — invoice '+rec.invoiceNo+'.');
   sendRecord('ClientReceipts',rec);
-  clear('rClient','rAddr','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
+  clear('rClient','rAddr','rPhone','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
   closeInvoice();renderAll();
 }
 /* Re-open a saved receipt's invoice from All Records (data as stored in the sheet) */
@@ -1388,6 +1460,7 @@ function openInvoiceFromRecord(id){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-money'));
   document.getElementById('rClient').value=r.client||'';
   document.getElementById('rAddr').value=r.clientAddress||'';
+  document.getElementById('rPhone').value=r.clientPhone||'';
   document.getElementById('rDate').value=r.date||'';
   document.getElementById('rAmt').value=r.amount||'';
   document.getElementById('rDeal').value=r.dealAmount||lastDealForClient(r.client)||'';
@@ -1856,6 +1929,21 @@ function printPayInvoice(){
   setTimeout(()=>document.body.classList.remove('printPay'),300);
 }
 function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
+/* Salary receipt → WhatsApp image. Number: the employee's saved phone
+   (substitutes not in Employees get the contact chooser). */
+async function sharePayInvoiceWhatsApp(){
+  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
+  const emp=findEmpByName(payInvData.name);
+  const phone=(emp&&emp.phone)||'';
+  const paid=document.getElementById('piPaid').textContent;
+  const mode=document.getElementById('piModeTxt').textContent;
+  const text='🧾 Salary receipt '+payInvData.no+' — Ardaas Home Health Care\n'
+    +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
+    +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
+    +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
+    +'Receipt image attached. Thank you! 🙏';
+  await shareNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+}
 /* Re-open a saved payment's receipt from All Records */
 function openPayInvoiceFromRecord(id){
   const r=DB.payments.find(x=>x.id===id);if(!r)return;
@@ -2025,6 +2113,7 @@ function fillMoneyFromClientBill(){
   document.getElementById('rDate').value=todayStr();
   document.getElementById('rAmt').value=lastClientBill.bal!==0?Math.abs(lastClientBill.bal):'';
   document.getElementById('rAddr').value='';
+  document.getElementById('rPhone').value='';
   setSelectValue(document.getElementById('rEmpSel'),'');
   setSelectValue(document.getElementById('rMode'),'');
   updateInvoicePreview(true);
