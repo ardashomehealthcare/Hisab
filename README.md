@@ -27,13 +27,15 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 
 ### One-time setup (admin, in Google Cloud Console)
 
-1. Open **console.cloud.google.com** → create (or pick) a project, e.g. *Hisab*.
-2. **APIs & Services → Library** → search **Google Sheets API** → **Enable**.
-3. **APIs & Services → OAuth consent screen** → user type **Internal** — this is the Google Workspace lock: only Google accounts inside your organisation can ever sign in. (No Workspace? Choose **External** and add your own accounts as test users.)
-4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → **Web application**.
+📖 **[SETUP-GOOGLE-CONSOLE.md](SETUP-GOOGLE-CONSOLE.md)** — the same steps with a **direct link to every console page** (project, Sheets API, consent screen, test users, clients, Workspace admin), and the error → step table.
+
+1. Open <https://console.cloud.google.com/cloud-resource-manager> → create (or pick) a project, e.g. *Hisab*; copy its **Project ID**.
+2. <https://console.cloud.google.com/apis/library/sheets.googleapis.com> → **Enable** the **Google Sheets API**.
+3. <https://console.cloud.google.com/auth/overview> — the consent screen is now **Google Auth Platform** (the old “OAuth consent screen” menu item is gone). In **Audience** (<https://console.cloud.google.com/auth/audience>) pick **Internal** (Google Workspace only — every partner must sign in with a work address) or **External** and add each partner under **Test users**; **Publish app** removes the test-user list.
+4. <https://console.cloud.google.com/auth/clients> → **Create client** → **Web application**.
 5. **Authorised JavaScript origins** → add the exact origin where the app is served, e.g. `https://ardashomehealthcare.github.io` (add `http://localhost:8000` as well for local testing). Sign-in only works from a listed origin.
 6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) → paste it into **`config.js`** as `HISAB_GOOGLE_CLIENT_ID` (or into the box in the app's **Google Sheet** tab).
-7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → allow. Done.
+7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) If you previously used the Apps Script version, everything already in those tabs is read as-is — no migration needed, and you can delete the old Apps Script deployment.
 
