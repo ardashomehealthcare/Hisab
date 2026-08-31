@@ -622,7 +622,7 @@ const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expense
 const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
 const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
   ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
   Expenses:['id','item','date','amount','savedAt']
@@ -1003,8 +1003,12 @@ function saveSubstituteForm(){
   if(to&&to<from){flash('lMsg','End date is before the start date.',false);return;}
   const lv=ongoingLeaveOf(forName);
   if(!lv){flash('lMsg',forName+' has no open leave record — mark them on leave first.',false);return;}
+  /* days counted like the covered duty: 24-hr shifts when the employee on
+     leave is a 24-hr duty employee (8 AM → next day 8 AM = 1 day) */
+  const byShifts=!!lv.fromTime;
   const rec={id:uid(),empName:name,type:'substitute',forEmp:forName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?dayCount(from,to):'',client:lv.client||'',savedAt:new Date().toLocaleString()};
+    days:to?(byShifts?Math.max(1,shiftCount(from,lv.fromTime,to,lv.fromTime)):dayCount(from,to)):'',
+    byShifts:byShifts&&to?true:'',client:lv.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   flash('lMsg','🤝 '+name+' added as substitute for '+forName+(rec.client?' at '+rec.client:'')+'.');
@@ -1073,6 +1077,8 @@ function saveLeaveStart(){
   document.getElementById('lFrom').value=todayStr();
   if(emp&&emp.dutyTime)document.getElementById('lFromT').value=emp.dutyTime;
   renderAll();
+  /* a substitute can be added immediately — offered right away (Cancel = skip) */
+  openAddSub(rec.id);
 }
 /* ---------- Join duty dialog ---------- */
 let dlgCtx=null;
@@ -1191,17 +1197,39 @@ function openAddSub(id){
     <div class="field"><label>Substitute employee (type name)</label><input id="subSel" placeholder="Type any name — new / temporary person OK" oninput="updSubInfo()" autocomplete="off"></div>
     <div class="dlgInfo" id="subInfo" style="display:none;"></div>
     <div class="grid">
-      <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}"></div>
-      <div class="field"><label>End date (blank = till ${esc(r.empName)} joins)</label><input id="subTo" type="date"></div>
+      <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}" onchange="updSubPayPreview()"></div>
+      <div class="field"><label>End date (blank = till ${esc(r.empName)} joins)</label><input id="subTo" type="date" onchange="updSubPayPreview()"></div>
     </div>
+    <div class="hint" id="subPrev" style="margin:8px 0 0;"></div>
     <div class="actions">
       <button class="btn primary" onclick="confirmAddSub()">✔ Add substitute</button>
       <button class="btn ghost" onclick="closeDlg()">Cancel</button>
     </div>`;
+  updSubPayPreview();
   showDlg();
+}
+/* Live salary preview while adding a substitute — counted like the covered duty
+   (24-hr shifts when the employee on leave is a 24-hr duty employee) and the
+   final total is closed automatically at Join duty. */
+function updSubPayPreview(){
+  if(!dlgCtx||dlgCtx.kind!=='sub')return;
+  const r=DB.dutyLeave.find(x=>x.id===dlgCtx.id);if(!r)return;
+  const el=document.getElementById('subPrev');if(!el)return;
+  const typed=val('subSel'),from=val('subFrom'),to=val('subTo');
+  if(!typed||!from){el.innerHTML='';return;}
+  const end=to||todayStr();
+  if(end<from){el.innerHTML='<span style="color:var(--red);">End date is before the start date.</span>';return;}
+  const emp=findEmpByName(typed);
+  const name=emp?emp.name:typed;
+  const days=r.fromTime?Math.max(1,shiftCount(from,r.fromTime,end,r.fromTime)):dayCount(from,end);
+  const c=substitutePay({empName:name,from,to:end,days});
+  el.innerHTML=c.pay!=null
+    ?`Substitute salary ${to?'for this duty':'up to today'}: <b style="font-size:1.05rem;">≈ ${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule}${to?'':' — updated live, final total at Join duty'})</span>`
+    :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(name)} — add them in the Employees tab (same name) and the salary is calculated automatically.</span>`;
 }
 function updSubInfo(){
   const typed=val('subSel'),info=document.getElementById('subInfo');
+  updSubPayPreview();               // keep the salary preview in sync while typing
   if(!typed){info.style.display='none';return;}
   const e=findEmpByName(typed);
   info.style.display='';
@@ -1227,8 +1255,12 @@ function confirmAddSub(){
   if(name===r.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
   if(!from){toast('Choose the substitute from date.');return;}
   if(to&&to<from){toast('Substitute end date is before its start date.');return;}
+  /* days counted like the covered duty: 24-hr shifts when the employee on
+     leave is a 24-hr duty employee (8 AM → next day 8 AM = 1 day) */
+  const byShifts=!!r.fromTime;
   const rec={id:uid(),empName:name,type:'substitute',forEmp:r.empName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?dayCount(from,to):'',client:r.client||'',savedAt:new Date().toLocaleString()};
+    days:to?(byShifts?Math.max(1,shiftCount(from,r.fromTime,to,r.fromTime)):dayCount(from,to)):'',
+    byShifts:byShifts&&to?true:'',client:r.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   closeDlg();
@@ -2215,7 +2247,14 @@ function renderOnLeave(){
   listEl.innerHTML=open.map(r=>{
     const subs=DB.dutyLeave.filter(s=>s.type==='substitute'&&s.forEmp===r.empName);
     const days=liveLeaveDays(r);
-    const subHtml=subs.map(s=>`<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)} → ${s.to?esc(s.to):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`).join('');
+    /* running salary for each substitute — counted like the covered duty and
+       updated live until Join duty closes it (final total from the saved wage) */
+    const subHtml=subs.map(s=>{
+      const es=s.to?s:effSubRec(s,todayStr());
+      const c=substitutePay(es);
+      const payTxt=c.pay!=null?' • salary '+(s.to?'':'≈ ')+'<b>'+fmt(c.pay)+'</b>'+(s.to?'':' so far'):'';
+      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)} → ${s.to?esc(s.to):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
+    }).join('');
     return `<div class="onLeaveItem">
       <div class="onLeaveHead"><b>${esc(r.empName)}</b> <span class="badge red">ON LEAVE</span>${r.client?` <span class="badge blue">📍 ${esc(r.client)}</span>`:''}</div>
       <div class="onLeaveMeta">On leave since <b>${esc(r.from)}</b>${r.fromTime?' at <b>'+esc(r.fromTime)+'</b>':''} &nbsp;•&nbsp; <b>${days}</b> day${days===1?'':'s'} so far — counted automatically</div>
