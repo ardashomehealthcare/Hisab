@@ -718,6 +718,11 @@ function regClientId(s){const m=cleanId(s).match(/^(\d{6,})-([a-zA-Z0-9_-]{16,})
 /* which Client ID is actually in use: a device override always beats config.js
    (that is how you un-block yourself when the value in the file is wrong), and
    "Use the one in config.js" gives the file value back. */
+/* Did config.js run at all? A missing / 404 / blocked settings file is the most
+   common reason the app ends up signing in with a value saved on the device. */
+function settingsFileState(){
+  return (window.HISAB_GOOGLE_CLIENT_ID!==undefined||window.HISAB_SPREADSHEET_ID!==undefined)?'loaded':'missing';
+}
 function idSource(){
   const ov=regClientId(storeItem(CID_KEY));
   if(ov)return {id:ov,from:'device'};
@@ -727,14 +732,16 @@ function getClientId(){return idSource().id;}
 function checkClientId(raw){
   const id=cleanId(raw);
   if(!id)return {ok:false,what:'empty',
-    msg:'No OAuth Client ID is set on this device, and config.js does not have one either.',
+    msg:'No OAuth Client ID is set on this device, and config.js does not have one either'+(settingsFileState()==='missing'?' — in fact config.js never loaded on this page, so Hisab had nothing of its own to sign in with.':'.'),
     title:'No Google OAuth Client ID is set on this device',steps:[
       'Ask whoever set up the Google Sheet for the <b>Client ID</b> (it ends <code>.apps.googleusercontent.com</code>) — or create it in 5 minutes:',
       '<b>console.cloud.google.com</b> → <b>APIs &amp; Services → Library</b> → enable <b>Google Sheets API</b>.',
       '<b>APIs &amp; Services → OAuth consent screen</b> → user type <b>Internal</b> for a Google Workspace account (or <b>External</b> and add each partner email under <b>Test users</b>).',
       '<b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID → Web application</b> → under <b>Authorised JavaScript origins</b> add exactly <b>@@ORIGIN@@</b> → Create → copy the Client ID.',
       'Paste it in this box → <b>💾 Use this Client ID</b> → <b>🔐 Sign in with Google</b>. To keep it for every phone, put the same value in <code>config.js</code> as <code>HISAB_GOOGLE_CLIENT_ID</code>.'
-    ].map(x=>x.replace(/@@ORIGIN@@/g,location.origin))};
+    ].map(x=>x.replace(/@@ORIGIN@@/g,location.origin)).concat(settingsFileState()==='missing'?[
+      '⚠ <b>config.js did not load at all</b> on this page — wrong folder, a 404, or a blocked/partial copy. Hisab has to be opened from the address that serves <code>index.html</code> and <code>config.js</code> together (here: <code>'+esc(location.origin+location.pathname.replace(/[^/]*$/,''))+'</code>); a downloaded copy or an old bookmark carries no settings.'
+    ]:[])};
   if(/^GOCSPX-/i.test(id))return {ok:false,what:'secret',
     msg:'That is the Client SECRET (Google secrets start with GOCSPX-). Hisab needs the Client ID — the long address in the same Credentials row ending in .apps.googleusercontent.com. The secret is never used by this app, so you do not need to paste it anywhere.',
     title:'You pasted the Client SECRET, not the Client ID',steps:[
@@ -921,7 +928,9 @@ function closeSetupAlert(){alertKey='';const b=document.getElementById('shAlert'
 function renderClientIdBox(){
   const src=idSource(),v=checkClientId(src.id);
   const tag=document.getElementById('cidTag'),inp=document.getElementById('clientId'),hint=document.getElementById('cidHint'),box=document.getElementById('gClientIdBox');
-  if(tag){tag.textContent=src.id?(src.from==='device'?'typed on this device':'from config.js'):'not set';tag.className='tag '+(v.ok?'ok':'bad');}
+  const noFile=settingsFileState()==='missing';
+  if(tag){tag.textContent=(src.id?(src.from==='device'?'typed on this device':'from config.js'):(noFile?'config.js did not load':'not set'))
+      +(noFile&&src.from==='device'?' (config.js did not load)':'');tag.className='tag '+(v.ok?'ok':'bad');}
   if(inp&&document.activeElement!==inp)inp.value=src.id;
   if(hint)hint.innerHTML=esc(v.msg);
   if(box&&!v.ok)box.open=true;
@@ -1105,7 +1114,7 @@ async function sendRecord(sheet,rec){
   updateSheetStatus();
 }
 async function syncAll(){
-  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(authErr('no_client_id','No Google OAuth Client ID is set.'));return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
   flash('shMsg','Sending everything…');
   try{
     await ensureTabs();
@@ -1179,7 +1188,7 @@ function applySheetData(fresh,keepUnsynced){
   persist();renderAll();
 }
 async function loadFromSheet(){
-  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(authErr('no_client_id','No Google OAuth Client ID is set.'));return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
   if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
   flash('shMsg','Loading from Sheet…');
   try{
@@ -1211,7 +1220,7 @@ async function googleSignIn(){
   /* whatever is typed in the box is used straight away — and a Client ID that
      cannot be right is reported here instead of by Google's error page */
   if(!applyClientIdFromBox(true).ok){flash('shMsg','❌ That Client ID is not in the right shape — see the fix above.',false);updateSheetStatus();return;}
-  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(authErr('no_client_id','No Google OAuth Client ID is set.'));return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
   if(window._gsiFailed){reportProblem(authErr('gsi_not_loaded','Google sign-in script could not be loaded.'),true);flash('shMsg','❌ Could not load Google sign-in (check internet / blockers).',false);return;}
   if(!gsiReady()){flash('shMsg','Google sign-in is still loading — wait a second and try again.',false);return;}
   try{
@@ -1267,10 +1276,10 @@ function googleSignOut(){
 }
 function updateSheetStatus(){
   const s=document.getElementById('sheetStatus'),t=document.getElementById('sheetStatusTxt');
-  const cid=getClientId();
+  const cid=getClientId(),noFile=settingsFileState()==='missing';
   const v=checkClientId(cid);
   const connected=isGoogleConnected();
-  t.textContent=!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(connected?'Google Sheet: connected':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in')));
+  t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in'))));
   if(s)s.classList.toggle('ok',connected&&v.ok);
   renderClientIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
@@ -1291,6 +1300,10 @@ async function checkGoogleSetup(){
   if(window._gsiFailed)L.push('❌ Google sign-in script: BLOCKED (internet / ad-blocker / network filter)');
   else if(!gsiReady())L.push('⚠ Google sign-in script: still loading — check again in a second');
   else L.push('✅ Google sign-in script: loaded');
+  const cfgOk=settingsFileState()==='loaded'&&(GOOGLE_CLIENT_ID||SPREADSHEET_ID);
+  L.push((cfgOk?'✅ ':'❌ ')+'settings file config.js: '+(settingsFileState()==='missing'
+      ?'NOT LOADED — this page has no settings of its own, so any Client ID saved on this device was used instead (and that is what Google refuses). Open the app from the address that serves index.html together with config.js.'
+      :'loaded — Client ID '+(GOOGLE_CLIENT_ID?'set':'EMPTY in the file')+', spreadsheet ID '+(SPREADSHEET_ID?'set':'EMPTY in the file')));
   L.push((v.ok?'✅ ':'❌ ')+'OAuth Client ID: '+(src.id?shortId(src.id)+'  (source: '+(src.from==='device'?'typed on this device':'config.js')+')':'none on this device')
     +(v.ok?'\n   Shape is correct. If Google still answers 401 invalid_client, this Client ID does not exist in your project any more — create a new “Web application” client.':'\n   '+v.msg));
   L.push((SPREADSHEET_ID?'✅ ':'❌ ')+'Google Sheet: '+(SPREADSHEET_ID?'https://docs.google.com/spreadsheets/d/'+SPREADSHEET_ID+'/edit':'no spreadsheet ID in config.js'));
