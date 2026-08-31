@@ -341,6 +341,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn amber" onclick="saveInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="shareInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
     </div>
@@ -464,6 +465,7 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn amber" onclick="savePayInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="sharePayInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
@@ -1395,35 +1397,64 @@ function waLink(phone,text){
   return p?('https://wa.me/'+p+'?text='+t):('https://api.whatsapp.com/send?text='+t);
 }
 function openWhatsAppChat(text,phone){window.open(waLink(phone,text),'_blank');}
-/* Render an element (invoice / receipt) to a PNG image and hand it to WhatsApp.
-   Phones: the system share sheet opens WITH the image attached — pick WhatsApp,
-   then the chat (image + message go together).
-   Computers: the PNG downloads automatically AND the WhatsApp chat with the
-   right number opens — attach the downloaded picture there. */
-async function shareNodeOnWhatsApp(nodeId,text,phone,filename){
+/* Render an element (invoice / receipt) to a PNG image. */
+async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
-  if(!node){toast('Generate the invoice / receipt first.');return;}
-  if(!window.html2canvas){toast(window._h2cFailed?'❌ Image engine could not load — check internet.':'⏳ Image engine still loading — try again in a second.');return;}
-  let blob;
-  try{
-    toast('📸 Preparing image…');
-    const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-    blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
-    if(!blob)throw new Error('render failed');
-  }catch(e){toast('❌ Could not prepare the image.');return;}
-  const file=new File([blob],filename,{type:'image/png'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],text});}catch(e){/* user cancelled */}
-    return;
-  }
-  /* desktop fallback: download the image, then open the right WhatsApp chat */
+  if(!node)throw new Error('not ready');
+  if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
+  const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!blob)throw new Error('render failed');
+  return blob;
+}
+/* Download a blob as a file (invoice / receipt image). */
+function downloadBlob(blob,filename){
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);a.download=filename;a.click();
   setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},5000);
-  openWhatsAppChat(text,phone);
+}
+/* 🖼 Save as image */
+async function saveNodeImage(nodeId,filename){
+  let blob;
+  try{blob=await renderNodeToBlob(nodeId);}
+  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  downloadBlob(blob,filename);
+  toast('🖼 Image saved: '+filename);
+}
+function saveInvoiceImage(){
+  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
+  const no=String(document.getElementById('invNo').textContent).replace(/[^A-Za-z0-9-]/g,'');
+  saveNodeImage('invoicePrintArea','Invoice-'+no+'.png');
+}
+function savePayInvoiceImage(){
+  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
+  const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
+  saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
+}
+/* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
+   WhatsApp opens DIRECTLY on the client's / employee's chat with the message
+   already typed (wa.me/<number>). Without a saved number the image goes
+   through the share sheet (phone) or the WhatsApp chooser. */
+async function sendNodeOnWhatsApp(nodeId,text,phone,filename){
+  let blob;
+  try{blob=await renderNodeToBlob(nodeId);}
+  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  if(waDigits(phone)){
+    downloadBlob(blob,filename);              // image saved, ready to attach
+    openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
+    toast('✅ Image saved — attach it in the chat that just opened');
+    return;
+  }
+  const file=new File([blob],filename,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],text});}catch(e){/* cancelled */}
+    return;
+  }
+  downloadBlob(blob,filename);
+  openWhatsAppChat(text,'');                  // WhatsApp chooser — pick any chat
 }
 /* Client invoice → WhatsApp image. Number: the field, else the number remembered
-   on the client's most recent receipt. */
+   on the client's most recent receipt. Opens directly on the client's chat. */
 async function shareInvoiceWhatsApp(){
   if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
   const client=document.getElementById('invClient').textContent;
@@ -1442,7 +1473,7 @@ async function shareInvoiceWhatsApp(){
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
     +(phone?'':'(Pick the client\'s chat — number not saved)\n')
     +'Invoice image attached. Thank you! 🙏';
-  await shareNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
 }
 function saveReceipt(){
   const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
@@ -1942,7 +1973,7 @@ async function sharePayInvoiceWhatsApp(){
     +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
     +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
     +'Receipt image attached. Thank you! 🙏';
-  await shareNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
 }
 /* Re-open a saved payment's receipt from All Records */
 function openPayInvoiceFromRecord(id){
