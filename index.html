@@ -203,6 +203,8 @@
       <div class="field" id="eDutyField"><label>Duty period</label>
         <select id="eDuty" onchange="toggleDutyField()"><option value="">— select —</option><option value="24">24 hour</option><option value="12">12 hour</option></select></div>
       <div class="field" id="eTimeField" style="display:none;"><label>Duty start time (24 hr)</label><input id="eTime" type="time"></div>
+      <div class="field" id="eShiftField" style="display:none;"><label>Day or night duty?</label>
+        <select id="eShift" onchange="toggleDutyField()"><option value="day">☀️ Day duty</option><option value="night">🌙 Night duty</option></select></div>
       <div class="field"><label>Joining date</label><input id="eJoin" type="date"></div>
       <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new"></div>
     </div>
@@ -621,8 +623,8 @@ document.getElementById('nav').addEventListener('click',e=>{
 const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
 const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts'],
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt','dutyShift'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts','subWage'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
   ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
   Expenses:['id','item','date','amount','savedAt']
@@ -904,13 +906,14 @@ function saveEmployee(){
   const rec={id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
     wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),
     dutyTime:(val('eWageType')!=='daily'&&val('eDuty')==='24')?val('eTime'):'',
+    dutyShift:(val('eWageType')!=='daily'&&val('eDuty')==='12')?val('eShift'):'',
     joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
+  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.dutyShift,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
   // If same name exists, update it instead of duplicating
   const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
   if(existing){
-    ['phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
-    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';}
+    ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
+    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';existing.dutyShift='';}
     existing.savedAt=rec.savedAt;existing.synced=false;persist();
     flash('eMsg','Updated existing employee "'+existing.name+'".');
     sendRecord('Employees',existing);
@@ -930,6 +933,9 @@ function toggleDutyField(){
   const show24=!daily&&val('eDuty')==='24';
   document.getElementById('eTimeField').style.display=show24?'':'none';
   if(!show24)document.getElementById('eTime').value='';
+  const show12=!daily&&val('eDuty')==='12';
+  document.getElementById('eShiftField').style.display=show12?'':'none';
+  if(!show12)document.getElementById('eShift').value='day';
 }
 
 /* ================= DUTY / LEAVE ================= */
@@ -1003,12 +1009,12 @@ function saveSubstituteForm(){
   if(to&&to<from){flash('lMsg','End date is before the start date.',false);return;}
   const lv=ongoingLeaveOf(forName);
   if(!lv){flash('lMsg',forName+' has no open leave record — mark them on leave first.',false);return;}
-  /* days counted like the covered duty: 24-hr shifts when the employee on
-     leave is a 24-hr duty employee (8 AM → next day 8 AM = 1 day) */
-  const byShifts=!!lv.fromTime;
-  const rec={id:uid(),empName:name,type:'substitute',forEmp:forName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?(byShifts?Math.max(1,shiftCount(from,lv.fromTime,to,lv.fromTime)):dayCount(from,to)):'',
-    byShifts:byShifts&&to?true:'',client:lv.client||'',savedAt:new Date().toLocaleString()};
+  /* days counted like the covered duty: 24-hr shifts with the leave's shift
+     time when the employee on leave is a 24-hr duty employee */
+  const ft=lv.fromTime||'';
+  const rec={id:uid(),empName:name,type:'substitute',forEmp:forName,from,to:to||'',fromTime:ft,toTime:to&&ft?ft:'',
+    days:to?(ft?Math.max(1,shiftCount(from,ft,to,ft)):dayCount(from,to)):'',
+    byShifts:ft&&to?true:'',client:lv.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   flash('lMsg','🤝 '+name+' added as substitute for '+forName+(rec.client?' at '+rec.client:'')+'.');
@@ -1035,23 +1041,29 @@ function effLeaveRec(r,end){
   return {...r,to:end,ongoing:true,days:r.fromTime?shiftCount(r.from,r.fromTime,end,r.fromTime):dayCount(r.from,end)};
 }
 /* Closed copy of an open substitution, extended to `end` — days counted like the
-   covered duty (24-hr shifts when the employee on leave is a 24-hr duty employee) */
+   covered duty (24-hr shifts, using the substitute's own start time when saved,
+   else the employee on leave's) */
 function effSubRec(r,end){
   if(r.to)return r;
   const lv=DB.dutyLeave.find(x=>x.type==='leave'&&x.empName===r.forEmp&&!x.to);
-  const byShifts=!!(lv&&lv.fromTime);
-  const days=byShifts?Math.max(1,shiftCount(r.from,lv.fromTime,end,lv.fromTime)):dayCount(r.from,end);
-  return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||byShifts};
+  const ft=r.fromTime||(lv&&lv.fromTime)||'';
+  const days=ft?Math.max(1,shiftCount(r.from,ft,end,ft)):dayCount(r.from,end);
+  return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||!!ft};
 }
-/* Expected pay for a finished substitution — from the SUBSTITUTE's own saved wage.
+/* Expected pay for a finished substitution — a per-day wage entered when the
+   substitute was added wins (rate agreed for that duty); otherwise the
+   SUBSTITUTE's own saved employee wage is used.
    daily: rate × days • monthly: per-day pro-rata (wage ÷ days-in-month × days), split across months */
 function substitutePay(sub){
   const emp=DB.employees.find(e=>e.name===sub.empName);
   const days=Math.max(1,Number(sub.days)||dayCount(sub.from,sub.to||sub.from));
-  const wage=Number((emp&&emp.wageAmount)||0),wt=(emp&&emp.wageType)||'';
+  const subWage=Number(sub.subWage||0);
+  const useSub=subWage>0;
+  const wage=useSub?subWage:Number((emp&&emp.wageAmount)||0);
+  const wt=useSub?'daily':((emp&&emp.wageType)||'');
   if(!wage||!wt)return {emp,days,pay:null,rule:''};
   if(wt==='daily'){
-    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')};
+    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')+(useSub?' (rate entered for this substitute)':'')};
   }
   const counts=splitAcrossMonths(sub.from,sub.to||sub.from,days);
   let pay=0;const parts=[];
@@ -1119,14 +1131,16 @@ function confirmJoinDuty(){
   if(!d||d<r.from){toast('Check the join duty date.');return;}
   r.to=d;r.toTime=t;r.days=dutyDayCount(r)||1;
   /* end substitute duty automatically at the join date — days counted like the
-     covered duty (24-hr shifts: 8 AM → next day 8 AM = 1 day) */
-  const covered24=!!(dlgCtx.is24&&r.fromTime);
+     covered duty (24-hr shifts, using the substitute's own start time when
+     saved, else the employee on leave's: 8 AM → next day 8 AM = 1 day) */
   const closedSubs=[];
   DB.dutyLeave.forEach(s=>{
     if(s.type==='substitute'&&s.forEmp===r.empName&&!s.to){
+      const ft=s.fromTime||r.fromTime||'';
       s.to=d;
-      s.days=covered24?Math.max(1,shiftCount(s.from,r.fromTime,d,r.fromTime)):dayCount(s.from,d);
-      if(covered24)s.byShifts=true;
+      s.days=ft?Math.max(1,shiftCount(s.from,ft,d,t||ft)):dayCount(s.from,d);
+      if(ft)s.byShifts=true;
+      s.toTime=ft?(t||ft):'';
       closedSubs.push(s);
     }
   });
@@ -1149,7 +1163,7 @@ function openJoinSummary(leaveRec,subs){
       🤝 <b>${esc(s.empName)}</b> — substitute duty <b>${esc(s.from)}</b> → <b>${esc(s.to)}</b> = <b>${c.days}</b> day${c.days===1?'':'s'}${s.client?' at '+esc(s.client):''}<br>
       ${c.pay!=null
         ?`Substitute salary: <b style="font-size:1.08rem;">${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule})</span>`
-        :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(s.empName)} — add it in the Employees tab, then use Salary Calculator.</span>`}
+        :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(s.empName)} — add them in the Employees tab, or delete and re-add the substitute with a Wage per day.</span>`}
     </div>`;
   }).join('')
   +(total?`<div class="field"><label>Payment mode</label><select id="jsMode"><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>`:'')
@@ -1196,9 +1210,12 @@ function openAddSub(id){
   document.getElementById('dlgBody').innerHTML=`
     <div class="field"><label>Substitute employee (type name)</label><input id="subSel" placeholder="Type any name — new / temporary person OK" oninput="updSubInfo()" autocomplete="off"></div>
     <div class="dlgInfo" id="subInfo" style="display:none;"></div>
+    <div class="field" id="subWageField" style="display:none;"><label>Wage per day (₹) — for substitutes not in Employees</label><input id="subWage" type="number" inputmode="numeric" placeholder="e.g. 600" oninput="updSubPayPreview()"></div>
     <div class="grid">
       <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}" onchange="updSubPayPreview()"></div>
+      ${r.fromTime?`<div class="field"><label>Start time (24-hr duty)</label><input id="subFromT" type="time" value="${esc(r.fromTime)}" onchange="updSubPayPreview()"></div>`:''}
       <div class="field"><label>End date (blank = till ${esc(r.empName)} joins)</label><input id="subTo" type="date" onchange="updSubPayPreview()"></div>
+      ${r.fromTime?`<div class="field"><label>End time (with end date)</label><input id="subToT" type="time" onchange="updSubPayPreview()"></div>`:''}
     </div>
     <div class="hint" id="subPrev" style="margin:8px 0 0;"></div>
     <div class="actions">
@@ -1209,32 +1226,41 @@ function openAddSub(id){
   showDlg();
 }
 /* Live salary preview while adding a substitute — counted like the covered duty
-   (24-hr shifts when the employee on leave is a 24-hr duty employee) and the
-   final total is closed automatically at Join duty. */
+   (24-hr shifts when the employee on leave is a 24-hr duty employee, using the
+   substitute's own start time) and the final total is closed automatically at
+   Join duty. Wage: per-day rate typed here wins, else the substitute's saved
+   employee wage (daily: rate × days • monthly: wage ÷ days-in-month × days). */
 function updSubPayPreview(){
   if(!dlgCtx||dlgCtx.kind!=='sub')return;
   const r=DB.dutyLeave.find(x=>x.id===dlgCtx.id);if(!r)return;
   const el=document.getElementById('subPrev');if(!el)return;
   const typed=val('subSel'),from=val('subFrom'),to=val('subTo');
   if(!typed||!from){el.innerHTML='';return;}
+  const ft=r.fromTime?(val('subFromT')||r.fromTime):'';
   const end=to||todayStr();
   if(end<from){el.innerHTML='<span style="color:var(--red);">End date is before the start date.</span>';return;}
+  const tt=to&&ft?(val('subToT')||ft):ft;
   const emp=findEmpByName(typed);
   const name=emp?emp.name:typed;
-  const days=r.fromTime?Math.max(1,shiftCount(from,r.fromTime,end,r.fromTime)):dayCount(from,end);
-  const c=substitutePay({empName:name,from,to:end,days});
+  const days=ft?Math.max(1,shiftCount(from,ft,end,tt)):dayCount(from,end);
+  const c=substitutePay({empName:name,from,to:end,days,subWage:val('subWage')});
   el.innerHTML=c.pay!=null
     ?`Substitute salary ${to?'for this duty':'up to today'}: <b style="font-size:1.05rem;">≈ ${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule}${to?'':' — updated live, final total at Join duty'})</span>`
-    :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(name)} — add them in the Employees tab (same name) and the salary is calculated automatically.</span>`;
+    :`<span style="color:var(--amber);font-weight:600;">⚠ No wage for ${esc(name)} yet — type a Wage per day above, or add them in the Employees tab (same name).</span>`;
 }
 function updSubInfo(){
   const typed=val('subSel'),info=document.getElementById('subInfo');
   updSubPayPreview();               // keep the salary preview in sync while typing
-  if(!typed){info.style.display='none';return;}
+  const wageField=document.getElementById('subWageField');
+  if(!typed){info.style.display='none';if(wageField)wageField.style.display='';return;}
   const e=findEmpByName(typed);
   info.style.display='';
+  /* wage field only needed when the matched employee has no saved wage,
+     or the typed person is not in Employees at all */
+  const hasWage=!!(e&&Number(e.wageAmount)>0);
+  if(wageField)wageField.style.display=hasWage?'none':'';
   if(!e){
-    info.innerHTML='ℹ <b>'+esc(typed)+'</b> is not in the Employees tab — they will still be recorded. Add them in Employees (same name) for automatic salary calculation.';
+    info.innerHTML='ℹ <b>'+esc(typed)+'</b> is not in the Employees tab — type a Wage per day below and their salary is calculated automatically.';
     return;
   }
   const leaveOf=dlgCtx?DB.dutyLeave.find(x=>x.id===dlgCtx.id):null;
@@ -1242,7 +1268,7 @@ function updSubInfo(){
   info.innerHTML='<b>'+esc(e.name)+'</b>'
     +(e.client?' • normally at '+esc(e.client):'')
     +(e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):'')
-    +(e.dutyHours?' • '+esc(e.dutyHours)+' hr duty'+(e.dutyTime?' from '+esc(e.dutyTime):''):'')
+    +(e.dutyHours?' • '+esc(e.dutyHours)+' hr duty'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' (day)':e.dutyShift==='night'?' (night)':'')):'')
     +(tag?'<br><span style="color:var(--amber);font-weight:600;">Note: '+esc(tag)+'</span>':'');
 }
 function confirmAddSub(){
@@ -1255,12 +1281,15 @@ function confirmAddSub(){
   if(name===r.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
   if(!from){toast('Choose the substitute from date.');return;}
   if(to&&to<from){toast('Substitute end date is before its start date.');return;}
-  /* days counted like the covered duty: 24-hr shifts when the employee on
-     leave is a 24-hr duty employee (8 AM → next day 8 AM = 1 day) */
-  const byShifts=!!r.fromTime;
-  const rec={id:uid(),empName:name,type:'substitute',forEmp:r.empName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?(byShifts?Math.max(1,shiftCount(from,r.fromTime,to,r.fromTime)):dayCount(from,to)):'',
-    byShifts:byShifts&&to?true:'',client:r.client||'',savedAt:new Date().toLocaleString()};
+  /* days counted like the covered duty: 24-hr shifts (with the substitute's own
+     start time) when the employee on leave is a 24-hr duty employee */
+  const ft=r.fromTime?(val('subFromT')||r.fromTime):'';
+  const tt=to&&ft?(val('subToT')||ft):'';
+  const rec={id:uid(),empName:name,type:'substitute',forEmp:r.empName,from,to:to||'',fromTime:ft,toTime:tt,
+    days:to?(ft?Math.max(1,shiftCount(from,ft,to,tt)):dayCount(from,to)):'',
+    byShifts:(ft&&to)?true:'',
+    subWage:Number(val('subWage'))>0?val('subWage'):'',
+    client:r.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   closeDlg();
@@ -2216,7 +2245,7 @@ function renderEmployees(){
     const ended=isEmployeeEnded(e);
     tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
-      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):''):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
+      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
       <td style="white-space:nowrap;">${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
@@ -2253,7 +2282,7 @@ function renderOnLeave(){
       const es=s.to?s:effSubRec(s,todayStr());
       const c=substitutePay(es);
       const payTxt=c.pay!=null?' • salary '+(s.to?'':'≈ ')+'<b>'+fmt(c.pay)+'</b>'+(s.to?'':' so far'):'';
-      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)} → ${s.to?esc(s.to):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
+      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
     }).join('');
     return `<div class="onLeaveItem">
       <div class="onLeaveHead"><b>${esc(r.empName)}</b> <span class="badge red">ON LEAVE</span>${r.client?` <span class="badge blue">📍 ${esc(r.client)}</span>`:''}</div>
