@@ -529,6 +529,7 @@
       <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Update Google Sheet</button>
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
+      <button class="btn red" onclick="clearAllData()">🗑 Clear all data</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
     </div>
   </div>
@@ -2410,6 +2411,15 @@ function exportBackup(){
   const a=document.createElement('a');
   a.href='data:application/json,'+encodeURIComponent(JSON.stringify(DB,null,2));
   a.download='hisab-backup-'+todayStr()+'.json';a.click();
+}
+
+function clearAllData(){
+  if(!confirm('Clear ALL data on this device?\n\nThis will permanently delete every employee, leave, payment, receipt and expense record.\n\nDownload a backup first if you want to keep anything.'))return;
+  if(!confirm('Are you sure? This cannot be undone.'))return;
+  DB={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
+  persist();
+  renderAll();
+  toast('🗑 All data cleared.');
 }
 
 /* init */
