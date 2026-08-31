@@ -1,5 +1,8 @@
 # Google Cloud Console — step-by-step for Hisab (with direct links)
 
+*Just trying to fix a sign-in problem? Read [SETUP-GUIDE.md](SETUP-GUIDE.md) first — it
+is organised by the message you saw.*
+
 Every link below opens the exact console page. **One thing to do first:** the links
 carry a `?project=` parameter, and Google needs *your* project ID there (not the
 project *number*). Get it once in Step 0 and paste it into the links.

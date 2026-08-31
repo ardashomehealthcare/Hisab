@@ -27,6 +27,7 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 
 ### One-time setup (admin, in Google Cloud Console)
 
+📖 **[SETUP-GUIDE.md](SETUP-GUIDE.md)** — plain-language setup and fixes, organised by the message you saw.
 📖 **[SETUP-GOOGLE-CONSOLE.md](SETUP-GOOGLE-CONSOLE.md)** — the same steps with a **direct link to every console page** (project, Sheets API, consent screen, test users, clients, Workspace admin), and the error → step table.
 
 1. Open <https://console.cloud.google.com/cloud-resource-manager> → create (or pick) a project, e.g. *Hisab*; copy its **Project ID**.
