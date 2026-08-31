@@ -610,6 +610,7 @@
     <div class="hint">💡 The spreadsheet ID is locked into <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — same sheet as before, so all existing data is kept.</div>
     <div class="hint">🩺 Press <b>Check my Google setup</b> above at any time: it shows the address Google must be told about, the Client ID in use and where it came from, whether the Sheet is reachable with your sign-in, and — if Google refused something — the exact clicks to fix it. Copy the report and send it to whoever manages your Google account.</div>
     <div class="hint">⚠ <b>Error 401: invalid_client</b> while signing in means the Client ID itself is unknown to Google — it was typed with one wrong character, cut short, it is the Client <i>secret</i>, or that client / project was deleted. Nothing is broken in your data: make a new <b>Web application</b> client ID (steps 4–6) and paste it in the box above.</div>
+    <div class="hint">⚠ <b>Error 403: access_denied</b> is a different problem: Google <i>did</i> accept the Client ID and this web address, it refused the <b>Google account</b>. It means the OAuth consent screen is still in <b>Testing</b> and that address is not on the <b>Test users</b> list, or the screen is <b>Internal</b> and a personal <code>@gmail.com</code> was used. Fix it in <b>APIs &amp; Services → OAuth consent screen</b> — <b>Audience → Test users → + Add users</b> for every partner, or <b>Publish app</b> — then press <b>🔐 Sign in with Google</b> again. Pressing <b>Cancel</b> on the consent screen gives this same error, so choose <b>Allow</b>.</div>
   </div>
 </section>
 
@@ -849,11 +850,17 @@ function googleAdvice(raw){
       'Android / iOS / Desktop / TV client IDs are refused by browser sign-in.',
       'In <b>Credentials → Create credentials → OAuth client ID</b> choose <b>Web application</b>, add <b>'+esc(origin)+'</b> under Authorised JavaScript origins, then paste that new Client ID in the box above → <b>💾 Use this Client ID</b>.'
     ]};
-  if(has('access_denied','has not been verified','test users','unapproved','consent','app not verified'))
-    return {title:'Google blocked the consent for this account',steps:[
-      'Workspace accounts: the consent screen user type must be <b>Internal</b> for your organisation — and you must sign in with your <b>work email</b>, not a personal <code>@gmail.com</code> account.',
-      'If the consent screen is <b>External</b> and still in <b>Testing</b>: <b>APIs &amp; Services → OAuth consent screen → Test users → Add users</b> and add every partner’s email address (then press Sign in again). Publishing the app (“In production”) removes the test-user list.',
-      'If your Workspace admin has switched on “Only trusted Google OAuth clients”, ask them to add this Client ID in <b>Admin console → Security → API controls → Allowed Google OAuth app requests</b>.'
+  /* 403 access_denied is NOT an app bug and NOT a wrong address: Google already
+     accepted the Client ID and the origin (those answer invalid_client /
+     origin_mismatch), it refused the ACCOUNT that tried to sign in. */
+  if(has('access_denied','given you access','currently being tested','verified by google','has not been verified','unapproved','app not verified','unverified','test users'))
+    return {title:'Google allowed the app but refused this Google account (Error 403: access_denied)',steps:[
+      'First, what is NOT wrong: Google <b>recognised</b> the Client ID <b>'+esc(shortId(getClientId()))+'</b> and this web address <b>'+esc(origin)+'</b> — a wrong one of those gives <i>401 invalid_client</i> or <i>origin_mismatch</i> instead. What Google turned down is the <b>Google account</b> that signed in. Nothing was lost: every entry stays saved on this device.',
+      '<b>Most likely — the app is still in “Testing”.</b> Open <b>console.cloud.google.com</b> with the account that made the project → <b>APIs &amp; Services → OAuth consent screen</b>. If <b>Publishing status</b> reads <b>Testing</b>, only listed accounts can sign in: press <b>Audience → Test users → + Add users</b>, add <b>every</b> partner’s Google address (100 max), <b>Save</b>, then press <b>🔐 Sign in with Google</b> again. Google’s own wording for this is “The developer hasn’t given you access to this app. It’s currently being tested…”.',
+      '<b>Or publish the app:</b> on that same screen press <b>Publish app</b> (“In production”). Any Google account can then sign in — the “Google hasn’t verified this app” warning on the first screen is normal, press <b>Continue</b>. Publishing removes the test-user list entirely.',
+      '<b>If the consent screen is Internal</b> (Google Workspace only): that person must sign in with a <b>work address in your organisation</b> — a personal <code>@gmail.com</code> is always refused here. Either use the work address, or change the consent screen to <b>External</b> and add the partners as test users (step 2).',
+      '<b>Workspace admins:</b> if <b>Security → Access and data control → API controls → App access control</b> is set to “Trust only apps from your domain” / “only trusted Google OAuth clients”, this client is refused for the whole organisation. Add this Client ID there — <b>'+esc(shortId(getClientId()))+'</b> — or allow all apps.',
+      '<b>Tapped Cancel by mistake?</b> Google answers with this same error when <b>Cancel</b> / <b>Deny</b> is pressed on the “Hisab wants access to your Google Sheets” screen. Press <b>🔐 Sign in with Google</b> once more and choose <b>Allow</b>. If an old half-granted permission is stuck, remove it at <b>myaccount.google.com/permissions</b>, then sign in again.'
     ]};
   if(has('idpiframe','cookies are disabled','third-party cookies','failed to set the'))
     return {title:'The browser blocked Google’s sign-in window',steps:[
@@ -1326,7 +1333,8 @@ async function checkGoogleSetup(){
     L.push('❌ Last Google error: '+lastGsError.msg+'   ('+lastGsError.at+')');
     if(adv){
       L.push('   FIX — '+adv.title);
-      adv.steps.forEach((st,i)=>L.push('   '+(i+1)+'. '+st.replace(/<\s*b\s*>|<\s*\/\s*b\s*>|<\s*i\s*>|<\s*\/\s*i\s*>|<[^>]+>/g,'')));
+      adv.steps.forEach((st,i)=>L.push('   '+(i+1)+'. '+st.replace(/<\s*b\s*>|<\s*\/\s*b\s*>|<\s*i\s*>|<\s*\/\s*i\s*>|<[^>]+>/g,'')
+        .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'")));
     }
   }
   diagText=L.join('\n');
