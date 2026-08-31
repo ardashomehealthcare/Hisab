@@ -153,7 +153,7 @@
     <h1>Hisab — Caretaker Services</h1>
     <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
   </div>
-  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google Sheet: not connected</span></div>
+  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
 </header>
 
 <nav id="nav">
@@ -203,6 +203,8 @@
       <div class="field" id="eDutyField"><label>Duty period</label>
         <select id="eDuty" onchange="toggleDutyField()"><option value="">— select —</option><option value="24">24 hour</option><option value="12">12 hour</option></select></div>
       <div class="field" id="eTimeField" style="display:none;"><label>Duty start time (24 hr)</label><input id="eTime" type="time"></div>
+      <div class="field" id="eShiftField" style="display:none;"><label>Day or night duty?</label>
+        <select id="eShift" onchange="toggleDutyField()"><option value="day">☀️ Day duty</option><option value="night">🌙 Night duty</option></select></div>
       <div class="field"><label>Joining date</label><input id="eJoin" type="date"></div>
       <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new"></div>
     </div>
@@ -228,24 +230,29 @@
 <section class="tab" id="tab-duty">
   <div class="card">
     <h2>Leave entry <span class="badge red">On leave</span></h2>
-    <div class="hint">Choose the entry type below. For <b>going on leave</b>: enter only the leave start (date + time for 24-hr duty) — the employee stays ON LEAVE until you press <b>🤝 Join duty</b> in the list below. For <b>substitute</b>: pick who is on leave and who covers in their place.</div>
+    <div class="hint">Select the employee and the leave start — if they are a 24-hr duty employee the time option appears. The employee stays <b>ON LEAVE</b> until <b>🤝 Join duty</b>. You can type a <b>substitute below in the same form</b> (optional) — everything saves with one Submit.</div>
     <div class="grid">
-      <div class="field"><label>Entry type</label>
-        <select id="lType" onchange="onLeaveTypeChange()">
-          <option value="leave">🔁 Employee going on leave</option>
-          <option value="substitute">🤝 Substitute in place of employee on leave</option>
-        </select>
-      </div>
-      <div class="field" id="lForField" style="display:none;"><label>In place of (on leave)</label><select id="lForSel" onchange="onForEmpChange()"></select></div>
-      <div class="field" id="lEmpField"><label id="lEmpLbl">Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
-      <div class="field" id="lSubNameField" style="display:none;"><label>Substitute employee (type name)</label><input id="lSubName" placeholder="Type any name — new / temporary person OK" oninput="updSubNameHint()"><div class="hint" id="lSubNameHint" style="margin:5px 0 0;"></div></div>
-      <div class="field"><label id="lFromLbl">Leave start date</label><input id="lFrom" type="date"></div>
+      <div class="field"><label>Employee</label><select id="lEmpSel" class="empSelect" onchange="onLeaveEmpChange()"></select></div>
+      <div class="field" id="lFromField"><label>Leave start date</label><input id="lFrom" type="date"></div>
       <div id="lTimeFields" style="display:none;">
         <div class="field"><label>Leave start time (24-hr duty)</label><input id="lFromT" type="time"></div>
       </div>
-      <div class="field" id="lSubToField" style="display:none;"><label>End date (blank = till join duty)</label><input id="lSubTo" type="date"></div>
     </div>
-    <div class="actions"><button id="lBtn" class="btn red" onclick="submitLeaveForm()">✔ Employee is on leave</button><span class="msg" id="lMsg"></span></div>
+    <!-- selected employee already on leave: substitute bar + Join duty right here -->
+    <div id="lvJoinBox" style="display:none;"></div>
+    <div id="lvLeaveArea">
+      <div id="lvSubWrap" style="margin-top:12px;border:1px dashed #c7d3e8;border-radius:12px;padding:12px 12px 4px;">
+        <div class="field" style="max-width:460px;"><label>Substitute in place of employee <span style="font-weight:400;color:var(--muted);">(optional — type name)</span></label>
+          <input id="lvSubName" placeholder="Type any name — new / temporary person OK" oninput="updLvSub()" autocomplete="off"></div>
+        <div class="hint" id="lvSubHint" style="margin:6px 0 0;"></div>
+        <div class="grid" id="lvSubGrid" style="display:none;">
+          <div class="field"><label>Wage per day (₹) — for substitutes not in Employees</label><input id="lvSubWage" type="number" inputmode="numeric" placeholder="e.g. 600" oninput="updLvSub()"></div>
+          <div class="field" id="lvSubTimeField" style="display:none;"><label>Substitute start time</label><input id="lvSubTime" type="time" onchange="updLvSub()"></div>
+        </div>
+        <div class="hint" id="lvPrev" style="margin:8px 0 10px;"></div>
+      </div>
+      <div class="actions"><button id="lBtn" class="btn red" onclick="saveLeaveStart()">✔ Employee is on leave</button><span class="msg" id="lMsg"></span></div>
+    </div>
   </div>
   <div class="card" id="onLeaveCard" style="display:none;">
     <h2>On leave now <span class="badge red">live</span></h2>
@@ -269,6 +276,7 @@
     <div class="grid">
       <div class="field"><label>Client name (editable)</label><input id="rClient" list="clientList" placeholder="Type or choose client" oninput="onClientNameChange();updateInvoicePreview()"></div>
       <div class="field"><label>Client address (editable)</label><input id="rAddr" placeholder="House no, street, city, PIN" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Client WhatsApp number</label><input id="rPhone" type="tel" inputmode="numeric" placeholder="e.g. 9876543210 (optional)" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Date</label><input id="rDate" type="date" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Deal amount — monthly package (₹)</label><input id="rDeal" type="number" min="0" placeholder="e.g. 25000 / month" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000" oninput="updateInvoicePreview()"></div>
@@ -333,6 +341,8 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn amber" onclick="saveInvoiceImage()">🖼 Save as image</button>
+      <button class="btn green" onclick="shareInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
     </div>
   </div>
@@ -455,6 +465,8 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
+      <button class="btn amber" onclick="savePayInvoiceImage()">🖼 Save as image</button>
+      <button class="btn green" onclick="sharePayInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
   </div>
@@ -526,34 +538,36 @@
   <div class="card"><h2>Other expenses</h2><div class="tableWrap"><table id="recExpenses"><thead><tr><th>Date</th><th>Item</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
 </section>
 
-<!-- ============ GOOGLE SHEET ============ -->
+<!-- ============ GOOGLE SHEET (OAuth) ============ -->
 <section class="tab" id="tab-sheet">
   <div class="card">
-    <h2>Connect your Google Sheet</h2>
-    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once connected.</div>
-    <div class="field" style="max-width:640px;">
-      <label>Google Apps Script Web-App URL</label>
-      <input id="scriptUrl" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+    <h2>Connect your Google account</h2>
+    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once you sign in. No Apps Script, no URLs — you sign in with your own Google account and the app talks to the Sheet directly.</div>
+    <div class="field" id="gClientIdBox" style="max-width:640px;display:none;">
+      <label>Google OAuth Client ID</label>
+      <input id="clientId" placeholder="1234567890-abc123.apps.googleusercontent.com">
+      <div class="hint">Tip: paste it permanently into <code>config.js</code> so every device is pre-configured.</div>
     </div>
     <div class="actions">
-      <button class="btn primary" onclick="saveScriptUrl()">💾 Save &amp; test connection</button>
-      <button class="btn green" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
-      <button class="btn ghost" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
+      <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
+      <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
+      <button class="btn green" id="btnSyncAll3" style="display:none;" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
+      <button class="btn ghost" id="btnLoad3" style="display:none;" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
       <span class="msg" id="shMsg"></span>
     </div>
   </div>
   <div class="card">
-    <h2>One-time setup (5 minutes)</h2>
+    <h2>One-time setup (5 minutes, admin only)</h2>
     <ol class="steps">
-      <li>Open <b>sheets.google.com</b> → create a new blank spreadsheet, name it e.g. <b>Hisab</b>.</li>
-      <li>In the sheet menu: <b>Extensions → Apps Script</b>.</li>
-      <li>Press <b>Ctrl+A</b> (Mac: <b>Cmd+A</b>) to select everything in <code>Code.gs</code>, then Delete. Paste <b>only</b> the contents of <code>google-apps-script.gs</code> from this project (nothing after the last <code>}</code>). Press the 💾 save icon. If Apps Script says <code>Unexpected token '*'</code>, leftover text is still in the file — select-all and paste again.</li>
-      <li>Click <b>Deploy → New deployment</b> → gear icon ⚙ → choose <b>Web app</b>.</li>
-      <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
-      <li>Google will ask permission — click <b>Authorize</b>, choose your account, click <b>Advanced → Go to project (unsafe)</b> → <b>Allow</b>. (It's your own script, this is safe.)</li>
-      <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>) and paste it in the box above → <b>Save &amp; test connection</b>.</li>
-      <li>Press <b>Send all saved data to Sheet</b> once. Done — from now on every submit goes to the sheet automatically.</li>
+      <li>Open <b>console.cloud.google.com</b> → create (or pick) a project, e.g. <b>Hisab</b>.</li>
+      <li>Menu <b>APIs &amp; Services → Library</b> → search <b>Google Sheets API</b> → <b>Enable</b>.</li>
+      <li><b>APIs &amp; Services → OAuth consent screen</b> → choose <b>Internal</b> (Google Workspace: only accounts in your organisation can sign in — this is the “Google Workspace OAuth” lock). If you don’t have Workspace, choose <b>External</b> and add your Google accounts as test users.</li>
+      <li><b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</b> → type <b>Web application</b>.</li>
+      <li>Under <b>Authorised JavaScript origins</b> add the exact address where the app is opened, e.g. <code>https://ardashomehealthcare.github.io</code> (add <code>http://localhost:8000</code> too if you test locally). Sign-in only works from a listed origin.</li>
+      <li>Copy the <b>Client ID</b> (ends in <code>.apps.googleusercontent.com</code>) and paste it in <code>config.js</code> (<code>HISAB_GOOGLE_CLIENT_ID</code>) — or in the box above → then press <b>Sign in with Google</b> and allow access to your Sheet.</li>
+      <li>Done — every submit now goes straight from the browser to your Google Sheet. Each partner signs in with their own Google account (they need <b>Editor</b> access to the Sheet).</li>
     </ol>
+    <div class="hint">💡 The spreadsheet ID is locked into <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — same sheet as before, so all existing data is kept.</div>
   </div>
 </section>
 
@@ -570,17 +584,19 @@
   </div>
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer onerror="window._gsiFailed=true"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
 <script src="config.js"></script>
 <script>
 /* ================= STORAGE ================= */
-/* The permanent /exec URL lives in config.js - one line, easy to edit. */
-const BUILT_IN_SCRIPT_URL=String(window.HISAB_SCRIPT_URL||'').trim();
+/* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
+const GOOGLE_CLIENT_ID=String(window.HISAB_GOOGLE_CLIENT_ID||'').trim();
+const SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
 const KEY='hisabData_v1';
 let DB=load();
-if(BUILT_IN_SCRIPT_URL)DB.scriptUrl=BUILT_IN_SCRIPT_URL;
 function load(){
   try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees)return d;}catch(e){}
-  return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[],scriptUrl:''};
+  return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
 }
 function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
 function importBackup(inp){
@@ -590,7 +606,7 @@ function importBackup(inp){
       const d=JSON.parse(rd.result);
       if(!d||!Array.isArray(d.employees))throw 0;
       if(!confirm('Replace all data on this device with the backup file?'))return;
-      DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[],scriptUrl:DB.scriptUrl||''};
+      DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]};
       persist();renderAll();toast('✅ Backup imported.');
     }catch(e){toast('❌ Not a valid Hisab backup file.');}
     inp.value='';};
@@ -614,66 +630,198 @@ document.getElementById('nav').addEventListener('click',e=>{
   showTab(b.dataset.tab);
 });
 
-/* ================= GOOGLE SHEET SYNC ================= */
+/* ================= GOOGLE SHEET SYNC — Google OAuth + Sheets API (no Apps Script) ================= */
+const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
+const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp'],
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt','dutyShift'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts','subWage'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
-  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
+  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','clientPhone'],
   Expenses:['id','item','date','amount','savedAt']
 };
 function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
-async function postToSheet(payload){
-  if(!DB.scriptUrl)return {ok:false,offline:true};
-  try{
-    const res=await fetch(DB.scriptUrl,{method:'POST',body:JSON.stringify(payload)});
-    const j=await res.json();
-    return j;
-  }catch(e){return {ok:false,error:String(e)};}
+
+/* ---------- Google Identity Services (sign in with Google) ----------
+   The app asks the browser for an access token limited to
+   https://www.googleapis.com/auth/spreadsheets. Every Sheets API call
+   below carries that token, so Google itself checks that the signed-in
+   account may edit the spreadsheet — no shared "Anyone" URL anymore. */
+const GS_BASE='https://sheets.googleapis.com/v4/spreadsheets/'+SPREADSHEET_ID;
+const GS_SCOPES='https://www.googleapis.com/auth/spreadsheets';
+const AUTH_KEY='hisabGoogleAuth_v1';
+let AUTH={token:'',expiresAt:0};
+let tokenClient=null,tokenClientId='',tokenWaiter=null,ensureTabsPromise=null;
+function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY));if(a&&a.token)AUTH={token:a.token,expiresAt:a.expiresAt||0};}catch(e){}}
+function saveAuth(){try{localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH));}catch(e){}}
+function clearAuth(){AUTH={token:'',expiresAt:0};ensureTabsPromise=null;try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
+function getClientId(){return GOOGLE_CLIENT_ID||String(localStorage.getItem('hisabClientId')||'').trim();}
+/* connected = a token that is still valid (30 s safety margin) */
+function isGoogleConnected(){return !!(AUTH.token&&AUTH.expiresAt>Date.now()+30000);}
+function gsiReady(){return !!(window.google&&window.google.accounts&&window.google.accounts.oauth2);}
+function initTokenClient(){
+  const id=getClientId();
+  if(!id||!gsiReady())return null;
+  if(tokenClient&&tokenClientId===id)return tokenClient;
+  tokenClientId=id;
+  tokenClient=window.google.accounts.oauth2.initTokenClient({
+    client_id:id,
+    scope:GS_SCOPES,
+    callback:resp=>{
+      const w=tokenWaiter;tokenWaiter=null;
+      if(!w)return;
+      if(resp&&resp.error){w.reject(new Error(resp.error||'auth failed'));return;}
+      AUTH={token:resp.access_token,expiresAt:Date.now()+(resp.expires_in||3600)*1000};
+      saveAuth();updateSheetStatus();
+      w.resolve(AUTH.token);
+    },
+    error_callback:err=>{const w=tokenWaiter;tokenWaiter=null;if(w)w.reject(new Error((err&&err.type)||'popup_failed'));}
+  });
+  return tokenClient;
+}
+function requestToken(interactive){
+  return new Promise((resolve,reject)=>{
+    const tc=initTokenClient();
+    if(!tc){reject(new Error('gsi_not_loaded'));return;}
+    if(tokenWaiter){reject(new Error('busy'));return;}
+    tokenWaiter={resolve,reject};
+    try{tc.requestAccessToken({prompt:interactive?'consent':''});}
+    catch(e){tokenWaiter=null;reject(e);}
+  });
+}
+/* interactive=true → account chooser + consent (first sign-in / re-consent).
+   interactive=false → silent refresh (needs a recent grant; used for retries
+   from button clicks so no full popup is shown). */
+async function getAccessToken(interactive){
+  if(isGoogleConnected())return AUTH.token;
+  if(!getClientId())throw new Error('no_client_id');
+  return requestToken(interactive);
+}
+function isAuthError(e){return /no_client_id|gsi_not_loaded|popup|access_denied|unauthorized|busy|idpiframe|auth failed/.test(String((e&&e.message)||e));}
+
+/* ---------- Google Sheets API v4 ---------- */
+/* Every call carries the signed-in user's token. Tokens are (re)obtained
+   silently (prompt:'') so the user never sees a popup unless they press a
+   Sign-in button — and only from a click, browsers block the rest. */
+async function sheetFetch(url,opts={}){
+  const run=async tok=>fetch(url,{
+    method:opts.method||'GET',
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},
+    body:opts.body!==undefined?JSON.stringify(opts.body):undefined
+  });
+  let tok=await getAccessToken(false);
+  let res=await run(tok);
+  if(res.status===401){            // token expired / revoked mid-session → one silent refresh
+    clearAuth();
+    tok=await getAccessToken(false);
+    res=await run(tok);
+  }
+  return res;
+}
+async function sheetJSON(url,opts){
+  const res=await sheetFetch(url,opts);
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok){const e=new Error((j.error&&j.error.message)||('HTTP '+res.status));e.status=res.status;throw e;}
+  return j;
+}
+/* Create any missing tab + header row (like the old script did automatically) */
+function ensureTabs(){
+  if(ensureTabsPromise)return ensureTabsPromise;
+  ensureTabsPromise=(async()=>{
+    const meta=await sheetJSON(GS_BASE+'?fields=sheets.properties.title');
+    const have=new Set((meta.sheets||[]).map(s=>s.properties&&s.properties.title));
+    const missing=TABS.filter(t=>!have.has(t));
+    if(missing.length){
+      await sheetJSON(GS_BASE+':batchUpdate',{method:'POST',body:{requests:missing.map(t=>({addSheet:{properties:{title:t}}}))}});
+      await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
+        valueInputOption:'RAW',
+        data:missing.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))
+      }});
+    }
+  })().catch(e=>{ensureTabsPromise=null;throw e;});
+  return ensureTabsPromise;
+}
+async function appendRow(sheet,row){
+  const url=GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
+  const body={values:[row]};
+  try{await sheetJSON(url,{method:'POST',body});}
+  catch(e){
+    if(!/parse range/i.test(String(e.message)))throw e;   // tab missing → create it and retry once
+    await ensureTabs();
+    await sheetJSON(url,{method:'POST',body});
+  }
 }
 async function sendRecord(sheet,rec){
-  const r=await postToSheet({action:'append',sheet,headers:SHEET_COLS[sheet],row:rowFor(sheet,rec)});
-  if(r.ok){rec.synced=true;persist();toast('✅ Saved & sent to Google Sheet');}
-  else if(r.offline){toast('💾 Saved on device (Google Sheet not connected yet)');}
-  else{toast('💾 Saved on device — Sheet sync failed, will retry with "Send all"');}
+  if(!AUTH.token){toast('💾 Saved on device — sign in on the Google Sheet tab to sync');updateSheetStatus();return;}
+  try{
+    await appendRow(sheet,rowFor(sheet,rec));
+    rec.synced=true;persist();
+    toast('✅ Saved & sent to Google Sheet');
+  }catch(e){
+    if(isAuthError(e))toast('💾 Saved on device — sign in on the Google Sheet tab to sync');
+    else toast('💾 Saved on device — Sheet sync failed, will retry with "Send all"');
+  }
   updateSheetStatus();
 }
 async function syncAll(){
-  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   flash('shMsg','Sending everything…');
-  const data={};
-  data.Employees={headers:SHEET_COLS.Employees,rows:DB.employees.map(r=>rowFor('Employees',r))};
-  data.DutyLeave={headers:SHEET_COLS.DutyLeave,rows:DB.dutyLeave.map(r=>rowFor('DutyLeave',r))};
-  data.EmployeePayments={headers:SHEET_COLS.EmployeePayments,rows:DB.payments.map(r=>rowFor('EmployeePayments',r))};
-  data.ClientReceipts={headers:SHEET_COLS.ClientReceipts,rows:DB.receipts.map(r=>rowFor('ClientReceipts',r))};
-  data.Expenses={headers:SHEET_COLS.Expenses,rows:DB.expenses.map(r=>rowFor('Expenses',r))};
-  const r=await postToSheet({action:'replaceAll',data});
-  if(r.ok){[...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');}
-  else{flash('shMsg','❌ Could not reach the Sheet. Check the URL / internet.',false);toast('❌ Could not reach Google Sheet.');}
+  try{
+    await ensureTabs();
+    for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
+    await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
+      valueInputOption:'RAW',
+      data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t],...(DB[TAB_TO_DB[t]]||[]).map(r=>rowFor(t,r))]}))
+    }});
+    [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
+    flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
+  }catch(e){
+    flash('shMsg',isAuthError(e)?'❌ Not signed in — press “Sign in with Google” above.':'❌ Could not write to the Sheet: '+e.message,false);
+    toast('❌ Could not reach Google Sheet.');
+  }
   updateSheetStatus();
 }
+/* Columns that may hold real DATE / TIME cells: rows written by the old
+   Apps Script were auto-parsed by Google Sheets and come back from the API
+   as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
+   by this app go in as plain text (valueInputOption=RAW) and round-trip
+   exactly as typed — which also kills the old "1899-12-30" time bug. */
+const DATE_COLS={Employees:['joinDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};
 const TIME_COLS=new Set(['dutyTime','fromTime','toTime']);
+const SHEET_EPOCH=Date.UTC(1899,11,30); // Google Sheets serial 0
+const serialToDate=v=>new Date(SHEET_EPOCH+Math.round(v*86400000)).toISOString().slice(0,10);
+const serialToTime=v=>{const m=Math.round((v%1)*24*60);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');};
 async function fetchSheetData(){
-  const res=await fetch(DB.scriptUrl+'?action=getAll');
-  const j=await res.json();
-  if(!j.ok)throw new Error(j.error||'load failed');
-  const map=(sheet,cols)=> (j.data[sheet]||[]).map(row=>{
-    const o={synced:true};
-    cols.forEach((c,i)=>{
-      let v=row[i]??'';
-      // Google Sheets stores time-only cells as dates in 1899 — older script
-      // versions send them back as "1899-12-30"; hide that garbage.
-      if(TIME_COLS.has(c)&&/^1899-\d{2}-\d{2}/.test(String(v)))v='';
-      o[c]=v;
+  const url=GS_BASE+'/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&'+TABS.map(t=>'ranges='+encodeURIComponent(t)).join('&');
+  let j;
+  try{j=await sheetJSON(url);}                     // response order matches the requested ranges
+  catch(e){
+    if(!/parse range/i.test(String(e.message)))throw e;   // a tab is missing → create it and retry once
+    await ensureTabs();
+    j=await sheetJSON(url);
+  }
+  const map=(sheet,i)=>{
+    const cols=SHEET_COLS[sheet],dates=new Set(DATE_COLS[sheet]||[]);
+    const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
+    return rows.slice(1).map(row=>{      // skip the header row
+      const o={synced:true};
+      cols.forEach((c,idx)=>{
+        let v=row[idx]??'';
+        if(typeof v==='number'){
+          if(dates.has(c))v=serialToDate(v);
+          else if(TIME_COLS.has(c))v=serialToTime(v);
+        }
+        o[c]=String(v);
+      });
+      return o;
     });
-    return o;
-  });
+  };
   return {
-    employees:map('Employees',SHEET_COLS.Employees),
-    dutyLeave:map('DutyLeave',SHEET_COLS.DutyLeave),
-    payments:map('EmployeePayments',SHEET_COLS.EmployeePayments),
-    receipts:map('ClientReceipts',SHEET_COLS.ClientReceipts),
-    expenses:map('Expenses',SHEET_COLS.Expenses)
+    employees:map('Employees',0),
+    dutyLeave:map('DutyLeave',1),
+    payments:map('EmployeePayments',2),
+    receipts:map('ClientReceipts',3),
+    expenses:map('Expenses',4)
   };
 }
 function applySheetData(fresh,keepUnsynced){
@@ -688,19 +836,23 @@ function applySheetData(fresh,keepUnsynced){
   persist();renderAll();
 }
 async function loadFromSheet(){
-  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
   flash('shMsg','Loading from Sheet…');
   try{
+    await getAccessToken(true);
     applySheetData(await fetchSheetData(),false);
     flash('shMsg','✅ Data loaded from Google Sheet.');toast('✅ Data loaded from Google Sheet.');
-  }catch(e){flash('shMsg','❌ Could not load. Check URL / deployment access = Anyone.',false);toast('❌ Could not load from Google Sheet.');}
+  }catch(e){
+    flash('shMsg','❌ Could not load. '+(isAuthError(e)?'Sign in first.':'Check internet / that your account has Editor access to the Sheet.'),false);
+    toast('❌ Could not load from Google Sheet.');
+  }
 }
 /* On every app start, silently pull the latest data from the Google Sheet
    so the interface always shows what is in the Sheet — on any device.
    Local entries that were never synced are kept and merged in. */
 async function autoLoadFromSheet(){
-  if(!DB.scriptUrl)return;
+  if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
     applySheetData(await fetchSheetData(),true);
     toast('✅ Data refreshed from Google Sheet');
@@ -708,27 +860,44 @@ async function autoLoadFromSheet(){
     toast('⚠ Could not reach Google Sheet — showing data saved on this device');
   }
 }
-async function saveScriptUrl(){
-  if(BUILT_IN_SCRIPT_URL){flash('shMsg','URL is permanently built into the app - nothing to save. Already connected.');return;}
-  const u=document.getElementById('scriptUrl').value.trim();
-  DB.scriptUrl=u;persist();updateSheetStatus();
-  if(!u){flash('shMsg','URL cleared. Data will save on this device only.');return;}
-  flash('shMsg','Testing connection…');
+async function googleSignIn(){
+  if(window._gsiFailed){flash('shMsg','❌ Could not load Google sign-in (check internet / blockers).',false);return;}
+  if(!gsiReady()){flash('shMsg','Google sign-in is still loading — wait a second and try again.',false);return;}
+  const manual=String(document.getElementById('clientId').value||'').trim();
+  if(manual){try{localStorage.setItem('hisabClientId',manual);}catch(e){}tokenClient=null;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   try{
-    const res=await fetch(u+'?action=ping');const j=await res.json();
-    if(j.ok)flash('shMsg','✅ Connected! Every submit now also goes to your Google Sheet.');
-    else throw 0;
-  }catch(e){flash('shMsg','❌ Could not connect. Check the URL ends in /exec and access is "Anyone".',false);}
+    flash('shMsg','Waiting for Google…');
+    await getAccessToken(true);
+    updateSheetStatus();
+    await ensureTabs().catch(()=>{});   // create missing tabs + header rows
+    flash('shMsg','✅ Signed in — every submit now goes straight to your Google Sheet.');
+    toast('✅ Signed in to Google');
+    autoLoadFromSheet();
+  }catch(e){
+    flash('shMsg','❌ Sign-in failed: '+(e.message==='no_client_id'?'no Client ID set':e.message),false);
+  }
+  updateSheetStatus();
+}
+function googleSignOut(){
+  const tok=AUTH.token;
+  clearAuth();
+  if(gsiReady()&&tok){try{window.google.accounts.oauth2.revoke(tok,()=>{});}catch(e){}}
+  flash('shMsg','Signed out. Data keeps saving on this device.');
   updateSheetStatus();
 }
 function updateSheetStatus(){
   const s=document.getElementById('sheetStatus'),t=document.getElementById('sheetStatusTxt');
-  if(BUILT_IN_SCRIPT_URL){s.classList.add('ok');t.textContent='Google Sheet: connected (permanent)';}
-  else if(DB.scriptUrl){s.classList.add('ok');t.textContent='Google Sheet: connected';}
-  else{s.classList.remove('ok');t.textContent='Google Sheet: not connected';}
-  // permanently connected -> no need for the Google Sheet tab at all
-  document.getElementById('navSheet').style.display=BUILT_IN_SCRIPT_URL?'none':'';
-  const connected=!!DB.scriptUrl;
+  const cid=getClientId();
+  const connected=isGoogleConnected();
+  t.textContent=!cid?'Google: not configured':(connected?'Google Sheet: connected':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in'));
+  s.classList.toggle('ok',connected);
+  // Client-ID box only needed when config.js doesn't already carry the ID
+  document.getElementById('gClientIdBox').style.display=cid?'none':'';
+  document.getElementById('btnSignIn').style.display=connected?'none':'';
+  document.getElementById('btnSignOut').style.display=connected?'':'none';
+  document.getElementById('btnSyncAll3').style.display=connected?'':'none';
+  document.getElementById('btnLoad3').style.display=connected?'':'none';
   document.getElementById('btnSyncAll2').style.display=connected?'':'none';
   document.getElementById('btnLoad2').style.display=connected?'':'none';
 }
@@ -748,13 +917,14 @@ function saveEmployee(){
   const rec={id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
     wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),
     dutyTime:(val('eWageType')!=='daily'&&val('eDuty')==='24')?val('eTime'):'',
+    dutyShift:(val('eWageType')!=='daily'&&val('eDuty')==='12')?val('eShift'):'',
     joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
+  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.dutyShift,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
   // If same name exists, update it instead of duplicating
   const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
   if(existing){
-    ['phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
-    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';}
+    ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
+    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';existing.dutyShift='';}
     existing.savedAt=rec.savedAt;existing.synced=false;persist();
     flash('eMsg','Updated existing employee "'+existing.name+'".');
     sendRecord('Employees',existing);
@@ -774,6 +944,9 @@ function toggleDutyField(){
   const show24=!daily&&val('eDuty')==='24';
   document.getElementById('eTimeField').style.display=show24?'':'none';
   if(!show24)document.getElementById('eTime').value='';
+  const show12=!daily&&val('eDuty')==='12';
+  document.getElementById('eShiftField').style.display=show12?'':'none';
+  if(!show12)document.getElementById('eShift').value='day';
 }
 
 /* ================= DUTY / LEAVE ================= */
@@ -790,71 +963,105 @@ function saveDutyLeave(type){
   clear(p.f,p.t);clear('dClient','dFromT','dToT');
   renderAll();
 }
-/* ---- Leave-entry form: type dropdown (on leave / substitute) ---- */
-function submitLeaveForm(){return val('lType')==='substitute'?saveSubstituteForm():saveLeaveStart();}
-function onLeaveTypeChange(){
-  const sub=val('lType')==='substitute';
-  document.getElementById('lForField').style.display=sub?'':'none';
-  document.getElementById('lSubToField').style.display=sub?'':'none';
-  document.getElementById('lEmpField').style.display=sub?'none':'';
-  document.getElementById('lSubNameField').style.display=sub?'':'none';
-  document.getElementById('lEmpLbl').textContent='Employee';
-  document.getElementById('lFromLbl').textContent=sub?'Substitute from date':'Leave start date';
-  const b=document.getElementById('lBtn');
-  b.textContent=sub?'✔ Add substitute':'✔ Employee is on leave';
-  b.className=sub?'btn primary':'btn red';
-  document.getElementById('lTimeFields').style.display='none';
-  if(sub)fillForSel();
-  else onLeaveEmpChange();
-}
-/* Fill the "in place of" dropdown with employees currently on leave */
-function fillForSel(){
-  const sel=document.getElementById('lForSel');
-  const open=DB.dutyLeave.filter(isOnLeaveRec);
-  const cur=sel.value;
-  sel.innerHTML='<option value="">— employee on leave —</option>'+open.map(r=>`<option value="${esc(r.empName)}">${esc(r.empName)} — on leave since ${esc(r.from)}</option>`).join('');
-  sel.value=(cur&&[...sel.options].some(o=>o.value===cur))?cur:(open.length===1?open[0].empName:'');
-  onForEmpChange();
-}
-function onForEmpChange(){
-  const sel=document.getElementById('lForSel');
-  const lv=ongoingLeaveOf(sel.value);
-  /* default the from date to the leave start, but only when the choice changes
-     (so a manually edited date survives re-renders) */
-  if(lv&&sel.dataset.lastFor!==sel.value){document.getElementById('lFrom').value=lv.from;sel.dataset.lastFor=sel.value;}
-}
+/* ---- Leave entry: one form — employee on leave + optional substitute below ---- */
 /* Case-insensitive employee lookup (typed names like “ramesh” still match “Ramesh”) */
 function findEmpByName(name){const k=String(name||'').trim().toLowerCase();return DB.employees.find(e=>String(e.name||'').trim().toLowerCase()===k);}
-/* Live hint under the manually typed substitute name */
-function updSubNameHint(){
-  const h=document.getElementById('lSubNameHint');
-  const name=val('lSubName');
-  if(!name){h.innerHTML='';return;}
-  const e=findEmpByName(name);
-  h.innerHTML=e
-    ?`✅ <b>${esc(e.name)}</b>${e.client?' • at '+esc(e.client):''}${e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):''}${e.dutyHours?' • '+esc(e.dutyHours)+' hr duty':''}`
-    :`ℹ <b>${esc(name)}</b> is not in the Employees tab — they will still be recorded as the substitute. Add them in Employees (any time, same name) and their salary is calculated automatically at Join duty.`;
+function onLeaveEmpChange(){
+  const name=val('lEmpSel');
+  const emp=DB.employees.find(e=>e.name===name);
+  const is24=!!(emp&&emp.dutyHours==='24');
+  document.getElementById('lTimeFields').style.display=is24?'contents':'none';
+  if(!val('lFrom'))document.getElementById('lFrom').value=todayStr();
+  if(is24&&emp.dutyTime&&!val('lFromT'))document.getElementById('lFromT').value=emp.dutyTime;
+  document.getElementById('lvSubTimeField').style.display=is24?'':'none';
+  /* employee already on leave -> show their substitutes, an add-substitute type
+     bar and the Join duty button right here; the new-leave fields hide */
+  const lv=ongoingLeaveOf(name);
+  const joinBox=document.getElementById('lvJoinBox'),leaveArea=document.getElementById('lvLeaveArea');
+  if(lv){
+    joinBox.style.display='';leaveArea.style.display='none';
+    const subs=DB.dutyLeave.filter(x=>x.type==='substitute'&&x.forEmp===lv.empName);
+    joinBox.innerHTML=`<div class="dlgInfo">
+      <b>${esc(lv.empName)}</b> is <span class="badge red">ON LEAVE</span> since <b>${esc(lv.from)}</b>${lv.fromTime?' at <b>'+esc(lv.fromTime)+'</b>':''} — <b>${liveLeaveDays(lv)}</b> day(s) so far, counted automatically.
+      ${subs.length?'<br>'+subs.map(x=>`<span class="subLine" style="display:block;margin-top:4px;">🤝 <b>${esc(x.empName)}</b> since ${esc(x.from)}${x.fromTime?' '+esc(x.fromTime):''} <button class="del" onclick="delRec('dutyLeave','${x.id}')" title="Remove substitute">✕</button></span>`).join(''):''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
+        <div class="field" style="flex:1;min-width:200px;margin:0;"><label>Add substitute (type name)</label>
+          <input id="lvAddName" placeholder="Type any name — new / temporary person OK" oninput="updCardSub('lvAdd','${lv.id}')" autocomplete="off"></div>
+        <div class="field" id="lvAddWageField" style="display:none;margin:0;max-width:140px;"><label>₹ / day</label>
+          <input id="lvAddWage" type="number" inputmode="numeric" placeholder="600" oninput="updCardSub('lvAdd','${lv.id}')"></div>
+        <button class="btn primary" onclick="addCardSub('lvAdd','${lv.id}')">➕ Add substitute</button>
+      </div>
+      <div class="hint" id="lvAddPrev" style="margin:6px 0 0;"></div>
+      <div class="actions" style="margin-top:12px;">
+        <button class="btn green" onclick="openJoinDuty('${lv.id}')">🤝 Join duty</button>
+      </div>
+    </div>`;
+  }else{
+    joinBox.style.display='none';leaveArea.style.display='';
+    updLvSub();
+  }
 }
-/* Add a substitute straight from the Leave entry form — name typed manually */
-function saveSubstituteForm(){
-  const forName=val('lForSel'),typed=val('lSubName'),from=val('lFrom'),to=val('lSubTo');
-  const emp=findEmpByName(typed);
-  const name=emp?emp.name:typed;
-  if(!forName){flash('lMsg','Choose the employee who is on leave (In place of).',false);return;}
-  if(!name){flash('lMsg','Type the substitute employee\u2019s name.',false);return;}
-  if(name===forName){flash('lMsg','Substitute and the employee on leave cannot be the same person.',false);return;}
-  if(!from){flash('lMsg','Choose the substitute from date.',false);return;}
-  if(to&&to<from){flash('lMsg','End date is before the start date.',false);return;}
-  const lv=ongoingLeaveOf(forName);
-  if(!lv){flash('lMsg',forName+' has no open leave record — mark them on leave first.',false);return;}
-  const rec={id:uid(),empName:name,type:'substitute',forEmp:forName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?dayCount(from,to):'',client:lv.client||'',savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
-  sendRecord('DutyLeave',rec);
-  flash('lMsg','🤝 '+name+' added as substitute for '+forName+(rec.client?' at '+rec.client:'')+'.');
-  clear('lSubTo','lSubName');
-  document.getElementById('lSubNameHint').innerHTML='';
+/* Live hint + salary preview for the optional substitute inside the leave form */
+function updLvSub(){
+  const typed=val('lvSubName');
+  const hint=document.getElementById('lvSubHint'),prev=document.getElementById('lvPrev');
+  const btn=document.getElementById('lBtn');
+  const e=typed?findEmpByName(typed):null;
+  const hasWage=!!(e&&Number(e.wageAmount)>0);
+  document.getElementById('lvSubGrid').style.display=(typed&&!hasWage)?'':'none';
+  if(!typed){hint.innerHTML='';prev.innerHTML='';btn.textContent='✔ Employee is on leave';return;}
+  btn.textContent='✔ Save leave + substitute';
+  const tag=e?subOptionTag(e,''):'';
+  hint.innerHTML=e
+    ?`✅ <b>${esc(e.name)}</b>${e.client?' • at '+esc(e.client):''}${e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):''}${e.dutyHours?' • '+esc(e.dutyHours)+' hr duty':''}${tag?'<br><span style="color:var(--amber);font-weight:600;">Note: '+esc(tag)+'</span>':''}`
+    :`ℹ <b>${esc(typed)}</b> is not in the Employees tab — enter a Wage per day so the salary is calculated automatically.`;
+  /* salary preview from the form's leave start (+ time) */
+  const from=val('lFrom'),ftRaw=val('lFromT');
+  if(!from){prev.innerHTML='';return;}
+  const empName=e?e.name:typed;
+  const ft=(val('lvSubTime')||ftRaw||'');
+  const end=todayStr();
+  if(end<from){prev.innerHTML='';return;}
+  const days=ft?Math.max(1,shiftCount(from,ft,end,ft)):dayCount(from,end);
+  const c=substitutePay({empName,from,to:end,days,subWage:val('lvSubWage')});
+  prev.innerHTML=c.pay!=null
+    ?`Substitute salary ${esc(empName)}: <b>≈ ${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule} — updated live, final total at Join duty)</span>`
+    :`<span style="color:var(--amber);font-weight:600;">⚠ No wage for ${esc(empName)} yet — type a Wage per day above.</span>`;
+}
+/* Live hint for the inline add-substitute bar (join box + on-leave card).
+   The substitute is recorded from the leave's start (and shift time). */
+function updCardSub(p,leaveId){
+  const lv=DB.dutyLeave.find(x=>x.id===leaveId);if(!lv)return;
+  const typed=val(p+'Name'),prev=document.getElementById(p+'Prev');if(!prev)return;
+  const wageField=document.getElementById(p+'WageField');
+  const e=typed?findEmpByName(typed):null;
+  const hasWage=!!(e&&Number(e.wageAmount)>0);
+  if(wageField)wageField.style.display=(typed&&!hasWage)?'':'none';
+  if(!typed){prev.innerHTML='';return;}
+  if(!e){prev.innerHTML='ℹ <b>'+esc(typed)+'</b> is not in the Employees tab — enter ₹ / day so the salary is calculated automatically.';return;}
+  const tag=subOptionTag(e,lv.empName);
+  prev.innerHTML='✅ <b>'+esc(e.name)+'</b>'+(e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):'')
+    +(tag?'<br><span style="color:var(--amber);font-weight:600;">Note: '+esc(tag)+'</span>':'');
+}
+/* Add the substitute typed in an inline bar (join box / on-leave card) */
+function addCardSub(p,leaveId){
+  const lv=DB.dutyLeave.find(x=>x.id===leaveId);if(!lv)return;
+  const typed=val(p+'Name');
+  if(!typed){toast('Type the substitute’s name first.');return;}
+  const e=findEmpByName(typed);
+  const name=e?e.name:typed;
+  if(name===lv.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
+  const ft=lv.fromTime||'';
+  const rec={id:uid(),empName:name,type:'substitute',forEmp:lv.empName,from:lv.from,to:'',fromTime:ft,toTime:'',
+    days:'',byShifts:ft?true:'',subWage:Number(val(p+'Wage'))>0?val(p+'Wage'):'',client:lv.client||'',savedAt:new Date().toLocaleString()};
+  DB.dutyLeave.push(rec);persist();sendRecord('DutyLeave',rec);
+  toast('➕ '+name+' added as substitute for '+lv.empName+(rec.client?' at '+rec.client:'')+'.');
   renderAll();
+}
+function toggleCardSub(boxId){
+  const box=document.getElementById(boxId);if(!box)return;
+  box.style.display=box.style.display==='none'?'':'none';
+  const inp=box.querySelector('input');if(box.style.display!=='none'&&inp)inp.focus();
 }
 /* ---- On-leave → join-duty → substitute flow ---- */
 const isOnLeaveRec=r=>r.type==='leave'&&!r.to&&r.from;
@@ -875,23 +1082,29 @@ function effLeaveRec(r,end){
   return {...r,to:end,ongoing:true,days:r.fromTime?shiftCount(r.from,r.fromTime,end,r.fromTime):dayCount(r.from,end)};
 }
 /* Closed copy of an open substitution, extended to `end` — days counted like the
-   covered duty (24-hr shifts when the employee on leave is a 24-hr duty employee) */
+   covered duty (24-hr shifts, using the substitute's own start time when saved,
+   else the employee on leave's) */
 function effSubRec(r,end){
   if(r.to)return r;
   const lv=DB.dutyLeave.find(x=>x.type==='leave'&&x.empName===r.forEmp&&!x.to);
-  const byShifts=!!(lv&&lv.fromTime);
-  const days=byShifts?Math.max(1,shiftCount(r.from,lv.fromTime,end,lv.fromTime)):dayCount(r.from,end);
-  return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||byShifts};
+  const ft=r.fromTime||(lv&&lv.fromTime)||'';
+  const days=ft?Math.max(1,shiftCount(r.from,ft,end,ft)):dayCount(r.from,end);
+  return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||!!ft};
 }
-/* Expected pay for a finished substitution — from the SUBSTITUTE's own saved wage.
+/* Expected pay for a finished substitution — a per-day wage entered when the
+   substitute was added wins (rate agreed for that duty); otherwise the
+   SUBSTITUTE's own saved employee wage is used.
    daily: rate × days • monthly: per-day pro-rata (wage ÷ days-in-month × days), split across months */
 function substitutePay(sub){
   const emp=DB.employees.find(e=>e.name===sub.empName);
   const days=Math.max(1,Number(sub.days)||dayCount(sub.from,sub.to||sub.from));
-  const wage=Number((emp&&emp.wageAmount)||0),wt=(emp&&emp.wageType)||'';
+  const subWage=Number(sub.subWage||0);
+  const useSub=subWage>0;
+  const wage=useSub?subWage:Number((emp&&emp.wageAmount)||0);
+  const wt=useSub?'daily':((emp&&emp.wageType)||'');
   if(!wage||!wt)return {emp,days,pay:null,rule:''};
   if(wt==='daily'){
-    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')};
+    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')+(useSub?' (rate entered for this substitute)':'')};
   }
   const counts=splitAcrossMonths(sub.from,sub.to||sub.from,days);
   let pay=0;const parts=[];
@@ -902,7 +1115,8 @@ function substitutePay(sub){
   return {emp,days,pay,rule:parts.join(' + ')};
 }
 /* Employee goes ON LEAVE — only the start date (+ time for 24-hr duty) is needed.
-   The leave stays open until "Join duty" sets the end. */
+   The leave stays open until "Join duty" sets the end. A substitute typed in the
+   form below is saved in the same Submit. */
 function saveLeaveStart(){
   const name=val('lEmpSel'),from=val('lFrom'),fromTime=val('lFromT');
   if(!name||!from){flash('lMsg','Choose the employee and the leave start date.',false);return;}
@@ -912,11 +1126,30 @@ function saveLeaveStart(){
   const rec={id:uid(),empName:name,type:'leave',from,fromTime,to:'',toTime:'',days:'',
     client:(emp&&emp.client)||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
-  flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Days will be counted when they join duty.');
   sendRecord('DutyLeave',rec);
+  /* optional substitute typed in the same form — saved together with the leave */
+  const typed=val('lvSubName');
+  const subEmp=typed?findEmpByName(typed):null;
+  const subName=subEmp?subEmp.name:typed;
+  if(subName&&subName===name){
+    flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Substitute skipped — same person.');
+  }else if(subName){
+    const ft=fromTime?(val('lvSubTime')||fromTime):'';
+    const srec={id:uid(),empName:subName,type:'substitute',forEmp:name,from,to:'',fromTime:ft,toTime:'',
+      days:'',byShifts:ft?true:'',subWage:Number(val('lvSubWage'))>0?val('lvSubWage'):'',client:rec.client||'',savedAt:new Date().toLocaleString()};
+    DB.dutyLeave.push(srec);persist();sendRecord('DutyLeave',srec);
+    flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+' — 🤝 '+subName+' saved as substitute.');
+  }else{
+    flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Days will be counted when they join duty.');
+  }
+  clear('lvSubName','lvSubWage','lvSubTime');
+  document.getElementById('lvSubHint').innerHTML='';
+  document.getElementById('lvPrev').innerHTML='';
+  document.getElementById('lBtn').textContent='✔ Employee is on leave';
   document.getElementById('lFrom').value=todayStr();
   if(emp&&emp.dutyTime)document.getElementById('lFromT').value=emp.dutyTime;
   renderAll();
+  onLeaveEmpChange();
 }
 /* ---------- Join duty dialog ---------- */
 let dlgCtx=null;
@@ -957,19 +1190,21 @@ function confirmJoinDuty(){
   if(!d||d<r.from){toast('Check the join duty date.');return;}
   r.to=d;r.toTime=t;r.days=dutyDayCount(r)||1;
   /* end substitute duty automatically at the join date — days counted like the
-     covered duty (24-hr shifts: 8 AM → next day 8 AM = 1 day) */
-  const covered24=!!(dlgCtx.is24&&r.fromTime);
+     covered duty (24-hr shifts, using the substitute's own start time when
+     saved, else the employee on leave's: 8 AM → next day 8 AM = 1 day) */
   const closedSubs=[];
   DB.dutyLeave.forEach(s=>{
     if(s.type==='substitute'&&s.forEmp===r.empName&&!s.to){
+      const ft=s.fromTime||r.fromTime||'';
       s.to=d;
-      s.days=covered24?Math.max(1,shiftCount(s.from,r.fromTime,d,r.fromTime)):dayCount(s.from,d);
-      if(covered24)s.byShifts=true;
+      s.days=ft?Math.max(1,shiftCount(s.from,ft,d,t||ft)):dayCount(s.from,d);
+      if(ft)s.byShifts=true;
+      s.toTime=ft?(t||ft):'';
       closedSubs.push(s);
     }
   });
   persist();closeDlg();
-  if(DB.scriptUrl){toast('Updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('Updating Google Sheet…');syncAll();}
   renderAll();
   if(closedSubs.length)openJoinSummary(r,closedSubs);   /* substitute salary is calculated automatically */
   else toast('🤝 '+r.empName+' joined duty — '+r.days+' day(s) leave recorded.');
@@ -987,7 +1222,7 @@ function openJoinSummary(leaveRec,subs){
       🤝 <b>${esc(s.empName)}</b> — substitute duty <b>${esc(s.from)}</b> → <b>${esc(s.to)}</b> = <b>${c.days}</b> day${c.days===1?'':'s'}${s.client?' at '+esc(s.client):''}<br>
       ${c.pay!=null
         ?`Substitute salary: <b style="font-size:1.08rem;">${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule})</span>`
-        :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(s.empName)} — add it in the Employees tab, then use Salary Calculator.</span>`}
+        :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(s.empName)} — add them in the Employees tab, or delete and re-add the substitute with a Wage per day.</span>`}
     </div>`;
   }).join('')
   +(total?`<div class="field"><label>Payment mode</label><select id="jsMode"><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>`:'')
@@ -1016,68 +1251,6 @@ function recordSubPayments(){
   });
   persist();closeDlg();renderAll();
   toast(n?'💸 Substitute salary '+fmt(total)+' recorded as paid ('+mode+').':'No payment recorded.');
-}
-/* ---------- Add substitute dialog (name typed manually — any person works) ---------- */
-/* Status note shown when the typed name matches an employee */
-function subOptionTag(e,exceptLeaveOf){
-  const lv=DB.dutyLeave.find(x=>isOnLeaveRec(x)&&x.empName===e.name);
-  if(lv)return '⚠ on leave since '+lv.from;
-  const cv=DB.dutyLeave.find(s=>s.type==='substitute'&&!s.to&&s.empName===e.name&&s.forEmp!==exceptLeaveOf);
-  if(cv)return 'already covering for '+cv.forEmp;
-  return '';
-}
-function openAddSub(id){
-  const r=DB.dutyLeave.find(x=>x.id===id);if(!r)return;
-  dlgCtx={kind:'sub',id};
-  document.getElementById('dlgTitle').innerHTML='➕ Add substitute — in place of '+esc(r.empName);
-  document.getElementById('dlgHint').innerHTML='Type the name of the person covering for <b>'+esc(r.empName)+'</b>. New / temporary names are fine — if they\u2019re in your Employees list, their wage is used for the salary calculation.';
-  document.getElementById('dlgBody').innerHTML=`
-    <div class="field"><label>Substitute employee (type name)</label><input id="subSel" placeholder="Type any name — new / temporary person OK" oninput="updSubInfo()" autocomplete="off"></div>
-    <div class="dlgInfo" id="subInfo" style="display:none;"></div>
-    <div class="grid">
-      <div class="field"><label>Substitute from date</label><input id="subFrom" type="date" value="${esc(r.from)}"></div>
-      <div class="field"><label>End date (blank = till ${esc(r.empName)} joins)</label><input id="subTo" type="date"></div>
-    </div>
-    <div class="actions">
-      <button class="btn primary" onclick="confirmAddSub()">✔ Add substitute</button>
-      <button class="btn ghost" onclick="closeDlg()">Cancel</button>
-    </div>`;
-  showDlg();
-}
-function updSubInfo(){
-  const typed=val('subSel'),info=document.getElementById('subInfo');
-  if(!typed){info.style.display='none';return;}
-  const e=findEmpByName(typed);
-  info.style.display='';
-  if(!e){
-    info.innerHTML='ℹ <b>'+esc(typed)+'</b> is not in the Employees tab — they will still be recorded. Add them in Employees (same name) for automatic salary calculation.';
-    return;
-  }
-  const leaveOf=dlgCtx?DB.dutyLeave.find(x=>x.id===dlgCtx.id):null;
-  const tag=subOptionTag(e,leaveOf?leaveOf.empName:'');
-  info.innerHTML='<b>'+esc(e.name)+'</b>'
-    +(e.client?' • normally at '+esc(e.client):'')
-    +(e.wageAmount?' • '+fmt(e.wageAmount)+(e.wageType==='monthly'?' / month':e.wageType==='daily'?' / day':''):'')
-    +(e.dutyHours?' • '+esc(e.dutyHours)+' hr duty'+(e.dutyTime?' from '+esc(e.dutyTime):''):'')
-    +(tag?'<br><span style="color:var(--amber);font-weight:600;">Note: '+esc(tag)+'</span>':'');
-}
-function confirmAddSub(){
-  if(!dlgCtx||dlgCtx.kind!=='sub')return;
-  const r=DB.dutyLeave.find(x=>x.id===dlgCtx.id);if(!r)return;
-  const typed=val('subSel'),from=val('subFrom'),to=val('subTo');
-  const emp=findEmpByName(typed);
-  const name=emp?emp.name:typed;
-  if(!name){toast('Type the substitute employee\u2019s name.');return;}
-  if(name===r.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
-  if(!from){toast('Choose the substitute from date.');return;}
-  if(to&&to<from){toast('Substitute end date is before its start date.');return;}
-  const rec={id:uid(),empName:name,type:'substitute',forEmp:r.empName,from,to:to||'',fromTime:'',toTime:'',
-    days:to?dayCount(from,to):'',client:r.client||'',savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
-  sendRecord('DutyLeave',rec);
-  closeDlg();
-  toast('➕ '+name+' added as substitute for '+r.empName+(rec.client?' at '+rec.client:'')+'.');
-  renderAll();
 }
 function showDlg(){document.getElementById('dlgOverlay').classList.add('show');}
 function closeDlg(){document.getElementById('dlgOverlay').classList.remove('show');dlgCtx=null;}
@@ -1137,6 +1310,15 @@ function onClientNameChange(){
   if(client && !dealEl.value){
     const last=lastDealForClient(client);
     if(last)dealEl.value=last;
+  }
+  /* remember the address + WhatsApp number from the client's most recent receipt */
+  if(client){
+    const k=client.trim().toLowerCase();
+    const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
+    if(prev){
+      if(prev.clientAddress&&!val('rAddr'))document.getElementById('rAddr').value=prev.clientAddress;
+      if(prev.clientPhone&&!val('rPhone'))document.getElementById('rPhone').value=prev.clientPhone;
+    }
   }
 }
 function lastDealForClient(client){
@@ -1205,13 +1387,101 @@ function printInvoice(){
   setTimeout(()=>document.body.classList.remove('printClient'),300);
 }
 function closeInvoice(){document.getElementById('invoiceCard').style.display='none';}
+/* ================= WHATSAPP SHARE (invoice / receipt as image) ================= */
+/* Clean a phone number for WhatsApp (keep digits only). */
+function waDigits(phone){return String(phone||'').replace(/[^0-9]/g,'');}
+/* WhatsApp click-to-chat link. With a number the chat opens on that exact
+   client / employee; without one WhatsApp shows the contact chooser. */
+function waLink(phone,text){
+  const p=waDigits(phone),t=encodeURIComponent(text||'');
+  return p?('https://wa.me/'+p+'?text='+t):('https://api.whatsapp.com/send?text='+t);
+}
+function openWhatsAppChat(text,phone){window.open(waLink(phone,text),'_blank');}
+/* Render an element (invoice / receipt) to a PNG image. */
+async function renderNodeToBlob(nodeId){
+  const node=document.getElementById(nodeId);
+  if(!node)throw new Error('not ready');
+  if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
+  const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  if(!blob)throw new Error('render failed');
+  return blob;
+}
+/* Download a blob as a file (invoice / receipt image). */
+function downloadBlob(blob,filename){
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);a.download=filename;a.click();
+  setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},5000);
+}
+/* 🖼 Save as image */
+async function saveNodeImage(nodeId,filename){
+  let blob;
+  try{blob=await renderNodeToBlob(nodeId);}
+  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  downloadBlob(blob,filename);
+  toast('🖼 Image saved: '+filename);
+}
+function saveInvoiceImage(){
+  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
+  const no=String(document.getElementById('invNo').textContent).replace(/[^A-Za-z0-9-]/g,'');
+  saveNodeImage('invoicePrintArea','Invoice-'+no+'.png');
+}
+function savePayInvoiceImage(){
+  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
+  const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
+  saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
+}
+/* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
+   WhatsApp opens DIRECTLY on the client's / employee's chat with the message
+   already typed (wa.me/<number>). Without a saved number the image goes
+   through the share sheet (phone) or the WhatsApp chooser. */
+async function sendNodeOnWhatsApp(nodeId,text,phone,filename){
+  let blob;
+  try{blob=await renderNodeToBlob(nodeId);}
+  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  if(waDigits(phone)){
+    downloadBlob(blob,filename);              // image saved, ready to attach
+    openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
+    toast('✅ Image saved — attach it in the chat that just opened');
+    return;
+  }
+  const file=new File([blob],filename,{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file],text});}catch(e){/* cancelled */}
+    return;
+  }
+  downloadBlob(blob,filename);
+  openWhatsAppChat(text,'');                  // WhatsApp chooser — pick any chat
+}
+/* Client invoice → WhatsApp image. Number: the field, else the number remembered
+   on the client's most recent receipt. Opens directly on the client's chat. */
+async function shareInvoiceWhatsApp(){
+  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
+  const client=document.getElementById('invClient').textContent;
+  const no=document.getElementById('invNo').textContent;
+  const date=document.getElementById('invDate').textContent;
+  const amt=document.getElementById('invTotal').textContent;
+  const mode=document.getElementById('invMode').textContent;
+  let phone=val('rPhone');
+  if(!phone){
+    const k=String(client||'').trim().toLowerCase();
+    const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
+    if(prev&&prev.clientPhone)phone=prev.clientPhone;
+  }
+  const text='🧾 Invoice '+no+' — Ardaas Home Health Care\n'
+    +'Client: '+client+'\nDate: '+date+'\n'
+    +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
+    +(phone?'':'(Pick the client\'s chat — number not saved)\n')
+    +'Invoice image attached. Thank you! 🙏';
+  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+}
 function saveReceipt(){
-  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
   if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress,rec.dealAmount])){flash('rMsg','Fill at least one field.',false);return;}
   if(rec.amount&&!rec.date)rec.date=todayStr();
   DB.receipts.push(rec);persist();flash('rMsg','Client payment saved — invoice '+rec.invoiceNo+'.');
   sendRecord('ClientReceipts',rec);
-  clear('rClient','rAddr','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
+  clear('rClient','rAddr','rPhone','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
   closeInvoice();renderAll();
 }
 /* Re-open a saved receipt's invoice from All Records (data as stored in the sheet) */
@@ -1221,6 +1491,7 @@ function openInvoiceFromRecord(id){
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-money'));
   document.getElementById('rClient').value=r.client||'';
   document.getElementById('rAddr').value=r.clientAddress||'';
+  document.getElementById('rPhone').value=r.clientPhone||'';
   document.getElementById('rDate').value=r.date||'';
   document.getElementById('rAmt').value=r.amount||'';
   document.getElementById('rDeal').value=r.dealAmount||lastDealForClient(r.client)||'';
@@ -1355,15 +1626,6 @@ function onSalaryEmpChange(){
   }
   document.getElementById('sFrom').value=salaryFromDate(name,emp);
   if(!val('sTo'))document.getElementById('sTo').value=todayStr();
-}
-/* Toggle 24-hr time fields in the Leave entry */
-function onLeaveEmpChange(){
-  const name=val('lEmpSel');
-  const emp=DB.employees.find(e=>e.name===name);
-  const is24=!!(emp&&emp.dutyHours==='24');
-  document.getElementById('lTimeFields').style.display=is24?'contents':'none';
-  if(!val('lFrom'))document.getElementById('lFrom').value=todayStr();
-  if(is24&&emp.dutyTime&&!val('lFromT'))document.getElementById('lFromT').value=emp.dutyTime;
 }
 function prevMonthStr(ym){const [y,m]=ym.split('-').map(Number);const d=new Date(y,m-2,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');}
 function monthLabel(ym){const [y,m]=ym.split('-').map(Number);return new Date(y,m-1,1).toLocaleString('en-IN',{month:'long',year:'numeric'});}
@@ -1698,6 +1960,21 @@ function printPayInvoice(){
   setTimeout(()=>document.body.classList.remove('printPay'),300);
 }
 function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
+/* Salary receipt → WhatsApp image. Number: the employee's saved phone
+   (substitutes not in Employees get the contact chooser). */
+async function sharePayInvoiceWhatsApp(){
+  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
+  const emp=findEmpByName(payInvData.name);
+  const phone=(emp&&emp.phone)||'';
+  const paid=document.getElementById('piPaid').textContent;
+  const mode=document.getElementById('piModeTxt').textContent;
+  const text='🧾 Salary receipt '+payInvData.no+' — Ardaas Home Health Care\n'
+    +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
+    +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
+    +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
+    +'Receipt image attached. Thank you! 🙏';
+  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+}
 /* Re-open a saved payment's receipt from All Records */
 function openPayInvoiceFromRecord(id){
   const r=DB.payments.find(x=>x.id===id);if(!r)return;
@@ -1867,6 +2144,7 @@ function fillMoneyFromClientBill(){
   document.getElementById('rDate').value=todayStr();
   document.getElementById('rAmt').value=lastClientBill.bal!==0?Math.abs(lastClientBill.bal):'';
   document.getElementById('rAddr').value='';
+  document.getElementById('rPhone').value='';
   setSelectValue(document.getElementById('rEmpSel'),'');
   setSelectValue(document.getElementById('rMode'),'');
   updateInvoicePreview(true);
@@ -1910,8 +2188,8 @@ function renderPLTable(){
 /* ================= END DUTY (active / ended) ================= */
 /* "End duty" is saved as a normal Duty/Leave record of type
    'endEmployeeDuty' or 'endClientDuty'. Those records already sync to the
-   Google Sheet in the existing DutyLeave tab, so NO change to the Apps Script
-   is needed — and the ended state survives refresh, auto-load from Sheet, and
+   Google Sheet in the existing DutyLeave tab, so no change to the sheet
+   layout is needed — and the ended state survives refresh, auto-load from Sheet, and
    other devices. Nothing is ever deleted: the records, salary history,
    invoices and accounts are all left untouched. */
 function endedState(){
@@ -1961,7 +2239,7 @@ function reactivateEmployee(id){
   if(!confirm('Re-activate employee "'+e.name+'"?'))return;
   DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key));
   persist();renderAll();
-  if(DB.scriptUrl){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
   else toast('↩ Employee re-activated.');
 }
 function dutyTypeBadge(r){
@@ -2011,13 +2289,15 @@ function fillEmpSelects(){
 
   // Keep the editable client inputs' suggestion list in sync as well.
   document.getElementById('clientList').innerHTML=clientOptions.map(n=>`<option value="${esc(n)}">`).join('');
+  // keep the leave form in sync (join-duty box vs new-leave fields)
+  if(document.getElementById('lEmpSel'))onLeaveEmpChange();
 }
 function delRec(list,id){
   if(!confirm('Delete this entry?'))return;
   DB[list]=DB[list].filter(r=>r.id!==id);persist();
   if(list==='payments')delPayImg(id);
   renderAll();
-  if(DB.scriptUrl){toast('Deleted — updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('Deleted — updating Google Sheet…');syncAll();}
   else toast('Deleted.');
 }
 function renderEmployees(){
@@ -2028,7 +2308,7 @@ function renderEmployees(){
     const ended=isEmployeeEnded(e);
     tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
-      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):''):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
+      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
       <td style="white-space:nowrap;">${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
@@ -2051,22 +2331,37 @@ function renderDuty(){
 }
 /* Live "On leave now" panel — join duty / add substitute from here */
 function renderOnLeave(){
-  /* keep the Leave-entry form's "in place of" dropdown fresh */
-  if(val('lType')==='substitute')fillForSel();
   const card=document.getElementById('onLeaveCard'),listEl=document.getElementById('onLeaveList');
   const open=DB.dutyLeave.filter(isOnLeaveRec);
   card.style.display=open.length?'':'none';
   listEl.innerHTML=open.map(r=>{
     const subs=DB.dutyLeave.filter(s=>s.type==='substitute'&&s.forEmp===r.empName);
     const days=liveLeaveDays(r);
-    const subHtml=subs.map(s=>`<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)} → ${s.to?esc(s.to):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`).join('');
+    /* running salary for each substitute — counted like the covered duty and
+       updated live until Join duty closes it (final total from the saved wage) */
+    const subHtml=subs.map(s=>{
+      const es=s.to?s:effSubRec(s,todayStr());
+      const c=substitutePay(es);
+      const payTxt=c.pay!=null?' • salary '+(s.to?'':'≈ ')+'<b>'+fmt(c.pay)+'</b>'+(s.to?'':' so far'):'';
+      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
+    }).join('');
     return `<div class="onLeaveItem">
       <div class="onLeaveHead"><b>${esc(r.empName)}</b> <span class="badge red">ON LEAVE</span>${r.client?` <span class="badge blue">📍 ${esc(r.client)}</span>`:''}</div>
       <div class="onLeaveMeta">On leave since <b>${esc(r.from)}</b>${r.fromTime?' at <b>'+esc(r.fromTime)+'</b>':''} &nbsp;•&nbsp; <b>${days}</b> day${days===1?'':'s'} so far — counted automatically</div>
       ${subHtml}
       <div class="onLeaveBtns">
         <button class="btn green" onclick="openJoinDuty('${r.id}')">🤝 Join duty</button>
-        <button class="btn primary" onclick="openAddSub('${r.id}')">➕ Add substitute</button>
+        <button class="btn primary" onclick="toggleCardSub('cs${r.id}')">➕ Add substitute</button>
+      </div>
+      <div id="cs${r.id}" style="display:none;margin-top:8px;border-top:1px dashed #dfe7f3;padding-top:8px;">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+          <div class="field" style="flex:1;min-width:180px;margin:0;"><label>Substitute (type name)</label>
+            <input id="cs${r.id}Name" placeholder="Type any name" oninput="updCardSub('cs${r.id}','${r.id}')" autocomplete="off"></div>
+          <div class="field" id="cs${r.id}WageField" style="display:none;margin:0;max-width:130px;"><label>₹ / day</label>
+            <input id="cs${r.id}Wage" type="number" inputmode="numeric" placeholder="600" oninput="updCardSub('cs${r.id}','${r.id}')"></div>
+          <button class="btn primary" onclick="addCardSub('cs${r.id}','${r.id}')">➕ Add</button>
+        </div>
+        <div class="hint" id="cs${r.id}Prev" style="margin:6px 0 0;"></div>
       </div>
     </div>`;
   }).join('');
@@ -2118,11 +2413,7 @@ function exportBackup(){
 }
 
 /* init */
-document.getElementById('scriptUrl').value=DB.scriptUrl||'';
-if(BUILT_IN_SCRIPT_URL){
-  const inp=document.getElementById('scriptUrl');
-  inp.value=BUILT_IN_SCRIPT_URL;inp.disabled=true;
-}
+loadAuth();
 document.getElementById('sTo').value=todayStr();
 document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
