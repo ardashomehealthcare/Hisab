@@ -579,6 +579,25 @@
         <div class="hint" style="margin-top:10px;">Paste the <b>Client ID</b> (never the Client secret) from <b>Google Cloud Console → APIs &amp; Services → Credentials → OAuth 2.0 Client IDs</b>, row of type <b>Web application</b>. Saving here fixes only this device and works instantly; put the same ID in <code>config.js</code> so every phone is pre-configured.</div>
       </div>
     </details>
+    <details class="setupBox" id="gSheetIdBox">
+      <summary>Google Sheet to write into <span class="tag" id="sidTag"></span></summary>
+      <div class="boxBody">
+        <div class="hint" style="margin-bottom:10px;">⚠ <b>Hisab never creates a new Google Sheet</b> — the Sheets API cannot make files, so signing in will not put a new file in your Drive. What it creates is the 5 <b>tabs</b> (<i>Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses</i>) inside the Sheet named here, and every entry goes into them. So the Sheet must already exist: press <b>🆕 New empty Sheet</b>, then paste its address below.</div>
+        <div class="field" style="max-width:680px;">
+          <label>Sheet ID — or paste the whole Sheet address</label>
+          <input id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/1VV5TZy…/edit" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="sheetIdTyped()">
+          <div class="hint" id="sidHint"></div>
+          <div class="actions">
+            <button class="btn primary sm" onclick="saveSheetId()">💾 Use this Sheet</button>
+            <button class="btn ghost sm" onclick="resetSheetId()">↩ Use the one in config.js</button>
+            <button class="btn ghost sm" onclick="copyText(getSheetId()||'')">📋 Copy</button>
+            <button class="btn ghost sm" onclick="openSheetNow()">🔗 Open it</button>
+            <button class="btn ghost sm" onclick="newSheetTab()">🆕 New empty Sheet</button>
+          </div>
+        </div>
+        <div class="hint" style="margin-top:10px;">Saving here fixes only this device and works instantly. Put the same ID in <code>config.js</code> as <code>HISAB_SPREADSHEET_ID</code> so every phone writes to the same Sheet — one shared Sheet for the whole team, each partner signed in with their own Google account.</div>
+      </div>
+    </details>
     <div class="actions">
       <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
@@ -607,7 +626,7 @@
       <li>Copy the <b>Client ID</b> (the long address ending in <code>.apps.googleusercontent.com</code> — <b>not</b> the “Client secret”) and paste it in <code>config.js</code> as <code>HISAB_GOOGLE_CLIENT_ID</code> so every phone is ready. In a hurry, or the file value is wrong? Paste it in the <b>Google OAuth Client ID</b> box above and press <b>💾 Use this Client ID</b> — that fixes this device at once, no re-upload needed.</li>
       <li>Press <b>Sign in with Google</b> → choose your work account → <b>Allow</b>. Done — every submit now goes straight from the browser to your Google Sheet. Each partner signs in with their own Google account (they need <b>Editor</b> access to the Sheet).</li>
     </ol>
-    <div class="hint">💡 The spreadsheet ID is locked into <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — same sheet as before, so all existing data is kept.</div>
+    <div class="hint">💡 The Sheet to write into comes from <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — your existing sheet, so all existing data is kept, and it can be changed on any phone in the <b>Google Sheet to write into</b> box above without re-uploading anything. ⚠ <b>Hisab never creates the Sheet file itself</b> — Google’s Sheets API cannot make files. It creates the 5 <i>tabs</i> inside the Sheet you name, so create the Sheet once (🆕 <b>New empty Sheet</b>) and share it with every partner as <b>Editor</b>.</div>
     <div class="hint">🩺 Press <b>Check my Google setup</b> above at any time: it shows the address Google must be told about, the Client ID in use and where it came from, whether the Sheet is reachable with your sign-in, and — if Google refused something — the exact clicks to fix it. Copy the report and send it to whoever manages your Google account.</div>
     <div class="hint">⚠ <b>Error 401: invalid_client</b> while signing in means the Client ID itself is unknown to Google — it was typed with one wrong character, cut short, it is the Client <i>secret</i>, or that client / project was deleted. Nothing is broken in your data: make a new <b>Web application</b> client ID (steps 4–6) and paste it in the box above.</div>
     <div class="hint">⚠ <b>Error 403: access_denied</b> is a different problem: Google <i>did</i> accept the Client ID and this web address, it refused the <b>Google account</b>. It means the OAuth consent screen is still in <b>Testing</b> and that address is not on the <b>Test users</b> list, or the screen is <b>Internal</b> and a personal <code>@gmail.com</code> was used. Fix it in <b>APIs &amp; Services → OAuth consent screen</b> — <b>Audience → Test users → + Add users</b> for every partner, or <b>Publish app</b> — then press <b>🔐 Sign in with Google</b> again. Pressing <b>Cancel</b> on the consent screen gives this same error, so choose <b>Allow</b>.</div>
@@ -695,6 +714,7 @@ let GS_BASE=GS_API+SPREADSHEET_ID;
 const GS_SCOPES='https://www.googleapis.com/auth/spreadsheets';
 const AUTH_KEY='hisabGoogleAuth_v1';
 const CID_KEY='hisabClientId';
+const SID_KEY='hisabSheetId';
 let AUTH={token:'',expiresAt:0};
 let tokenClient=null,tokenClientId='',ensureTabsPromise=null;
 let pendingAuth=null,lastGsError=null,alertKey='';
@@ -766,6 +786,124 @@ function checkClientId(raw){
     ]};
   return {ok:true,what:'ok',msg:'Format is correct. If Google still shows “Error 401: invalid_client” for this ID, that Client ID does not exist any more: it was deleted, its project was deleted, or it belongs to a different Google account. Create a new “Web application” OAuth client ID and paste it in this box.',title:'',steps:null};
 }
+
+/* ---------- the spreadsheet ID: clean it, check it, remember it ----------
+   Hisab never CREATES a spreadsheet — the Sheets API has no "new file" call, it
+   can only add tabs to a file that already exists. So a successful sign-in with
+   a wrong, missing or not-shared Sheet ID looks exactly like "signed in, but no
+   Sheet appeared in my Drive". Like the Client ID, a value typed on this device
+   overrides config.js, so it can be fixed here without re-uploading anything. */
+let FILE_SHEET_ID=SPREADSHEET_ID;        // what config.js says, before any device override
+function setSheetId(id){
+  const n=String(id||'').trim();
+  if(n===SPREADSHEET_ID)return;
+  SPREADSHEET_ID=n;GS_BASE=GS_API+SPREADSHEET_ID;ensureTabsPromise=null;
+}
+function sheetLink(id){return 'https://docs.google.com/spreadsheets/d/'+(id||SPREADSHEET_ID||'(missing)')+'/edit';}
+function openSheetNow(){
+  const id=getSheetId();
+  if(!id){flash('shMsg','No Sheet is set yet — paste its address above.',false);return;}
+  window.open(sheetLink(id),'_blank','noopener');
+}
+function newSheetTab(){
+  window.open('https://sheet.new','_blank','noopener');
+  flash('shMsg','A new empty Sheet is opening — copy the address from the browser bar and paste it above, then press 💾 Use this Sheet.',false);
+}
+/* accepts a bare ID, a full Sheet URL, or either pasted through WhatsApp with
+   stray spaces / quotes around it. A Doc, Slide or Drive-folder link is refused
+   here instead of reaching Google, which would only answer 404. */
+function cleanSheetRef(s){
+  const t=String(s==null?'':s).replace(/[\u00a0\u1680\u2000-\u200d\u2028-\u202f\u205f\u3000\ufeff]/g,'').trim();
+  if(!t)return '';
+  if(/^(https?:)?\/\//i.test(t)||/docs\.google\.com|drive\.google\.com/i.test(t)){
+    const m=t.replace(/\s+/g,'').match(/\/spreadsheets\/(?:u\/\d+\/)?d\/([A-Za-z0-9_-]{6,})/i);   // /u/0/ = signed in with several accounts
+    return m?m[1]:'';
+  }
+  return t.replace(/\s+/g,'').replace(/^["'<]+/,'').replace(/["'>,;.\s]+$/,'');
+}
+function regSheetId(s){const id=cleanSheetRef(s);return /^[A-Za-z0-9_-]{15,}$/.test(id)?id:'';}
+function sheetIdSource(){
+  const ov=regSheetId(storeItem(SID_KEY));
+  if(ov)return {id:ov,from:'device'};
+  return FILE_SHEET_ID?{id:FILE_SHEET_ID,from:'config.js'}:{id:'',from:'none'};
+}
+function getSheetId(){return SPREADSHEET_ID||sheetIdSource().id;}
+function sheetProblem(v){return clientProblem(v);}
+function checkSheetRef(raw){
+  const t=String(raw==null?'':raw).trim(),id=cleanSheetRef(t);
+  if(!t)return {ok:false,what:'no_sheet',
+    msg:'No Google Sheet is set — Hisab has nowhere to write, so signing in creates no tabs anywhere.',
+    title:'No Google Sheet to write into',steps:[
+      'Hisab does not create Sheets (Google’s Sheets API cannot make files). Make one once: press <b>🆕 New empty Sheet</b> above, or open <b>sheet.new</b> in a new tab.',
+      'Copy the address from the browser bar — the long string between <code>/d/</code> and <code>/edit</code> is the ID.',
+      'Paste it in the box above → <b>💾 Use this Sheet</b> → <b>🔐 Sign in with Google</b>. The 5 tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) are created in it straight away.',
+      'To keep it for every phone, put the same ID in <code>config.js</code> as <code>HISAB_SPREADSHEET_ID</code> — one shared Sheet for the whole team, each partner signing in with their own Google account.'
+    ]};
+  if(!id)return {ok:false,what:'not_a_sheet',
+    msg:'That address is not a Google Sheet — Hisab needs the Sheet itself, not a document, slide or Drive folder.',
+    title:'That address is not a Google Sheet',steps:[
+      'A Sheet address looks like <code>https://docs.google.com/<b>spreadsheets</b>/d/1VV5TZy…/edit</code> — the word <code>spreadsheets</code> must be in it.',
+      'Open the Sheet itself (not the Drive folder listing, not a Google Doc), then copy the whole address from the browser bar and paste it here.',
+      'Only the ID is needed — the string between <code>/d/</code> and <code>/edit</code> — but the full address works too.'
+    ]};
+  if(!/^[A-Za-z0-9_-]+$/.test(id))return {ok:false,what:'sheet_chars',
+    msg:'A Sheet ID is only letters, numbers, - and _. This has something else in it, so the paste picked up part of the address.',
+    title:'That is not a Sheet ID',steps:[
+      'Paste the <b>whole</b> Sheet address from the browser bar instead of selecting part of it — Hisab takes the ID out of it.',
+      'The ID is the string between <code>/d/</code> and <code>/edit</code>, e.g. <code>1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY</code>.'
+    ]};
+  if(id.length<15)return {ok:false,what:'sheet_short',
+    msg:'That is too short to be a Sheet ID (they are about 44 characters) — the paste was cut short.',
+    title:'The Sheet ID is cut short',steps:[
+      'Copy the address from the browser bar of the open Sheet and paste the whole thing here.',
+      'It must be the string between <code>/d/</code> and <code>/edit</code> — roughly 44 letters and numbers.'
+    ]};
+  return {ok:true,what:'ok',msg:'Looks like a real Sheet ID. Hisab will create its 5 tabs inside it on the next sign-in — and it must be <b>shared with your Google account as Editor</b>, otherwise Google answers “the caller does not have permission”. Open it here: '+sheetLink(id)};
+}
+function renderSheetIdBox(){
+  const src=sheetIdSource(),v=checkSheetRef(src.id);
+  const tag=document.getElementById('sidTag'),inp=document.getElementById('sheetId'),hint=document.getElementById('sidHint'),box=document.getElementById('gSheetIdBox');
+  const noFile=settingsFileState()==='missing';
+  if(tag){tag.textContent=(src.id?(src.from==='device'?'typed on this device':'from config.js'):(noFile?'config.js did not load':'not set'));tag.className='tag '+(v.ok?'ok':'bad');}
+  if(inp&&document.activeElement!==inp)inp.value=src.id;
+  if(hint)hint.innerHTML=esc(v.msg);
+  if(box&&!v.ok)box.open=true;
+}
+function sheetIdTyped(){
+  const inp=document.getElementById('sheetId'),raw=inp?inp.value.trim():'',v=checkSheetRef(raw),hint=document.getElementById('sidHint');
+  if(hint)hint.innerHTML=raw?esc(v.msg):esc('Paste the Sheet address (or just its ID) — Hisab creates its 5 tabs inside that Sheet.');
+}
+/* returns {ok,changed:'override'|'config'|'cleared'|'same'|'none',msg} */
+function applySheetIdFromBox(quiet){
+  const inp=document.getElementById('sheetId');
+  const raw=inp?inp.value.trim():'';
+  const cur=regSheetId(storeItem(SID_KEY));
+  if(!raw){
+    if(cur){setStoreItem(SID_KEY,'');setSheetId(FILE_SHEET_ID);renderSheetIdBox();updateSheetStatus();if(!quiet)flash('shMsg','Sheet box emptied — back to the value in config.js.',false);}
+    return {ok:true,changed:cur?'cleared':'none'};
+  }
+  const v=checkSheetRef(raw);
+  if(!v.ok){showSetupAlert(sheetProblem(v));return {ok:false,msg:v.msg};}
+  const id=regSheetId(raw);
+  if(id===FILE_SHEET_ID){
+    if(cur)setStoreItem(SID_KEY,'');
+    setSheetId(FILE_SHEET_ID);renderSheetIdBox();updateSheetStatus();
+    if(!quiet)flash('shMsg','✅ Same as config.js — nothing extra saved on this device.',true);
+    return {ok:true,changed:'config'};
+  }
+  if(id===cur){renderSheetIdBox();return {ok:true,changed:'same'};}
+  setStoreItem(SID_KEY,id);setSheetId(id);renderSheetIdBox();updateSheetStatus();
+  if(!quiet)flash('shMsg','✅ Using that Sheet on this device. Now press Sign in with Google to create its tabs.',true);
+  return {ok:true,changed:'override'};
+}
+function saveSheetId(){applySheetIdFromBox(false);}
+function resetSheetId(){
+  setStoreItem(SID_KEY,'');setSheetId(FILE_SHEET_ID);
+  const inp=document.getElementById('sheetId');if(inp)inp.value=FILE_SHEET_ID||'';
+  renderSheetIdBox();updateSheetStatus();
+  flash('shMsg',FILE_SHEET_ID?'✅ Back to the Sheet in config.js.':'config.js has no Sheet ID yet — paste one in the box above.',!!FILE_SHEET_ID);
+}
+
 /* A phone can keep serving an OLD cached copy of config.js, and then the app
    signs in with a Client ID that the server no longer has — which Google answers
    with 401 invalid_client. config.js is therefore re-read uncached whenever the
@@ -773,10 +911,13 @@ function checkClientId(raw){
 const CFG_KEY='hisabConfig_v1';
 function readStoredConfig(){try{const c=JSON.parse(storeItem(CFG_KEY));return c&&typeof c==='object'?c:null;}catch(e){return null;}}
 function applySettings(cid,sid){
-  const ch=[],nc=regClientId(cid),ns=String(sid||'').trim();
+  const ch=[],nc=regClientId(cid),ns=regSheetId(sid);
   if(nc&&nc!==GOOGLE_CLIENT_ID){GOOGLE_CLIENT_ID=nc;tokenClient=null;ch.push('Client ID');}
-  if(ns&&ns!==SPREADSHEET_ID){SPREADSHEET_ID=ns;GS_BASE=GS_API+SPREADSHEET_ID;ensureTabsPromise=null;ch.push('Google Sheet');}
-  if(ch.length)setStoreItem(CFG_KEY,JSON.stringify({cid:GOOGLE_CLIENT_ID,sid:SPREADSHEET_ID}));
+  /* sid is the value from the FILE — remember it, then let a device override win */
+  if(ns&&ns!==FILE_SHEET_ID){FILE_SHEET_ID=ns;ch.push('Google Sheet');}
+  const want=regSheetId(storeItem(SID_KEY))||FILE_SHEET_ID;
+  if(want&&want!==SPREADSHEET_ID){setSheetId(want);if(!ch.includes('Google Sheet'))ch.push('Google Sheet');}
+  if(ch.length)setStoreItem(CFG_KEY,JSON.stringify({cid:GOOGLE_CLIENT_ID,sid:FILE_SHEET_ID}));
   return ch;
 }
 function configLooksOff(){const src=idSource();return !src.id||!regClientId(GOOGLE_CLIENT_ID)||src.from==='device'||!SPREADSHEET_ID;}
@@ -899,13 +1040,15 @@ function googleAdvice(raw){
     return {title:'The signed-in Google account cannot edit this Sheet',steps:[
       'Open the Sheet: <b>'+esc(sheetUrl)+'</b> — if it does not open, that account has no access.',
       'On the Sheet press <b>Share</b> → add the exact email address you signed in with → role <b>Editor</b> → Send.',
-      'Then in the app: <b>🚪 Sign out</b> → <b>🔐 Sign in with Google</b> with that same account. Each partner signs in with their own account — every one of them needs Editor access.'
+      'Then in the app: <b>🚪 Sign out</b> → <b>🔐 Sign in with Google</b> with that same account. Each partner signs in with their own account — every one of them needs Editor access.',
+      'Rather make your own Sheet? In the <b>Google Sheet to write into</b> box above press <b>🆕 New empty Sheet</b>, paste its address → <b>💾 Use this Sheet</b> → sign in again. It is then yours alone, so put the same ID in <code>config.js</code> only if the whole team should write into it.'
     ]};
   if(has('not found','404','no such sheet','entity was not found'))
-    return {title:'That Google Sheet does not exist for this account',steps:[
-      'Check <code>HISAB_SPREADSHEET_ID</code> in <code>config.js</code>: it must be the long string between <code>/d/</code> and <code>/edit</code> in the Sheet’s own URL.',
-      'Confirm the Sheet opens here with the account you signed in with: <b>'+esc(sheetUrl)+'</b>',
-      'A Sheet in another Google account / another Workspace domain also needs to be shared with your partner accounts as <b>Editor</b>.'
+    return {title:'That Google Sheet does not exist — and Hisab cannot create one',steps:[
+      'The sign-in worked. What failed is the Sheet <b>'+esc(getSheetId()||'(none)')+'</b> (from <b>'+esc(sheetIdSource().from)+'</b>): it is not a Sheet this account can open. <b>Hisab never creates a Google Sheet</b> — the Sheets API can only add tabs to a file that already exists, so nothing new can appear in Drive until an existing Sheet is named here.',
+      'Make one once: in the <b>Google Sheet to write into</b> box above press <b>🆕 New empty Sheet</b> (or open <b>sheet.new</b> in a new tab).',
+      'Copy the address from the browser bar → paste it in that box → <b>💾 Use this Sheet</b> → <b>🔐 Sign in with Google</b> again. The 5 tabs are created in it straight away. To keep it on every phone, put the same ID in <code>config.js</code> as <code>HISAB_SPREADSHEET_ID</code>.',
+      'Already using the right Sheet? Then it belongs to another Google account: open <b>'+esc(sheetUrl)+'</b> with <i>that</i> account and press <b>Share</b> → add the address you sign in with here → role <b>Editor</b>.'
     ]};
   if(has('failed to fetch','networkerror','net::','err_','offline','load failed'))
     return {title:'No connection to Google right now',steps:[
@@ -929,6 +1072,7 @@ function showSetupAlert(raw){
     +'<button class="btn ghost sm" onclick="closeSetupAlert()">✕ Close</button></div>';
   box.className='alertBox';box.style.display='';alertKey=adv.title;
   if(adv.title.indexOf('Client ID')>=0||adv.title.indexOf('not allowed for that Client')>=0){const d=document.getElementById('gClientIdBox');if(d)d.open=true;}
+  if(/No Google Sheet|not a Google Sheet|Sheet ID|Sheet to write into|does not exist|cannot edit this Sheet/i.test(adv.title)){const d=document.getElementById('gSheetIdBox');if(d)d.open=true;}
   try{box.scrollIntoView({behavior:'smooth',block:'nearest'});}catch(e){}
 }
 function closeSetupAlert(){alertKey='';const b=document.getElementById('shAlert');if(b){b.innerHTML='';b.style.display='none';}}
@@ -1228,6 +1372,10 @@ async function googleSignIn(){
      cannot be right is reported here instead of by Google's error page */
   if(!applyClientIdFromBox(true).ok){flash('shMsg','❌ That Client ID is not in the right shape — see the fix above.',false);updateSheetStatus();return;}
   if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
+  /* the Sheet box is applied straight away too — a Sheet ID that cannot be right is
+     reported here, because Google would only answer 404 after a full sign-in */
+  if(!applySheetIdFromBox(true).ok){flash('shMsg','❌ That Sheet address is not right — see the fix above.',false);updateSheetStatus();return;}
+  if(!getSheetId()){flash('shMsg','Add the Google Sheet to write into first (see the box above) — Hisab cannot create a Sheet itself.',false);showSetupAlert(sheetProblem(checkSheetRef('')));return;}
   if(window._gsiFailed){reportProblem(authErr('gsi_not_loaded','Google sign-in script could not be loaded.'),true);flash('shMsg','❌ Could not load Google sign-in (check internet / blockers).',false);return;}
   if(!gsiReady()){flash('shMsg','Google sign-in is still loading — wait a second and try again.',false);return;}
   try{
@@ -1246,7 +1394,7 @@ async function signInFinish(){
   const tabsErr=await ensureTabs().then(()=>null).catch(e=>e);   // create missing tabs + header rows
   if(tabsErr){
     reportProblem(tabsErr,true);
-    flash('shMsg','⚠ Signed in — but Google refused the Sheet: '+((tabsErr&&tabsErr.message)||tabsErr),false);
+    flash('shMsg','⚠ Signed in — but the Sheet itself is not reachable: '+((tabsErr&&tabsErr.message)||tabsErr)+'. Hisab creates the 5 tabs inside an existing Sheet; it cannot create the Sheet file.',false);
     toast('⚠ Signed in — check the fix shown on the Google Sheet tab');
   }else{
     closeSetupAlert();
@@ -1286,9 +1434,10 @@ function updateSheetStatus(){
   const cid=getClientId(),noFile=settingsFileState()==='missing';
   const v=checkClientId(cid);
   const connected=isGoogleConnected();
-  t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in'))));
+  t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(!getSheetId()?'Google: no Sheet to write into — see the box below':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in')))));
   if(s)s.classList.toggle('ok',connected&&v.ok);
   renderClientIdBox();
+  renderSheetIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
   show('btnSyncAll3',connected);show('btnLoad3',connected);
   show('btnSyncAll2',connected);show('btnLoad2',connected);
@@ -1313,7 +1462,9 @@ async function checkGoogleSetup(){
       :'loaded — Client ID '+(GOOGLE_CLIENT_ID?'set':'EMPTY in the file')+', spreadsheet ID '+(SPREADSHEET_ID?'set':'EMPTY in the file')));
   L.push((v.ok?'✅ ':'❌ ')+'OAuth Client ID: '+(src.id?shortId(src.id)+'  (source: '+(src.from==='device'?'typed on this device':'config.js')+')':'none on this device')
     +(v.ok?'\n   Shape is correct. If Google still answers 401 invalid_client, this Client ID does not exist in your project any more — create a new “Web application” client.':'\n   '+v.msg));
-  L.push((SPREADSHEET_ID?'✅ ':'❌ ')+'Google Sheet: '+(SPREADSHEET_ID?'https://docs.google.com/spreadsheets/d/'+SPREADSHEET_ID+'/edit':'no spreadsheet ID in config.js'));
+  L.push((SPREADSHEET_ID?'✅ ':'❌ ')+'Google Sheet: '+(SPREADSHEET_ID?sheetLink(SPREADSHEET_ID)+'  (source: '+(sheetIdSource().from==='device'?'typed on this device':'config.js')+')'
+      :'NONE — Hisab has nowhere to write. Make one at sheet.new and paste its address in the “Google Sheet to write into” box.'));
+  L.push('   Hisab never creates a Sheet file (the Sheets API cannot) — it creates the 5 tabs inside the Sheet above.');
   L.push((isGoogleConnected()?'✅ ':'⚠ ')+'Sign-in: '+(isGoogleConnected()?'connected on this device, access lasts till '+new Date(AUTH.expiresAt).toLocaleTimeString()
         :(AUTH.token?'an old sign-in is stored but expired — press “Sign in with Google”':'not signed in on this device')));
   if(isGoogleConnected()){
@@ -2867,7 +3018,9 @@ function clearAllData(){
 loadAuth();
 /* settings adopted earlier (after a stale-cache repair) win over the page's own copy,
    and anything that still looks wrong gets re-read from the server a moment later */
-(function(){const st=readStoredConfig();if(st)applySettings(st.cid,st.sid);})();
+(function(){const st=readStoredConfig();if(st)applySettings(st.cid,st.sid);
+  const ov=regSheetId(storeItem(SID_KEY));if(ov)setSheetId(ov);   // a Sheet typed on this device wins over config.js
+})();
 document.getElementById('sTo').value=todayStr();
 document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);

@@ -159,6 +159,32 @@ scope **All users** (or the OU that contains the partners) → mark **Trusted** 
 
 ---
 
+## If you signed in but no Sheet appeared in Drive
+
+**Hisab never creates a Google Sheet.** Google's Sheets API has no "create file"
+call — it can only add tabs to a file that already exists. So a successful sign-in
+creates the 5 **tabs** (*Employees, DutyLeave, EmployeePayments, ClientReceipts,
+Expenses*) inside the Sheet named by `HISAB_SPREADSHEET_ID`, and nothing else.
+
+If no tabs appeared, one of these is true:
+
+1. **That ID is not a Sheet you can open.** Check
+   <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit>
+   — "you need access" or "does not exist" means case 2 or 3.
+2. **You want your own Sheet.** Open <https://sheet.new> (makes an empty Sheet),
+   copy the address from the browser bar, paste it into the app's **Google Sheet to
+   write into** box → **💾 Use this Sheet** → **🔐 Sign in with Google**. The 5 tabs
+   appear in it straight away. That fixes this phone only — put the same ID in
+   `config.js` as `HISAB_SPREADSHEET_ID` when the whole team should share it.
+3. **The Sheet belongs to another account.** With *that* account: **Share** → add the
+   address you sign in with → role **Editor**. Then sign in again.
+
+The app says which case you are in. After sign-in it reports either *"✅ Signed in —
+every submit now goes straight to your Google Sheet"* or *"⚠ Signed in — but the
+Sheet itself is not reachable: …"* with the numbered fix underneath.
+
+---
+
 ## Which error → which step
 
 | Google says | Fix in |
@@ -169,3 +195,4 @@ scope **All users** (or the OU that contains the partners) → mark **Trusted** 
 | `400: unauthorized_client` | Step 5.1 — that client is not a Web application client |
 | “Google Sheets API has not been used in project …” | Step 1 |
 | “The caller does not have permission” (403 from Sheets) | Step 7.4 — share the Sheet as **Editor** with that account |
+| Sign-in works but no Sheet / no tabs anywhere | Nothing to fix in Cloud Console: Hisab cannot create a Sheet *file*, and the ID it was given is wrong or not shared | The section above — 🆕 New empty Sheet → paste it in the app's **Google Sheet to write into** box → sign in again |
