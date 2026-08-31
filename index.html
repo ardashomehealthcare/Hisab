@@ -837,7 +837,7 @@ function googleAdvice(raw){
       'If the box already shows the exact ID from the console and Google still says invalid: that client (or the whole project) was deleted — make a new one (step 4). A Client ID from another project or another Google account can never work here.',
       'Last case, and a common one after config.js was fixed: this phone is still running an <b>old cached copy of config.js</b>. Press <b>🔄 Re-read config.js</b> below, or hard-reload (desktop: Ctrl+Shift+R / Cmd+Shift+R; Android: Chrome ⋮ → History → Clear browsing data → Cached images and files; iPhone Home-Screen icon: remove it and add the page again). Then sign in once more.'
     ]};
-  if(has('origin_mismatch','redirect_uri_mismatch','authorized javascript origins','origin not allowed','unregistered'))
+  if(has('origin_mismatch','redirect_uri_mismatch','authorized javascript origins','origin not allowed','unregistered','no registered origin','is not registered','registered origin'))
     return {title:'This web address is not allowed for that Client ID',steps:[
       'Copy this address, exactly as it is: <b>'+esc(origin)+'</b>',
       'In <b>console.cloud.google.com → APIs &amp; Services → Credentials</b>, open your <b>Web application</b> client and paste it under <b>Authorised JavaScript origins</b> → Save.',
