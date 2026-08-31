@@ -646,7 +646,10 @@
   </div>
 </div>
 
+<!-- Google Identity Services — "Sign in with Google" + OAuth token client -->
 <script src="https://accounts.google.com/gsi/client" async defer onerror="window._gsiFailed=true"></script>
+<!-- Google API client (gapi) — Google Sheets API library -->
+<script src="https://apis.google.com/js/api.js" async defer onerror="window._apiFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
 <script src="config.js?v=3"></script>
 <script>
@@ -1469,6 +1472,9 @@ async function checkGoogleSetup(){
   if(window._gsiFailed)L.push('❌ Google sign-in script: BLOCKED (internet / ad-blocker / network filter)');
   else if(!gsiReady())L.push('⚠ Google sign-in script: still loading — check again in a second');
   else L.push('✅ Google sign-in script: loaded');
+  if(window._apiFailed)L.push('❌ Google API script (gapi): BLOCKED (internet / ad-blocker / network filter)');
+  else if(!window.gapi)L.push('⚠ Google API script (gapi): still loading — check again in a second');
+  else L.push('✅ Google API script (gapi): loaded');
   const cfgOk=settingsFileState()==='loaded'&&(GOOGLE_CLIENT_ID||SPREADSHEET_ID);
   L.push((cfgOk?'✅ ':'❌ ')+'settings file config.js: '+(settingsFileState()==='missing'
       ?'NOT LOADED — this page has no settings of its own, so any Client ID saved on this device was used instead (and that is what Google refuses). Open the app from the address that serves index.html together with config.js.'
