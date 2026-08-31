@@ -37,4 +37,4 @@
 
 window.HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
 
-window.HISAB_GOOGLE_CLIENT_ID = '663319983266-vh2pokf42mlvufc8lrp0kiab1vfqq10k.apps.googleusercontent.com';
+window.HISAB_GOOGLE_CLIENT_ID = '663319983266-4i2dv5t5m2jli2h2lrklch4ji0319il3.apps.googleusercontent.com';
