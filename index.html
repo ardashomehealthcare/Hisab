@@ -153,7 +153,7 @@
     <h1>Hisab — Caretaker Services</h1>
     <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
   </div>
-  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google Sheet: not connected</span></div>
+  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
 </header>
 
 <nav id="nav">
@@ -526,34 +526,36 @@
   <div class="card"><h2>Other expenses</h2><div class="tableWrap"><table id="recExpenses"><thead><tr><th>Date</th><th>Item</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
 </section>
 
-<!-- ============ GOOGLE SHEET ============ -->
+<!-- ============ GOOGLE SHEET (OAuth) ============ -->
 <section class="tab" id="tab-sheet">
   <div class="card">
-    <h2>Connect your Google Sheet</h2>
-    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once connected.</div>
-    <div class="field" style="max-width:640px;">
-      <label>Google Apps Script Web-App URL</label>
-      <input id="scriptUrl" placeholder="https://script.google.com/macros/s/XXXXXXXX/exec">
+    <h2>Connect your Google account</h2>
+    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once you sign in. No Apps Script, no URLs — you sign in with your own Google account and the app talks to the Sheet directly.</div>
+    <div class="field" id="gClientIdBox" style="max-width:640px;display:none;">
+      <label>Google OAuth Client ID</label>
+      <input id="clientId" placeholder="1234567890-abc123.apps.googleusercontent.com">
+      <div class="hint">Tip: paste it permanently into <code>config.js</code> so every device is pre-configured.</div>
     </div>
     <div class="actions">
-      <button class="btn primary" onclick="saveScriptUrl()">💾 Save &amp; test connection</button>
-      <button class="btn green" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
-      <button class="btn ghost" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
+      <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
+      <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
+      <button class="btn green" id="btnSyncAll3" style="display:none;" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
+      <button class="btn ghost" id="btnLoad3" style="display:none;" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
       <span class="msg" id="shMsg"></span>
     </div>
   </div>
   <div class="card">
-    <h2>One-time setup (5 minutes)</h2>
+    <h2>One-time setup (5 minutes, admin only)</h2>
     <ol class="steps">
-      <li>Open <b>sheets.google.com</b> → create a new blank spreadsheet, name it e.g. <b>Hisab</b>.</li>
-      <li>In the sheet menu: <b>Extensions → Apps Script</b>.</li>
-      <li>Press <b>Ctrl+A</b> (Mac: <b>Cmd+A</b>) to select everything in <code>Code.gs</code>, then Delete. Paste <b>only</b> the contents of <code>google-apps-script.gs</code> from this project (nothing after the last <code>}</code>). Press the 💾 save icon. If Apps Script says <code>Unexpected token '*'</code>, leftover text is still in the file — select-all and paste again.</li>
-      <li>Click <b>Deploy → New deployment</b> → gear icon ⚙ → choose <b>Web app</b>.</li>
-      <li>Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
-      <li>Google will ask permission — click <b>Authorize</b>, choose your account, click <b>Advanced → Go to project (unsafe)</b> → <b>Allow</b>. (It's your own script, this is safe.)</li>
-      <li>Copy the <b>Web app URL</b> (ends with <code>/exec</code>) and paste it in the box above → <b>Save &amp; test connection</b>.</li>
-      <li>Press <b>Send all saved data to Sheet</b> once. Done — from now on every submit goes to the sheet automatically.</li>
+      <li>Open <b>console.cloud.google.com</b> → create (or pick) a project, e.g. <b>Hisab</b>.</li>
+      <li>Menu <b>APIs &amp; Services → Library</b> → search <b>Google Sheets API</b> → <b>Enable</b>.</li>
+      <li><b>APIs &amp; Services → OAuth consent screen</b> → choose <b>Internal</b> (Google Workspace: only accounts in your organisation can sign in — this is the “Google Workspace OAuth” lock). If you don’t have Workspace, choose <b>External</b> and add your Google accounts as test users.</li>
+      <li><b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</b> → type <b>Web application</b>.</li>
+      <li>Under <b>Authorised JavaScript origins</b> add the exact address where the app is opened, e.g. <code>https://ardashomehealthcare.github.io</code> (add <code>http://localhost:8000</code> too if you test locally). Sign-in only works from a listed origin.</li>
+      <li>Copy the <b>Client ID</b> (ends in <code>.apps.googleusercontent.com</code>) and paste it in <code>config.js</code> (<code>HISAB_GOOGLE_CLIENT_ID</code>) — or in the box above → then press <b>Sign in with Google</b> and allow access to your Sheet.</li>
+      <li>Done — every submit now goes straight from the browser to your Google Sheet. Each partner signs in with their own Google account (they need <b>Editor</b> access to the Sheet).</li>
     </ol>
+    <div class="hint">💡 The spreadsheet ID is locked into <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — same sheet as before, so all existing data is kept.</div>
   </div>
 </section>
 
@@ -570,17 +572,18 @@
   </div>
 </div>
 
+<script src="https://accounts.google.com/gsi/client" async defer onerror="window._gsiFailed=true"></script>
 <script src="config.js"></script>
 <script>
 /* ================= STORAGE ================= */
-/* The permanent /exec URL lives in config.js - one line, easy to edit. */
-const BUILT_IN_SCRIPT_URL=String(window.HISAB_SCRIPT_URL||'').trim();
+/* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
+const GOOGLE_CLIENT_ID=String(window.HISAB_GOOGLE_CLIENT_ID||'').trim();
+const SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
 const KEY='hisabData_v1';
 let DB=load();
-if(BUILT_IN_SCRIPT_URL)DB.scriptUrl=BUILT_IN_SCRIPT_URL;
 function load(){
   try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees)return d;}catch(e){}
-  return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[],scriptUrl:''};
+  return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
 }
 function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
 function importBackup(inp){
@@ -590,7 +593,7 @@ function importBackup(inp){
       const d=JSON.parse(rd.result);
       if(!d||!Array.isArray(d.employees))throw 0;
       if(!confirm('Replace all data on this device with the backup file?'))return;
-      DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[],scriptUrl:DB.scriptUrl||''};
+      DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]};
       persist();renderAll();toast('✅ Backup imported.');
     }catch(e){toast('❌ Not a valid Hisab backup file.');}
     inp.value='';};
@@ -614,7 +617,9 @@ document.getElementById('nav').addEventListener('click',e=>{
   showTab(b.dataset.tab);
 });
 
-/* ================= GOOGLE SHEET SYNC ================= */
+/* ================= GOOGLE SHEET SYNC — Google OAuth + Sheets API (no Apps Script) ================= */
+const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
+const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
 const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp'],
@@ -623,57 +628,187 @@ const SHEET_COLS={
   Expenses:['id','item','date','amount','savedAt']
 };
 function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
-async function postToSheet(payload){
-  if(!DB.scriptUrl)return {ok:false,offline:true};
-  try{
-    const res=await fetch(DB.scriptUrl,{method:'POST',body:JSON.stringify(payload)});
-    const j=await res.json();
-    return j;
-  }catch(e){return {ok:false,error:String(e)};}
+
+/* ---------- Google Identity Services (sign in with Google) ----------
+   The app asks the browser for an access token limited to
+   https://www.googleapis.com/auth/spreadsheets. Every Sheets API call
+   below carries that token, so Google itself checks that the signed-in
+   account may edit the spreadsheet — no shared "Anyone" URL anymore. */
+const GS_BASE='https://sheets.googleapis.com/v4/spreadsheets/'+SPREADSHEET_ID;
+const GS_SCOPES='https://www.googleapis.com/auth/spreadsheets';
+const AUTH_KEY='hisabGoogleAuth_v1';
+let AUTH={token:'',expiresAt:0};
+let tokenClient=null,tokenClientId='',tokenWaiter=null,ensureTabsPromise=null;
+function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY));if(a&&a.token)AUTH={token:a.token,expiresAt:a.expiresAt||0};}catch(e){}}
+function saveAuth(){try{localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH));}catch(e){}}
+function clearAuth(){AUTH={token:'',expiresAt:0};ensureTabsPromise=null;try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
+function getClientId(){return GOOGLE_CLIENT_ID||String(localStorage.getItem('hisabClientId')||'').trim();}
+/* connected = a token that is still valid (30 s safety margin) */
+function isGoogleConnected(){return !!(AUTH.token&&AUTH.expiresAt>Date.now()+30000);}
+function gsiReady(){return !!(window.google&&window.google.accounts&&window.google.accounts.oauth2);}
+function initTokenClient(){
+  const id=getClientId();
+  if(!id||!gsiReady())return null;
+  if(tokenClient&&tokenClientId===id)return tokenClient;
+  tokenClientId=id;
+  tokenClient=window.google.accounts.oauth2.initTokenClient({
+    client_id:id,
+    scope:GS_SCOPES,
+    callback:resp=>{
+      const w=tokenWaiter;tokenWaiter=null;
+      if(!w)return;
+      if(resp&&resp.error){w.reject(new Error(resp.error||'auth failed'));return;}
+      AUTH={token:resp.access_token,expiresAt:Date.now()+(resp.expires_in||3600)*1000};
+      saveAuth();updateSheetStatus();
+      w.resolve(AUTH.token);
+    },
+    error_callback:err=>{const w=tokenWaiter;tokenWaiter=null;if(w)w.reject(new Error((err&&err.type)||'popup_failed'));}
+  });
+  return tokenClient;
+}
+function requestToken(interactive){
+  return new Promise((resolve,reject)=>{
+    const tc=initTokenClient();
+    if(!tc){reject(new Error('gsi_not_loaded'));return;}
+    if(tokenWaiter){reject(new Error('busy'));return;}
+    tokenWaiter={resolve,reject};
+    try{tc.requestAccessToken({prompt:interactive?'consent':''});}
+    catch(e){tokenWaiter=null;reject(e);}
+  });
+}
+/* interactive=true → account chooser + consent (first sign-in / re-consent).
+   interactive=false → silent refresh (needs a recent grant; used for retries
+   from button clicks so no full popup is shown). */
+async function getAccessToken(interactive){
+  if(isGoogleConnected())return AUTH.token;
+  if(!getClientId())throw new Error('no_client_id');
+  return requestToken(interactive);
+}
+function isAuthError(e){return /no_client_id|gsi_not_loaded|popup|access_denied|unauthorized|busy|idpiframe|auth failed/.test(String((e&&e.message)||e));}
+
+/* ---------- Google Sheets API v4 ---------- */
+/* Every call carries the signed-in user's token. Tokens are (re)obtained
+   silently (prompt:'') so the user never sees a popup unless they press a
+   Sign-in button — and only from a click, browsers block the rest. */
+async function sheetFetch(url,opts={}){
+  const run=async tok=>fetch(url,{
+    method:opts.method||'GET',
+    headers:{Authorization:'Bearer '+tok,'Content-Type':'application/json'},
+    body:opts.body!==undefined?JSON.stringify(opts.body):undefined
+  });
+  let tok=await getAccessToken(false);
+  let res=await run(tok);
+  if(res.status===401){            // token expired / revoked mid-session → one silent refresh
+    clearAuth();
+    tok=await getAccessToken(false);
+    res=await run(tok);
+  }
+  return res;
+}
+async function sheetJSON(url,opts){
+  const res=await sheetFetch(url,opts);
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok){const e=new Error((j.error&&j.error.message)||('HTTP '+res.status));e.status=res.status;throw e;}
+  return j;
+}
+/* Create any missing tab + header row (like the old script did automatically) */
+function ensureTabs(){
+  if(ensureTabsPromise)return ensureTabsPromise;
+  ensureTabsPromise=(async()=>{
+    const meta=await sheetJSON(GS_BASE+'?fields=sheets.properties.title');
+    const have=new Set((meta.sheets||[]).map(s=>s.properties&&s.properties.title));
+    const missing=TABS.filter(t=>!have.has(t));
+    if(missing.length){
+      await sheetJSON(GS_BASE+':batchUpdate',{method:'POST',body:{requests:missing.map(t=>({addSheet:{properties:{title:t}}}))}});
+      await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
+        valueInputOption:'RAW',
+        data:missing.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))
+      }});
+    }
+  })().catch(e=>{ensureTabsPromise=null;throw e;});
+  return ensureTabsPromise;
+}
+async function appendRow(sheet,row){
+  const url=GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
+  const body={values:[row]};
+  try{await sheetJSON(url,{method:'POST',body});}
+  catch(e){
+    if(!/parse range/i.test(String(e.message)))throw e;   // tab missing → create it and retry once
+    await ensureTabs();
+    await sheetJSON(url,{method:'POST',body});
+  }
 }
 async function sendRecord(sheet,rec){
-  const r=await postToSheet({action:'append',sheet,headers:SHEET_COLS[sheet],row:rowFor(sheet,rec)});
-  if(r.ok){rec.synced=true;persist();toast('✅ Saved & sent to Google Sheet');}
-  else if(r.offline){toast('💾 Saved on device (Google Sheet not connected yet)');}
-  else{toast('💾 Saved on device — Sheet sync failed, will retry with "Send all"');}
+  if(!AUTH.token){toast('💾 Saved on device — sign in on the Google Sheet tab to sync');updateSheetStatus();return;}
+  try{
+    await appendRow(sheet,rowFor(sheet,rec));
+    rec.synced=true;persist();
+    toast('✅ Saved & sent to Google Sheet');
+  }catch(e){
+    if(isAuthError(e))toast('💾 Saved on device — sign in on the Google Sheet tab to sync');
+    else toast('💾 Saved on device — Sheet sync failed, will retry with "Send all"');
+  }
   updateSheetStatus();
 }
 async function syncAll(){
-  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   flash('shMsg','Sending everything…');
-  const data={};
-  data.Employees={headers:SHEET_COLS.Employees,rows:DB.employees.map(r=>rowFor('Employees',r))};
-  data.DutyLeave={headers:SHEET_COLS.DutyLeave,rows:DB.dutyLeave.map(r=>rowFor('DutyLeave',r))};
-  data.EmployeePayments={headers:SHEET_COLS.EmployeePayments,rows:DB.payments.map(r=>rowFor('EmployeePayments',r))};
-  data.ClientReceipts={headers:SHEET_COLS.ClientReceipts,rows:DB.receipts.map(r=>rowFor('ClientReceipts',r))};
-  data.Expenses={headers:SHEET_COLS.Expenses,rows:DB.expenses.map(r=>rowFor('Expenses',r))};
-  const r=await postToSheet({action:'replaceAll',data});
-  if(r.ok){[...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');}
-  else{flash('shMsg','❌ Could not reach the Sheet. Check the URL / internet.',false);toast('❌ Could not reach Google Sheet.');}
+  try{
+    await ensureTabs();
+    for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
+    await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
+      valueInputOption:'RAW',
+      data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t],...(DB[TAB_TO_DB[t]]||[]).map(r=>rowFor(t,r))]}))
+    }});
+    [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
+    flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
+  }catch(e){
+    flash('shMsg',isAuthError(e)?'❌ Not signed in — press “Sign in with Google” above.':'❌ Could not write to the Sheet: '+e.message,false);
+    toast('❌ Could not reach Google Sheet.');
+  }
   updateSheetStatus();
 }
+/* Columns that may hold real DATE / TIME cells: rows written by the old
+   Apps Script were auto-parsed by Google Sheets and come back from the API
+   as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
+   by this app go in as plain text (valueInputOption=RAW) and round-trip
+   exactly as typed — which also kills the old "1899-12-30" time bug. */
+const DATE_COLS={Employees:['joinDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};
 const TIME_COLS=new Set(['dutyTime','fromTime','toTime']);
+const SHEET_EPOCH=Date.UTC(1899,11,30); // Google Sheets serial 0
+const serialToDate=v=>new Date(SHEET_EPOCH+Math.round(v*86400000)).toISOString().slice(0,10);
+const serialToTime=v=>{const m=Math.round((v%1)*24*60);return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');};
 async function fetchSheetData(){
-  const res=await fetch(DB.scriptUrl+'?action=getAll');
-  const j=await res.json();
-  if(!j.ok)throw new Error(j.error||'load failed');
-  const map=(sheet,cols)=> (j.data[sheet]||[]).map(row=>{
-    const o={synced:true};
-    cols.forEach((c,i)=>{
-      let v=row[i]??'';
-      // Google Sheets stores time-only cells as dates in 1899 — older script
-      // versions send them back as "1899-12-30"; hide that garbage.
-      if(TIME_COLS.has(c)&&/^1899-\d{2}-\d{2}/.test(String(v)))v='';
-      o[c]=v;
+  const url=GS_BASE+'/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&'+TABS.map(t=>'ranges='+encodeURIComponent(t)).join('&');
+  let j;
+  try{j=await sheetJSON(url);}                     // response order matches the requested ranges
+  catch(e){
+    if(!/parse range/i.test(String(e.message)))throw e;   // a tab is missing → create it and retry once
+    await ensureTabs();
+    j=await sheetJSON(url);
+  }
+  const map=(sheet,i)=>{
+    const cols=SHEET_COLS[sheet],dates=new Set(DATE_COLS[sheet]||[]);
+    const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
+    return rows.slice(1).map(row=>{      // skip the header row
+      const o={synced:true};
+      cols.forEach((c,idx)=>{
+        let v=row[idx]??'';
+        if(typeof v==='number'){
+          if(dates.has(c))v=serialToDate(v);
+          else if(TIME_COLS.has(c))v=serialToTime(v);
+        }
+        o[c]=String(v);
+      });
+      return o;
     });
-    return o;
-  });
+  };
   return {
-    employees:map('Employees',SHEET_COLS.Employees),
-    dutyLeave:map('DutyLeave',SHEET_COLS.DutyLeave),
-    payments:map('EmployeePayments',SHEET_COLS.EmployeePayments),
-    receipts:map('ClientReceipts',SHEET_COLS.ClientReceipts),
-    expenses:map('Expenses',SHEET_COLS.Expenses)
+    employees:map('Employees',0),
+    dutyLeave:map('DutyLeave',1),
+    payments:map('EmployeePayments',2),
+    receipts:map('ClientReceipts',3),
+    expenses:map('Expenses',4)
   };
 }
 function applySheetData(fresh,keepUnsynced){
@@ -688,19 +823,23 @@ function applySheetData(fresh,keepUnsynced){
   persist();renderAll();
 }
 async function loadFromSheet(){
-  if(!DB.scriptUrl){flash('shMsg','Paste and save your Web-App URL first.',false);return;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
   flash('shMsg','Loading from Sheet…');
   try{
+    await getAccessToken(true);
     applySheetData(await fetchSheetData(),false);
     flash('shMsg','✅ Data loaded from Google Sheet.');toast('✅ Data loaded from Google Sheet.');
-  }catch(e){flash('shMsg','❌ Could not load. Check URL / deployment access = Anyone.',false);toast('❌ Could not load from Google Sheet.');}
+  }catch(e){
+    flash('shMsg','❌ Could not load. '+(isAuthError(e)?'Sign in first.':'Check internet / that your account has Editor access to the Sheet.'),false);
+    toast('❌ Could not load from Google Sheet.');
+  }
 }
 /* On every app start, silently pull the latest data from the Google Sheet
    so the interface always shows what is in the Sheet — on any device.
    Local entries that were never synced are kept and merged in. */
 async function autoLoadFromSheet(){
-  if(!DB.scriptUrl)return;
+  if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
     applySheetData(await fetchSheetData(),true);
     toast('✅ Data refreshed from Google Sheet');
@@ -708,27 +847,44 @@ async function autoLoadFromSheet(){
     toast('⚠ Could not reach Google Sheet — showing data saved on this device');
   }
 }
-async function saveScriptUrl(){
-  if(BUILT_IN_SCRIPT_URL){flash('shMsg','URL is permanently built into the app - nothing to save. Already connected.');return;}
-  const u=document.getElementById('scriptUrl').value.trim();
-  DB.scriptUrl=u;persist();updateSheetStatus();
-  if(!u){flash('shMsg','URL cleared. Data will save on this device only.');return;}
-  flash('shMsg','Testing connection…');
+async function googleSignIn(){
+  if(window._gsiFailed){flash('shMsg','❌ Could not load Google sign-in (check internet / blockers).',false);return;}
+  if(!gsiReady()){flash('shMsg','Google sign-in is still loading — wait a second and try again.',false);return;}
+  const manual=String(document.getElementById('clientId').value||'').trim();
+  if(manual){try{localStorage.setItem('hisabClientId',manual);}catch(e){}tokenClient=null;}
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see setup below).',false);return;}
   try{
-    const res=await fetch(u+'?action=ping');const j=await res.json();
-    if(j.ok)flash('shMsg','✅ Connected! Every submit now also goes to your Google Sheet.');
-    else throw 0;
-  }catch(e){flash('shMsg','❌ Could not connect. Check the URL ends in /exec and access is "Anyone".',false);}
+    flash('shMsg','Waiting for Google…');
+    await getAccessToken(true);
+    updateSheetStatus();
+    await ensureTabs().catch(()=>{});   // create missing tabs + header rows
+    flash('shMsg','✅ Signed in — every submit now goes straight to your Google Sheet.');
+    toast('✅ Signed in to Google');
+    autoLoadFromSheet();
+  }catch(e){
+    flash('shMsg','❌ Sign-in failed: '+(e.message==='no_client_id'?'no Client ID set':e.message),false);
+  }
+  updateSheetStatus();
+}
+function googleSignOut(){
+  const tok=AUTH.token;
+  clearAuth();
+  if(gsiReady()&&tok){try{window.google.accounts.oauth2.revoke(tok,()=>{});}catch(e){}}
+  flash('shMsg','Signed out. Data keeps saving on this device.');
   updateSheetStatus();
 }
 function updateSheetStatus(){
   const s=document.getElementById('sheetStatus'),t=document.getElementById('sheetStatusTxt');
-  if(BUILT_IN_SCRIPT_URL){s.classList.add('ok');t.textContent='Google Sheet: connected (permanent)';}
-  else if(DB.scriptUrl){s.classList.add('ok');t.textContent='Google Sheet: connected';}
-  else{s.classList.remove('ok');t.textContent='Google Sheet: not connected';}
-  // permanently connected -> no need for the Google Sheet tab at all
-  document.getElementById('navSheet').style.display=BUILT_IN_SCRIPT_URL?'none':'';
-  const connected=!!DB.scriptUrl;
+  const cid=getClientId();
+  const connected=isGoogleConnected();
+  t.textContent=!cid?'Google: not configured':(connected?'Google Sheet: connected':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in'));
+  s.classList.toggle('ok',connected);
+  // Client-ID box only needed when config.js doesn't already carry the ID
+  document.getElementById('gClientIdBox').style.display=cid?'none':'';
+  document.getElementById('btnSignIn').style.display=connected?'none':'';
+  document.getElementById('btnSignOut').style.display=connected?'':'none';
+  document.getElementById('btnSyncAll3').style.display=connected?'':'none';
+  document.getElementById('btnLoad3').style.display=connected?'':'none';
   document.getElementById('btnSyncAll2').style.display=connected?'':'none';
   document.getElementById('btnLoad2').style.display=connected?'':'none';
 }
@@ -969,7 +1125,7 @@ function confirmJoinDuty(){
     }
   });
   persist();closeDlg();
-  if(DB.scriptUrl){toast('Updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('Updating Google Sheet…');syncAll();}
   renderAll();
   if(closedSubs.length)openJoinSummary(r,closedSubs);   /* substitute salary is calculated automatically */
   else toast('🤝 '+r.empName+' joined duty — '+r.days+' day(s) leave recorded.');
@@ -1910,8 +2066,8 @@ function renderPLTable(){
 /* ================= END DUTY (active / ended) ================= */
 /* "End duty" is saved as a normal Duty/Leave record of type
    'endEmployeeDuty' or 'endClientDuty'. Those records already sync to the
-   Google Sheet in the existing DutyLeave tab, so NO change to the Apps Script
-   is needed — and the ended state survives refresh, auto-load from Sheet, and
+   Google Sheet in the existing DutyLeave tab, so no change to the sheet
+   layout is needed — and the ended state survives refresh, auto-load from Sheet, and
    other devices. Nothing is ever deleted: the records, salary history,
    invoices and accounts are all left untouched. */
 function endedState(){
@@ -1961,7 +2117,7 @@ function reactivateEmployee(id){
   if(!confirm('Re-activate employee "'+e.name+'"?'))return;
   DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key));
   persist();renderAll();
-  if(DB.scriptUrl){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
   else toast('↩ Employee re-activated.');
 }
 function dutyTypeBadge(r){
@@ -2017,7 +2173,7 @@ function delRec(list,id){
   DB[list]=DB[list].filter(r=>r.id!==id);persist();
   if(list==='payments')delPayImg(id);
   renderAll();
-  if(DB.scriptUrl){toast('Deleted — updating Google Sheet…');syncAll();}
+  if(isGoogleConnected()){toast('Deleted — updating Google Sheet…');syncAll();}
   else toast('Deleted.');
 }
 function renderEmployees(){
@@ -2118,11 +2274,7 @@ function exportBackup(){
 }
 
 /* init */
-document.getElementById('scriptUrl').value=DB.scriptUrl||'';
-if(BUILT_IN_SCRIPT_URL){
-  const inp=document.getElementById('scriptUrl');
-  inp.value=BUILT_IN_SCRIPT_URL;inp.disabled=true;
-}
+loadAuth();
 document.getElementById('sTo').value=todayStr();
 document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);

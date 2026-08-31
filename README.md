@@ -17,19 +17,24 @@ each submit to **your Google Sheet** in its respective tab.
 
 ## How to run
 
-Just open `index.html` in any browser — or host it anywhere (GitHub Pages works great).
+Host it anywhere — GitHub Pages works great (sign-in with Google needs a proper `https://` address, so hosting is required for the Sheet sync; opening the file directly still works for on-device saving only).
 
-## Connect Google Sheets (one time, ~5 min)
+## Connect Google Sheets — Google OAuth (one time, ~5 min, no Apps Script)
 
-The Apps Script is already locked to spreadsheet ID `1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY`.
+The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no Apps Script, no shared web-app URL, and no "Anyone with the link" access anymore. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
 
-1. Open the spreadsheet → menu **Extensions → Apps Script**.
-2. In the editor, press **Ctrl+A** (Mac: **Cmd+A**) to select everything, then **Delete**. Paste **only** the contents of `google-apps-script.gs` — no extra notes or `*` bullets after the last `}` — then save. If you see `SyntaxError: Unexpected token '*'`, leftover text is still in `Code.gs`; select-all and paste again.
-3. **Deploy → New deployment → ⚙ Web app** → Execute as: **Me**, Who has access: **Anyone** → Deploy.
-4. Authorize when asked (Advanced → Go to project → Allow — it's your own script).
-5. Copy the **Web app URL** (ends in `/exec`).
-6. In the app → **Google Sheet** tab → paste the URL → **Save & test connection** → **Send all saved data to Sheet**.
+The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs.
 
-The script auto-creates tabs: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column; no Apps Script change is needed.)
+### One-time setup (admin, in Google Cloud Console)
 
-To use the same data on a second phone/computer: just open the app there — it now **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records).
+1. Open **console.cloud.google.com** → create (or pick) a project, e.g. *Hisab*.
+2. **APIs & Services → Library** → search **Google Sheets API** → **Enable**.
+3. **APIs & Services → OAuth consent screen** → user type **Internal** — this is the Google Workspace lock: only Google accounts inside your organisation can ever sign in. (No Workspace? Choose **External** and add your own accounts as test users.)
+4. **APIs & Services → Credentials → Create credentials → OAuth client ID** → **Web application**.
+5. **Authorised JavaScript origins** → add the exact origin where the app is served, e.g. `https://ardashomehealthcare.github.io` (add `http://localhost:8000` as well for local testing). Sign-in only works from a listed origin.
+6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) → paste it into **`config.js`** as `HISAB_GOOGLE_CLIENT_ID` (or into the box in the app's **Google Sheet** tab).
+7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → allow. Done.
+
+The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) If you previously used the Apps Script version, everything already in those tabs is read as-is — no migration needed, and you can delete the old Apps Script deployment.
+
+To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.

@@ -1,14 +1,31 @@
 /* ============================================================
-   HISAB — PERMANENT SETTINGS
+   HISAB — PERMANENT SETTINGS (Google OAuth, no Apps Script)
    ============================================================
-   When you get your Google Apps Script Web-App URL (ends with /exec),
-   paste it between the quotes below. That's ALL.
+   1) HISAB_SPREADSHEET_ID — the Google Sheet the app syncs with
+      (already filled in below).
 
-   Example:
-   window.HISAB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycb.../exec';
+   2) HISAB_GOOGLE_CLIENT_ID — OAuth 2.0 Client ID from
+      Google Cloud Console (one time, ~5 min — see README):
 
-   After that, the app is permanently connected to the Google Sheet
-   on EVERY device — you and your partner never enter it again.
+      a. https://console.cloud.google.com → create / pick a project
+      b. APIs & Services → Library → enable "Google Sheets API"
+      c. APIs & Services → OAuth consent screen
+           User type: Internal  (Workspace-only — nobody outside
+           your organisation can sign in)  or External + test users
+      d. APIs & Services → Credentials → Create credentials
+           → OAuth client ID → Web application
+           → Authorised JavaScript origins: add the EXACT origin
+             where this app is served, e.g.
+             https://ardashomehealthcare.github.io
+      e. Copy the Client ID (ends in .apps.googleusercontent.com)
+         and paste it between the quotes below. That's ALL.
+
+   NOTE: Google sign-in only works when the app is opened from an
+   origin listed above (GitHub Pages, any https site, or
+   http://localhost). Opening the file directly (file://) can't
+   sign in — data still saves on the device either way.
    ============================================================ */
 
-window.HISAB_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzoONPSQaprtZI_7siuNhuWkeB17cBYBeYM1dtGy3C2ZJG2GcZk_pz_7nImWfDPvccS_g/exec';
+window.HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
+
+window.HISAB_GOOGLE_CLIENT_ID = ''; // e.g. '1234567890-abc123.apps.googleusercontent.com'
