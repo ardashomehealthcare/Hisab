@@ -24,6 +24,15 @@
    origin listed above (GitHub Pages, any https site, or
    http://localhost). Opening the file directly (file://) can't
    sign in — data still saves on the device either way.
+
+   IF A PHONE KEEPS SHOWING "Error 401: invalid_client" AFTER
+   THIS FILE IS FIXED, that phone is running an old cached copy
+   of it. The app re-reads this file from the server by itself
+   whenever the settings look wrong (and "Re-read config.js" on
+   the Google Sheet tab does it on demand), then adopts the
+   server values. After editing this file, bump the ?v= number
+   on the config.js <script> tag in index.html so every device
+   has to fetch the new copy.
    ============================================================ */
 
 window.HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';

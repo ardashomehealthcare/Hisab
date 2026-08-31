@@ -628,12 +628,12 @@
 
 <script src="https://accounts.google.com/gsi/client" async defer onerror="window._gsiFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
-<script src="config.js"></script>
+<script src="config.js?v=2"></script>
 <script>
 /* ================= STORAGE ================= */
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
-const GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
-const SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
+let GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
+let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -689,7 +689,8 @@ function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
    https://www.googleapis.com/auth/spreadsheets. Every Sheets API call
    below carries that token, so Google itself checks that the signed-in
    account may edit the spreadsheet — no shared "Anyone" URL anymore. */
-const GS_BASE='https://sheets.googleapis.com/v4/spreadsheets/'+SPREADSHEET_ID;
+const GS_API='https://sheets.googleapis.com/v4/spreadsheets/';
+let GS_BASE=GS_API+SPREADSHEET_ID;
 const GS_SCOPES='https://www.googleapis.com/auth/spreadsheets';
 const AUTH_KEY='hisabGoogleAuth_v1';
 const CID_KEY='hisabClientId';
@@ -757,6 +758,48 @@ function checkClientId(raw){
     ]};
   return {ok:true,what:'ok',msg:'Format is correct. If Google still shows “Error 401: invalid_client” for this ID, that Client ID does not exist any more: it was deleted, its project was deleted, or it belongs to a different Google account. Create a new “Web application” OAuth client ID and paste it in this box.',title:'',steps:null};
 }
+/* A phone can keep serving an OLD cached copy of config.js, and then the app
+   signs in with a Client ID that the server no longer has — which Google answers
+   with 401 invalid_client. config.js is therefore re-read uncached whenever the
+   settings look off, and can always be re-read by hand. */
+const CFG_KEY='hisabConfig_v1';
+function readStoredConfig(){try{const c=JSON.parse(storeItem(CFG_KEY));return c&&typeof c==='object'?c:null;}catch(e){return null;}}
+function applySettings(cid,sid){
+  const ch=[],nc=regClientId(cid),ns=String(sid||'').trim();
+  if(nc&&nc!==GOOGLE_CLIENT_ID){GOOGLE_CLIENT_ID=nc;tokenClient=null;ch.push('Client ID');}
+  if(ns&&ns!==SPREADSHEET_ID){SPREADSHEET_ID=ns;GS_BASE=GS_API+SPREADSHEET_ID;ensureTabsPromise=null;ch.push('Google Sheet');}
+  if(ch.length)setStoreItem(CFG_KEY,JSON.stringify({cid:GOOGLE_CLIENT_ID,sid:SPREADSHEET_ID}));
+  return ch;
+}
+function configLooksOff(){const src=idSource();return !src.id||!regClientId(GOOGLE_CLIENT_ID)||src.from==='device'||!SPREADSHEET_ID;}
+async function refetchConfigFile(){
+  const url=(location.pathname.replace(/[^/]*$/,'')||'')+'config.js?_='+Date.now();
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res||!res.ok)throw authErr('config_fetch','Could not re-read config.js from the server.');
+  const txt=await res.text().catch(()=>'');
+  if(!/HISAB_GOOGLE_CLIENT_ID/.test(txt))throw authErr('config_parse','config.js did not come back in a readable form.');
+  const cid=(txt.match(/HISAB_GOOGLE_CLIENT_ID\s*=\s*'([^']*)'/)||[])[1]||'';
+  const sid=(txt.match(/HISAB_SPREADSHEET_ID\s*=\s*'([^']*)'/)||[])[1]||'';
+  return applySettings(cid,sid);
+}
+async function recheckConfigFile(){
+  try{
+    const ch=await refetchConfigFile();
+    updateSheetStatus();
+    if(ch.length){
+      flash('shMsg','✅ config.js re-read from the server — this page is now using the updated '+ch.join(' and ')+'. Press Sign in with Google again.',true);
+      toast('✅ Settings updated from the server');
+    }else{
+      flash('shMsg','ℹ️ config.js on the server matches what this page already uses — so the wrong Client ID came from somewhere else (a value typed on this device, or a client ID that no longer exists in Cloud Console).',false);
+    }
+    return ch;
+  }catch(e){flash('shMsg','❌ '+((e&&e.message)||e),false);return null;}
+}
+function useConfigIdAndRetry(){
+  setStoreItem(CID_KEY,'');tokenClient=null;renderClientIdBox();updateSheetStatus();
+  flash('shMsg',GOOGLE_CLIENT_ID?'Using the Client ID from config.js — trying again…':'config.js has no Client ID to fall back to.',!!GOOGLE_CLIENT_ID);
+  if(GOOGLE_CLIENT_ID)googleSignIn();
+}
 function shortId(id){
   id=String(id||'');
   if(!id)return '(none)';
@@ -784,7 +827,8 @@ function googleAdvice(raw){
       'Go to <b>APIs &amp; Services → Credentials → OAuth 2.0 Client IDs</b> and look for a row of type <b>Web application</b>. Copy the <b>Client ID</b> column value (ends <code>.apps.googleusercontent.com</code>) — not the secret.',
       'No such row, or a different ID? Press <b>Create credentials → OAuth client ID → Web application</b> and under <b>Authorised JavaScript origins</b> add exactly: <b>'+esc(origin)+'</b>.',
       'Paste the new ID in the “Google OAuth Client ID” box on this page → <b>💾 Use this Client ID</b> → <b>🔐 Sign in with Google</b>. It works at once on this device; after that put the same ID in <code>config.js</code> so the other phone works too.',
-      'If the box already shows the exact ID from the console and Google still says invalid: that client (or the whole project) was deleted — make a new one (step 4). A Client ID from another project or another Google account can never work here.'
+      'If the box already shows the exact ID from the console and Google still says invalid: that client (or the whole project) was deleted — make a new one (step 4). A Client ID from another project or another Google account can never work here.',
+      'Last case, and a common one after config.js was fixed: this phone is still running an <b>old cached copy of config.js</b>. Press <b>🔄 Re-read config.js</b> below, or hard-reload (desktop: Ctrl+Shift+R / Cmd+Shift+R; Android: Chrome ⋮ → History → Clear browsing data → Cached images and files; iPhone Home-Screen icon: remove it and add the page again). Then sign in once more.'
     ]};
   if(has('origin_mismatch','redirect_uri_mismatch','authorized javascript origins','origin not allowed','unregistered'))
     return {title:'This web address is not allowed for that Client ID',steps:[
@@ -866,6 +910,8 @@ function showSetupAlert(raw){
     +'<div class="said">Google said: “'+esc(String((raw&&raw.message)||raw))+'”</div>'
     +'<ol class="fixList">'+adv.steps.map(s=>'<li>'+s+'</li>').join('')+'</ol>'
     +'<div class="actions"><button class="btn ghost sm" onclick="copyText(document.querySelector(\'#shAlert\').innerText)">📋 Copy this fix</button>'
+    +(idSource().from==='device'?'<button class="btn ghost sm" onclick="useConfigIdAndRetry()">↩ Use the config.js Client ID and try again</button>':'')
+    +'<button class="btn ghost sm" onclick="recheckConfigFile()">🔄 Re-read config.js</button>'
     +'<button class="btn ghost sm" onclick="closeSetupAlert()">✕ Close</button></div>';
   box.className='alertBox';box.style.display='';alertKey=adv.title;
   if(adv.title.indexOf('Client ID')>=0||adv.title.indexOf('not allowed for that Client')>=0){const d=document.getElementById('gClientIdBox');if(d)d.open=true;}
@@ -1170,24 +1216,46 @@ async function googleSignIn(){
   if(!gsiReady()){flash('shMsg','Google sign-in is still loading — wait a second and try again.',false);return;}
   try{
     flash('shMsg','Waiting for Google…');
-    await getAccessToken(true);
-    updateSheetStatus();
-    const tabsErr=await ensureTabs().then(()=>null).catch(e=>e);   // create missing tabs + header rows
-    if(tabsErr){
-      reportProblem(tabsErr,true);
-      flash('shMsg','⚠ Signed in — but Google refused the Sheet: '+((tabsErr&&tabsErr.message)||tabsErr),false);
-      toast('⚠ Signed in — check the fix shown on the Google Sheet tab');
-    }else{
-      closeSetupAlert();
-      flash('shMsg','✅ Signed in — every submit now goes straight to your Google Sheet.');
-      toast('✅ Signed in to Google');
-    }
-    autoLoadFromSheet();
+    await signInFinish();
   }catch(e){
+    if(await retryWithConfigId(e)){updateSheetStatus();return;}   // a bad ID saved on this device, cleared + retried
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Sign-in failed — the fix is shown above.':'❌ Sign-in failed: '+((e&&e.message)||e),false);
   }
   updateSheetStatus();
+}
+async function signInFinish(){
+  await getAccessToken(true);
+  updateSheetStatus();
+  const tabsErr=await ensureTabs().then(()=>null).catch(e=>e);   // create missing tabs + header rows
+  if(tabsErr){
+    reportProblem(tabsErr,true);
+    flash('shMsg','⚠ Signed in — but Google refused the Sheet: '+((tabsErr&&tabsErr.message)||tabsErr),false);
+    toast('⚠ Signed in — check the fix shown on the Google Sheet tab');
+  }else{
+    closeSetupAlert();
+    flash('shMsg','✅ Signed in — every submit now goes straight to your Google Sheet.');
+    toast('✅ Signed in to Google');
+  }
+  autoLoadFromSheet();
+}
+/* Google rejected the Client ID saved on this device while config.js carries a
+   different one → clear the device value and sign in with the file's ID, so an
+   old value typed before config.js was fixed cannot keep blocking the phone. */
+async function retryWithConfigId(e){
+  if(String((e&&e.code)||'')!=='invalid_client')return false;
+  const bad=getClientId();
+  if(idSource().from!=='device'||!regClientId(GOOGLE_CLIENT_ID))return false;
+  setStoreItem(CID_KEY,'');tokenClient=null;renderClientIdBox();updateSheetStatus();
+  toast('↩ That ID was refused — trying the one in config.js');
+  try{
+    await signInFinish();
+    flash('shMsg','✅ Signed in with the Client ID from config.js. The value saved on this device ('+shortId(bad)+') was the one Google rejected, so it has been cleared here.',true);
+  }catch(e2){
+    reportProblem(e2,true);
+    flash('shMsg','❌ Neither Client ID works — see the fix above.',false);
+  }
+  return true;
 }
 function googleSignOut(){
   const tok=AUTH.token;
@@ -2776,6 +2844,9 @@ function clearAllData(){
 
 /* init */
 loadAuth();
+/* settings adopted earlier (after a stale-cache repair) win over the page's own copy,
+   and anything that still looks wrong gets re-read from the server a moment later */
+(function(){const st=readStoredConfig();if(st)applySettings(st.cid,st.sid);})();
 document.getElementById('sTo').value=todayStr();
 document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
@@ -2783,6 +2854,7 @@ document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
 updateSheetStatus();renderAll();
 autoLoadFromSheet();
+if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
 </script>
 </body>
 </html>
