@@ -561,7 +561,7 @@
 <section class="tab" id="tab-sheet">
   <div class="card">
     <h2>Connect your Google account</h2>
-    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once you sign in. No Apps Script, no URLs — you sign in with your own Google account and the app talks to the Sheet directly.</div>
+    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once you sign in. No shared URL and nothing to host — you sign in with your own Google account and the app talks to the Sheet directly.</div>
     <div id="shAlert"></div>
     <details class="setupBox" id="gClientIdBox">
       <summary>Google OAuth Client ID <span class="tag" id="cidTag"></span></summary>
@@ -657,7 +657,20 @@ let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
-  try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.employees)return d;}catch(e){}
+  try{
+    const d=JSON.parse(localStorage.getItem(KEY));
+    if(d&&d.employees){
+      /* Older builds stored their own Google wiring in this same object — a
+         web-app URL and the Drive sheet behind it. Nothing reads those keys any
+         more (every write goes through the Sheets API with the signed-in user's
+         token), so drop them instead of copying them back on every save. */
+      const clean={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]};
+      if(Object.keys(d).some(k=>!Object.prototype.hasOwnProperty.call(clean,k))){
+        try{localStorage.setItem(KEY,JSON.stringify(clean));}catch(e){}
+      }
+      return clean;
+    }
+  }catch(e){}
   return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
 }
 function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
@@ -692,7 +705,7 @@ document.getElementById('nav').addEventListener('click',e=>{
   showTab(b.dataset.tab);
 });
 
-/* ================= GOOGLE SHEET SYNC — Google OAuth + Sheets API (no Apps Script) ================= */
+/* ================= GOOGLE SHEET SYNC — Google OAuth + the Sheets API ================= */
 const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
 const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
 const SHEET_COLS={
@@ -1284,9 +1297,9 @@ async function syncAll(){
   }
   updateSheetStatus();
 }
-/* Columns that may hold real DATE / TIME cells: rows written by the old
-   Apps Script were auto-parsed by Google Sheets and come back from the API
-   as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
+/* Columns that may hold real DATE / TIME cells: rows written before this app
+   wrote through the Sheets API were auto-parsed by Google Sheets and come back
+   from the API as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
    by this app go in as plain text (valueInputOption=RAW) and round-trip
    exactly as typed — which also kills the old "1899-12-30" time bug. */
 const DATE_COLS={Employees:['joinDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};

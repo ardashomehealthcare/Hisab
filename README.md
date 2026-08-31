@@ -19,9 +19,9 @@ each submit to **your Google Sheet** in its respective tab.
 
 Host it anywhere — GitHub Pages works great (sign-in with Google needs a proper `https://` address, so hosting is required for the Sheet sync; opening the file directly still works for on-device saving only).
 
-## Connect Google Sheets — Google OAuth (one time, ~5 min, no Apps Script)
+## Connect Google Sheets — Google OAuth (one time, ~5 min)
 
-The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no Apps Script, no shared web-app URL, and no "Anyone with the link" access anymore. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
+The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no shared URL to hand out, nothing to host, and no "Anyone with the link" access. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
 
 The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs.
 
@@ -37,7 +37,7 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) → paste it into **`config.js`** as `HISAB_GOOGLE_CLIENT_ID` (or into the box in the app's **Google Sheet** tab).
 7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
 
-The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) If you previously used the Apps Script version, everything already in those tabs is read as-is — no migration needed, and you can delete the old Apps Script deployment.
+The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
 
 To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
 

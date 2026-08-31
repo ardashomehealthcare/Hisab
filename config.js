@@ -1,5 +1,5 @@
 /* ============================================================
-   HISAB — PERMANENT SETTINGS (Google OAuth, no Apps Script)
+   HISAB — PERMANENT SETTINGS (Google OAuth + the Google Sheets API)
    ============================================================
    1) HISAB_SPREADSHEET_ID — the Google Sheet the app syncs with
       (already filled in below).
