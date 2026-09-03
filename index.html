@@ -517,6 +517,20 @@
       <button class="btn green" onclick="fillMoneyFromClientBill()">💰 Take this to Money Entry</button>
     </div>
   </div>
+
+  <div class="card">
+    <h2>Who is on duty right now</h2>
+    <div class="hint">Every active client and employee at a glance — end a duty straight from the row. Ended duties are listed below and can be brought back with <b>↩ Restore</b>; nothing is ever deleted.</div>
+    <div class="tableWrap"><table id="activeDutyTable">
+      <thead><tr><th>Type</th><th>Name</th><th>Details</th><th>Since</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+    <h2 style="margin-top:18px;">Ended duties</h2>
+    <div class="tableWrap"><table id="endedDutyTable">
+      <thead><tr><th>Type</th><th>Name</th><th>Ended on</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table></div>
+  </div>
 </section>
 
 <!-- ============ PROFIT / LOSS ============ -->
@@ -674,10 +688,33 @@ function load(){
       if(Object.keys(d).some(k=>!Object.prototype.hasOwnProperty.call(clean,k))){
         try{localStorage.setItem(KEY,JSON.stringify(clean));}catch(e){}
       }
-      return clean;
+      return normalizeDB(clean);
     }
   }catch(e){}
   return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
+}
+/* Later row wins for every filled field — the same record written twice to the
+   Sheet (e.g. an end-duty row re-sent from another device) collapses into one. */
+function mergeRec(prev,next){
+  const out=Object.assign({},prev);
+  Object.keys(next||{}).forEach(k=>{const v=next[k];if(v!==''&&v!=null)out[k]=v;});
+  return out;
+}
+function dedupeById(rows){
+  const map=new Map();let orphan=0;
+  (rows||[]).forEach(r=>{
+    const id=String(r&&r.id||'').trim();
+    const key=id||('__noid_'+(orphan++));
+    const prev=map.get(key);
+    map.set(key,prev?mergeRec(prev,r):r);
+  });
+  return [...map.values()];
+}
+function normalizeDB(d){
+  ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>{
+    if(Array.isArray(d[k]))d[k]=dedupeById(d[k]);
+  });
+  return d;
 }
 function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
 function importBackup(inp){
@@ -1353,7 +1390,7 @@ function applySheetData(fresh,keepUnsynced){
       const ids=new Set(rows.map(r=>String(r.id)));
       (DB[k]||[]).forEach(r=>{if(!r.synced&&r.id&&!ids.has(String(r.id)))rows.push(r);});
     }
-    DB[k]=rows;
+    DB[k]=dedupeById(rows);
   });
   persist();renderAll();
 }
@@ -2825,8 +2862,8 @@ function isEmployeeEnded(e){
   return false;
 }
 function activeEmployees(){return DB.employees.filter(e=>e.name&&!isEmployeeEnded(e));}
-function endEmployeeDuty(){
-  const empName=val('cbEmpSel');
+function endEmployeeDuty(name){
+  const empName=(name||'').trim()||val('cbEmpSel');
   if(!empName){toast('Choose an employee first to end their duty.');return;}
   const emp=DB.employees.find(e=>e.name===empName);
   const client=(emp&&emp.client)||val('cbClient')||'';
@@ -2836,8 +2873,8 @@ function endEmployeeDuty(){
   sendRecord('DutyLeave',rec);
   renderAll();toast('⏹ Employee duty ended — '+empName);
 }
-function endClientDuty(){
-  const client=val('cbClient');
+function endClientDuty(name){
+  const client=(name||'').trim()||val('cbClient');
   if(!client){toast('Choose a client first to end their duty.');return;}
   const emps=DB.employees.filter(e=>e.client&&String(e.client).trim().toLowerCase()===client.trim().toLowerCase());
   const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name).join('\n• ')):'';
@@ -2864,6 +2901,103 @@ function dutyTypeBadge(r){
   if(r.type==='endEmployeeDuty')return '<span class="badge amber">END EMPLOYEE DUTY</span>';
   if(r.type==='endClientDuty')return '<span class="badge red">END CLIENT DUTY</span>';
   return '<span class="badge">'+esc(String(r.type||'').toUpperCase())+'</span>';
+}
+
+/* ---- Active / ended duty overview (client + employee, with restore) ---- */
+function activeClientNames(){
+  const s=new Set();
+  const add=n=>{if(n&&n.trim()&&!isClientEnded(n))s.add(n.trim());};
+  DB.employees.forEach(e=>add(e.client));
+  DB.receipts.forEach(r=>add(r.client));
+  DB.dutyLeave.forEach(r=>{if(r.type!=='endClientDuty')add(r.client);});
+  return [...s].sort((a,b)=>a.localeCompare(b));
+}
+function clientSince(name){
+  const key=String(name||'').trim().toLowerCase();
+  let best='';
+  const pick=d=>{if(d&&(!best||d<best))best=d;};
+  DB.employees.forEach(e=>{if(String(e.client||'').trim().toLowerCase()===key)pick(e.joinDate);});
+  DB.receipts.forEach(r=>{if(String(r.client||'').trim().toLowerCase()===key)pick(r.date);});
+  DB.dutyLeave.forEach(r=>{if(String(r.client||'').trim().toLowerCase()===key)pick(r.from);});
+  return best;
+}
+function empSince(e){
+  if(e.joinDate)return e.joinDate;
+  let best='';
+  DB.dutyLeave.forEach(r=>{if(r.empName===e.name&&r.from&&(!best||r.from<best))best=r.from;});
+  return best;
+}
+function assignedActiveEmployees(client){
+  const key=String(client||'').trim().toLowerCase();
+  return DB.employees.filter(e=>!isEmployeeEnded(e)&&String(e.client||'').trim().toLowerCase()===key);
+}
+/* Restore = delete the end-duty record; the client/employee is active again. */
+function restoreClientDuty(name){
+  const key=String(name||'').trim().toLowerCase();
+  if(!confirm('Restore client "'+name+'" to active service?'))return;
+  DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endClientDuty'&&String(r.client||'').trim().toLowerCase()===key));
+  persist();renderAll();
+  if(isGoogleConnected()){toast('↩ Restored — updating Google Sheet…');syncAll();}
+  else toast('↩ '+name+' is back on active service.');
+}
+function restoreEmployeeDuty(name){
+  const e=DB.employees.find(x=>x.name===name);
+  if(e){reactivateEmployee(e.id);return;}
+  const key=String(name||'').trim().toLowerCase();
+  DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key));
+  persist();renderAll();toast('↩ '+name+' is back on active duty.');
+}
+function endDutyFromRow(btn){
+  const tr=btn.closest('tr');
+  if(tr.dataset.kind==='client')endClientDuty(tr.dataset.name);
+  else endEmployeeDuty(tr.dataset.name);
+}
+function restoreDutyFromRow(btn){
+  const tr=btn.closest('tr');
+  if(tr.dataset.kind==='client')restoreClientDuty(tr.dataset.name);
+  else restoreEmployeeDuty(tr.dataset.name);
+}
+function renderActiveDuty(){
+  const at=document.querySelector('#activeDutyTable tbody');
+  const et=document.querySelector('#endedDutyTable tbody');
+  if(!at||!et)return;
+  const clients=activeClientNames(),rows=[];
+  clients.forEach(c=>{
+    const emps=assignedActiveEmployees(c);
+    rows.push(`<tr data-kind="client" data-name="${esc(c)}">
+      <td><span class="badge blue">Client</span></td>
+      <td><b>${esc(c)}</b></td>
+      <td>${emps.length?'👤 '+emps.map(e=>esc(e.name)).join(', '):'<i>No active employee assigned</i>'}</td>
+      <td>${esc(clientSince(c))||'—'}</td>
+      <td><button class="btn red" style="padding:5px 11px;font-size:.78rem;" onclick="endDutyFromRow(this)">🛑 End duty</button></td>
+    </tr>`);
+  });
+  const covered=new Set(clients.map(c=>c.trim().toLowerCase()));
+  DB.employees.filter(e=>e.name&&!isEmployeeEnded(e)).forEach(e=>{
+    const ck=String(e.client||'').trim().toLowerCase();
+    if(ck&&covered.has(ck))return;
+    rows.push(`<tr data-kind="employee" data-name="${esc(e.name)}">
+      <td><span class="badge green">Employee</span></td>
+      <td><b>${esc(e.name)}</b></td>
+      <td>${ck?'Client: '+esc(e.client):'<i>No client assigned</i>'}</td>
+      <td>${esc(empSince(e))||'—'}</td>
+      <td><button class="btn red" style="padding:5px 11px;font-size:.78rem;" onclick="endDutyFromRow(this)">⏹ End duty</button></td>
+    </tr>`);
+  });
+  at.innerHTML=rows.join('')||'<tr><td colspan="5" style="color:var(--muted);">No active duties right now.</td></tr>';
+
+  const erows=[];
+  DB.dutyLeave.filter(r=>r.type==='endClientDuty'&&r.client)
+    .sort((a,b)=>String(b.to||'').localeCompare(String(a.to||'')))
+    .forEach(r=>erows.push(`<tr data-kind="client" data-name="${esc(r.client)}">
+      <td><span class="badge amber">Client</span></td><td><b>${esc(r.client)}</b></td><td>${esc(r.to)||'—'}</td>
+      <td><button class="btn ghost" style="padding:5px 11px;font-size:.78rem;" onclick="restoreDutyFromRow(this)">↩ Restore</button></td></tr>`));
+  DB.dutyLeave.filter(r=>r.type==='endEmployeeDuty'&&r.empName)
+    .sort((a,b)=>String(b.to||'').localeCompare(String(a.to||'')))
+    .forEach(r=>erows.push(`<tr data-kind="employee" data-name="${esc(r.empName)}">
+      <td><span class="badge amber">Employee</span></td><td><b>${esc(r.empName)}</b></td><td>${esc(r.to)||'—'}</td>
+      <td><button class="btn ghost" style="padding:5px 11px;font-size:.78rem;" onclick="restoreDutyFromRow(this)">↩ Restore</button></td></tr>`));
+  et.innerHTML=erows.join('')||'<tr><td colspan="4" style="color:var(--muted);">No ended duties.</td></tr>';
 }
 
 /* ================= RENDER ================= */
@@ -3019,7 +3153,7 @@ function renderDash(){
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
 }
-function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();}
+function renderAll(){fillEmpSelects();renderActiveDuty();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();}
 
 function exportBackup(){
   const a=document.createElement('a');
