@@ -120,8 +120,6 @@
   .resultBox{background:var(--soft); border:1px solid #c9dcff; border-radius:11px; padding:14px; margin-top:14px; font-size:.9rem; line-height:1.85;}
   .resultBox b{font-variant-numeric:tabular-nums;}
   code{background:#eef1f7; padding:2px 6px; border-radius:6px; font-size:.8rem;}
-  ol.steps{margin:10px 0 0 20px; font-size:.87rem; line-height:1.7;}
-  ol.steps li{margin-bottom:6px;}
   #toast{position:fixed; bottom:18px; left:50%; transform:translateX(-50%); background:#1d2433; color:#fff; padding:11px 20px; border-radius:10px; font-size:.86rem; font-weight:600; opacity:0; pointer-events:none; transition:opacity .25s; z-index:99; max-width:90vw; text-align:center;}
   #toast.show{opacity:1;}
   .twoCol{display:grid; gap:16px; grid-template-columns:1fr;}
@@ -573,7 +571,7 @@
 <section class="tab" id="tab-sheet">
   <div class="card">
     <h2>Connect your Google account</h2>
-    <div class="hint">Every submit is saved on this device instantly, and also sent to your Google Sheet in its own tab (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) once you sign in. No shared URL and nothing to host — you sign in with your own Google account and the app talks to the Sheet directly.</div>
+    <div class="hint">Every submit is saved on this device instantly and also sent to your Google Sheet once you sign in.</div>
     <div id="shAlert"></div>
     <details class="setupBox" id="gClientIdBox">
       <summary>Google OAuth Client ID <span class="tag" id="cidTag"></span></summary>
@@ -588,13 +586,12 @@
             <button class="btn ghost sm" onclick="copyText(getClientId()||'')">📋 Copy</button>
           </div>
         </div>
-        <div class="hint" style="margin-top:10px;">Paste the <b>Client ID</b> (never the Client secret) from <b>Google Cloud Console → APIs &amp; Services → Credentials → OAuth 2.0 Client IDs</b>, row of type <b>Web application</b>. Saving here fixes only this device and works instantly; put the same ID in <code>config.js</code> so every phone is pre-configured.</div>
       </div>
     </details>
     <details class="setupBox" id="gSheetIdBox">
       <summary>Google Sheet to write into <span class="tag" id="sidTag"></span></summary>
       <div class="boxBody">
-        <div class="hint" style="margin-bottom:10px;">⚠ <b>Hisab never creates a new Google Sheet</b> — the Sheets API cannot make files, so signing in will not put a new file in your Drive. What it creates is the 5 <b>tabs</b> (<i>Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses</i>) inside the Sheet named here, and every entry goes into them. So the Sheet must already exist: press <b>🆕 New empty Sheet</b>, then paste its address below.</div>
+        <div class="hint" style="margin-bottom:10px;">⚠ Hisab fills the 5 tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) inside an existing Sheet — it cannot create the Sheet file itself.</div>
         <div class="field" style="max-width:680px;">
           <label>Sheet ID — or paste the whole Sheet address</label>
           <input id="sheetId" placeholder="https://docs.google.com/spreadsheets/d/1VV5TZy…/edit" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="sheetIdTyped()">
@@ -607,7 +604,6 @@
             <button class="btn ghost sm" onclick="newSheetTab()">🆕 New empty Sheet</button>
           </div>
         </div>
-        <div class="hint" style="margin-top:10px;">Saving here fixes only this device and works instantly. Put the same ID in <code>config.js</code> as <code>HISAB_SPREADSHEET_ID</code> so every phone writes to the same Sheet — one shared Sheet for the whole team, each partner signed in with their own Google account.</div>
       </div>
     </details>
     <div class="actions">
@@ -627,22 +623,6 @@
       <button class="btn primary sm" onclick="copyText(diagText)">📋 Copy report (send it to your admin on WhatsApp)</button>
       <button class="btn ghost sm" onclick="document.getElementById('diagCard').style.display='none'">✕ Close</button>
     </div>
-  </div>
-  <div class="card">
-    <h2>One-time setup (5 minutes, admin only)</h2>
-    <ol class="steps">
-      <li>Open <b>console.cloud.google.com</b> → create (or pick) a project, e.g. <b>Hisab</b>.</li>
-      <li>Menu <b>APIs &amp; Services → Library</b> → search <b>Google Sheets API</b> → <b>Enable</b>.</li>
-      <li><b>APIs &amp; Services → OAuth consent screen</b> → choose <b>Internal</b> (Google Workspace: only accounts in your organisation can sign in — this is the “Google Workspace OAuth” lock). If you don’t have Workspace, choose <b>External</b> and add your Google accounts as test users.</li>
-      <li><b>APIs &amp; Services → Credentials → Create credentials → OAuth client ID</b> → type <b>Web application</b>.</li>
-      <li>Under <b>Authorised JavaScript origins</b> add the exact address where the app is opened, e.g. <code>https://ardashomehealthcare.github.io</code> (add <code>http://localhost:8000</code> too if you test locally). Sign-in only works from a listed origin.</li>
-      <li>Copy the <b>Client ID</b> (the long address ending in <code>.apps.googleusercontent.com</code> — <b>not</b> the “Client secret”) and paste it in <code>config.js</code> as <code>HISAB_GOOGLE_CLIENT_ID</code> so every phone is ready. In a hurry, or the file value is wrong? Paste it in the <b>Google OAuth Client ID</b> box above and press <b>💾 Use this Client ID</b> — that fixes this device at once, no re-upload needed.</li>
-      <li>Press <b>Sign in with Google</b> → choose your work account → <b>Allow</b>. Done — every submit now goes straight from the browser to your Google Sheet. Each partner signs in with their own Google account (they need <b>Editor</b> access to the Sheet).</li>
-    </ol>
-    <div class="hint">💡 The Sheet to write into comes from <code>config.js</code> (<code>HISAB_SPREADSHEET_ID</code>) — your existing sheet, so all existing data is kept, and it can be changed on any phone in the <b>Google Sheet to write into</b> box above without re-uploading anything. ⚠ <b>Hisab never creates the Sheet file itself</b> — Google’s Sheets API cannot make files. It creates the 5 <i>tabs</i> inside the Sheet you name, so create the Sheet once (🆕 <b>New empty Sheet</b>) and share it with every partner as <b>Editor</b>.</div>
-    <div class="hint">🩺 Press <b>Check my Google setup</b> above at any time: it shows the address Google must be told about, the Client ID in use and where it came from, whether the Sheet is reachable with your sign-in, and — if Google refused something — the exact clicks to fix it. Copy the report and send it to whoever manages your Google account.</div>
-    <div class="hint">⚠ <b>Error 401: invalid_client</b> while signing in means the Client ID itself is unknown to Google — it was typed with one wrong character, cut short, it is the Client <i>secret</i>, or that client / project was deleted. Nothing is broken in your data: make a new <b>Web application</b> client ID (steps 4–6) and paste it in the box above.</div>
-    <div class="hint">⚠ <b>Error 403: access_denied</b> is a different problem: Google <i>did</i> accept the Client ID and this web address, it refused the <b>Google account</b>. It means the OAuth consent screen is still in <b>Testing</b> and that address is not on the <b>Test users</b> list, or the screen is <b>Internal</b> and a personal <code>@gmail.com</code> was used. Fix it in <b>APIs &amp; Services → OAuth consent screen</b> — <b>Audience → Test users → + Add users</b> for every partner, or <b>Publish app</b> — then press <b>🔐 Sign in with Google</b> again. Pressing <b>Cancel</b> on the consent screen gives this same error, so choose <b>Allow</b>.</div>
   </div>
 </section>
 
