@@ -23,7 +23,7 @@ Host it anywhere — GitHub Pages works great (sign-in with Google needs a prope
 
 The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no shared URL to hand out, nothing to host, and no "Anyone with the link" access. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
 
-The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE'` — your existing sheet, existing data, existing tabs.
+The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs.
 
 ### One-time setup (admin, in Google Cloud Console)
 
@@ -42,7 +42,11 @@ The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeeP
 
 ### The Sheet layout — column for column
 
-The app writes each row **into the columns the Sheet already has**, in this exact order, and reads the Sheet's own header row every time it loads (so data keeps landing in the right column even if a column is inserted or moved). If the Sheet is missing a column the app needs, the app says so instead of shifting values.
+This is the **arrangement the app writes into** — the column order of every tab:
+
+* **Reading is by column name.** The app reads the Sheet's own header row every time it loads, so a Sheet that is still in an older arrangement (or that has an extra column of your own) is read correctly, and a single new entry is still appended under the right headings.
+* **Writing it once.** Press **🔄 Send all saved data to Sheet** one time to rewrite all five tabs in the arrangement below (it writes the same rows in the new order — nothing is lost, because everything was read by name first). The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement.
+* If the Sheet does not have a column the app needs at all, the app says which one — it never guesses and never shifts values into the wrong column.
 
 | Tab | Columns (A → …) |
 |---|---|
@@ -56,7 +60,8 @@ Where each value comes from:
 
 * **Employees** — the last three client boxes of the *Add employee* form are the Sheet's `clientDutyStartDate`, `clientPhone` and `clientDeal` columns. Typing a client name fills the phone and the deal automatically from Money Entry (the client's last receipt); press **✎** on any row to edit it later.
 * **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries `Assignment completed` in `reason` plus `Employee duty ended` / `Client service ended` in `notes`.
-* **12-hour duty has no day/night column in the Sheet** — the ☀️ day / 🌙 night choice travels in `dutyTime` (that column only holds a start time for 24-hour duty), and comes back as day/night duty on every device.
+* **12-hour duty has no day/night column in the new layout** — the ☀️ day / 🌙 night choice travels in `dutyTime` (that column only holds a start time for 24-hour duty) and comes back as day/night duty on every device. While a Sheet still has the older `dutyShift` column, that column keeps being filled as well.
+* Nothing is dropped while your Sheet is still in the older arrangement: the app also keeps filling the old `dutyShift` (Employees) and `byShifts` / `subWage` (DutyLeave) columns until the tabs are rewritten.
 * Amounts and dates are written as **plain text** (`RAW`), so nothing is re-typed by Google Sheets and what you entered is what comes back.
 
 To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.

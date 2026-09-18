@@ -15,7 +15,7 @@ Values used by this app (from `config.js` — do not retype them, copy them):
 | OAuth Client ID | `663319983266-4i2dv5t5m2jli2h2lrklch4ji0319il3.apps.googleusercontent.com` |
 | Project **number** (prefix of the Client ID) | `663319983266` |
 | Scope the app asks for | `https://www.googleapis.com/auth/spreadsheets` |
-| Spreadsheet ID | `1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE` |
+| Spreadsheet ID | `1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY` |
 
 > **Got `Error 403: access_denied`?** Google already accepted the Client ID and the
 > web address — it refused the **Google account**. Go straight to **Step 3**.
@@ -158,7 +158,7 @@ scope **All users** (or the OU that contains the partners) → mark **Trusted** 
    prints the origin, the Client ID in use, the last Google error and the fix.
 4. Each partner repeats step 2 with their own account, and each needs **Editor**
    access on the Sheet:
-   <https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit>
+   <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit>
 
 ---
 
@@ -172,7 +172,7 @@ Expenses*) inside the Sheet named by `HISAB_SPREADSHEET_ID`, and nothing else.
 If no tabs appeared, one of these is true:
 
 1. **That ID is not a Sheet you can open.** Check
-   <https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit>
+   <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit>
    — "you need access" or "does not exist" means case 2 or 3.
 2. **You want your own Sheet.** Open <https://sheet.new> (makes an empty Sheet),
    copy the address from the browser bar, paste it into the app's **Google Sheet to

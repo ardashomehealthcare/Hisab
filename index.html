@@ -657,7 +657,7 @@
 <!-- Google API client (gapi) — Google Sheets API library -->
 <script src="https://apis.google.com/js/api.js" async defer onerror="window._apiFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
-<script src="config.js?v=4"></script>
+<script src="config.js?v=5"></script>
 <script>
 /* ================= STORAGE ================= */
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
@@ -717,10 +717,9 @@ document.getElementById('nav').addEventListener('click',e=>{
 /* ================= GOOGLE SHEET SYNC — Google OAuth + the Sheets API ================= */
 const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
 const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
-/* ==== SHEET LAYOUT (start) — the live Sheet, column for column ====
-   The Sheet this app writes into:
-     https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit
-   Exact header row of every tab (left → right = A, B, C …):
+/* ==== SHEET LAYOUT (start) — the column arrangement of every tab ====
+   This is the arrangement the app writes into its own Sheet (and the one the
+   5 tabs are created with). Exact header row of every tab (left → right = A, B, C …):
 
      Employees        id | name | phone | wageType | wageAmount | dutyHours | dutyTime |
                       joinDate | clientDutyStartDate | client | clientPhone | clientDeal | savedAt
@@ -749,7 +748,8 @@ const END_DUTY_TEXT={
   endClientDuty:{reason:'Assignment completed',notes:'Client service ended'}
 };
 let SHEET_HEADERS={};          // the header row actually found in the Sheet, per tab
-let sheetLayoutWarning='';     // set by fetchSheetData when a column is missing
+let sheetLayoutWarning='';     // set by fetchSheetData when the arrangement is older
+let layoutNotified=false;      // the arrangement notice is worth showing once per start
 /* newest value of one client column (clientPhone / dealAmount) from Money Entry —
    so an employee saved from the app carries the client's phone and deal as well */
 function receiptFieldForClient(client,field){
@@ -768,17 +768,20 @@ function sheetValues(sheet,rec){
   rec=rec||{};
   if(sheet==='Employees'){
     const hours=String(rec.dutyHours||'');
+    const hasShiftCol=sheetColsFor('Employees').indexOf('dutyShift')!==-1;
     return {
       id:rec.id,name:rec.name,phone:rec.phone,wageType:rec.wageType,wageAmount:rec.wageAmount,
       dutyHours:hours,
-      /* the Sheet has no day/night column: a 12-hour duty keeps its ☀️/🌙 choice in
-         dutyTime, which is otherwise only the start time of a 24-hour duty */
-      dutyTime:hours==='12'?(rec.dutyShift||'day'):(rec.dutyTime||''),
+      /* the new arrangement has no day/night column: a 12-hour duty keeps its ☀️/🌙
+         choice in dutyTime (otherwise only the start time of a 24-hour duty). While a
+         Sheet still has the older dutyShift column, the choice stays there instead. */
+      dutyTime:hours==='12'?(hasShiftCol?'':(rec.dutyShift||'day')):(rec.dutyTime||''),
       joinDate:rec.joinDate,
       clientDutyStartDate:rec.clientDutyStartDate||'',
       client:rec.client,
       clientPhone:rec.clientPhone||receiptFieldForClient(rec.client,'clientPhone'),
       clientDeal:rec.clientDeal||receiptFieldForClient(rec.client,'dealAmount'),
+      dutyShift:rec.dutyShift||'',      /* only written while a Sheet still has that column */
       savedAt:rec.savedAt
     };
   }
@@ -792,7 +795,10 @@ function sheetValues(sheet,rec){
       wageType:rec.wageType||(isSub?'daily':''),
       wageAmount:rec.wageAmount||rec.subWage||'',
       reason:rec.reason||(end?end.reason:''),
-      notes:rec.notes||(end?end.notes:'')
+      notes:rec.notes||(end?end.notes:''),
+      /* only written while a Sheet still has the old columns */
+      byShifts:rec.byShifts?true:'',
+      subWage:rec.subWage||''
     };
   }
   const o={};
@@ -817,13 +823,23 @@ function sheetRowToRec(sheet,row,headers){
     }
     o[c]=v===undefined||v===null?'':String(v);
   });
+  /* columns a Sheet may still carry from the older arrangement — read them too, so
+     nothing is lost while a tab has not been rewritten yet */
+  const LEGACY={Employees:['dutyShift'],DutyLeave:['byShifts','subWage']};
+  (LEGACY[sheet]||[]).forEach(c=>{
+    const i=at[c];
+    if(i===undefined)return;
+    let v=row[i];
+    if(typeof v==='number'&&TIME_COLS.has(c))v=serialToTime(v);
+    o[c]=v===undefined||v===null?'':String(v);
+  });
   if(sheet==='Employees'){
-    /* dutyTime carries the day/night choice of a 12-hour duty */
+    /* dutyTime carries the day/night choice of a 12-hour duty (new arrangement) */
     if(o.dutyHours==='12'&&(o.dutyTime==='day'||o.dutyTime==='night')){o.dutyShift=o.dutyTime;o.dutyTime='';}
     else if(!o.dutyShift)o.dutyShift='';
   }else if(sheet==='DutyLeave'){
-    o.subWage=o.wageAmount||'';
-    o.byShifts=(o.fromTime||o.toTime)?true:'';
+    o.subWage=o.wageAmount||o.subWage||'';
+    o.byShifts=(o.fromTime||o.toTime)?true:(o.byShifts?true:'');
   }
   return o;
 }
@@ -989,7 +1005,7 @@ function checkSheetRef(raw){
     msg:'A Sheet ID is only letters, numbers, - and _. This has something else in it, so the paste picked up part of the address.',
     title:'That is not a Sheet ID',steps:[
       'Paste the <b>whole</b> Sheet address from the browser bar instead of selecting part of it — Hisab takes the ID out of it.',
-      'The ID is the string between <code>/d/</code> and <code>/edit</code>, e.g. <code>1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE</code>.'
+      'The ID is the string between <code>/d/</code> and <code>/edit</code>, e.g. <code>1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY</code>.'
     ]};
   if(id.length<15)return {ok:false,what:'sheet_short',
     msg:'That is too short to be a Sheet ID (they are about 44 characters) — the paste was cut short.',
@@ -1378,6 +1394,18 @@ function ensureTabs(){
   })().catch(e=>{ensureTabsPromise=null;throw e;});
   return ensureTabsPromise;
 }
+/* the header row of one tab, fetched on demand (before the first append on a fresh
+   device, or when a tab is created while the app is running) */
+async function ensureHeaders(sheet){
+  if(SHEET_HEADERS[sheet])return SHEET_HEADERS[sheet];
+  try{
+    const j=await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!1:1?valueRenderOption=UNFORMATTED_VALUE');
+    const h=((j.values&&j.values[0])||[]).map(v=>String(v??'').trim());
+    while(h.length&&h[h.length-1]==='')h.pop();
+    if(h.length)SHEET_HEADERS[sheet]=h;
+  }catch(e){}
+  return SHEET_HEADERS[sheet];
+}
 async function appendRow(sheet,row){
   const url=GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
   const body={values:[row]};
@@ -1391,7 +1419,8 @@ async function appendRow(sheet,row){
 async function sendRecord(sheet,rec){
   if(!AUTH.token){toast('💾 Saved on device — sign in on the Google Sheet tab to sync');updateSheetStatus();return;}
   try{
-    await appendRow(sheet,rowFor(sheet,rec));
+    await ensureHeaders(sheet);                      // follow the Sheet's own columns
+    await appendRow(sheet,toSheetRow(sheet,rec));
     rec.synced=true;persist();
     toast('✅ Saved & sent to Google Sheet');
     closeSetupAlert();
@@ -1411,9 +1440,10 @@ async function syncAll(){
     for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
     await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
       valueInputOption:'RAW',
-      data:TABS.map(t=>({range:t+'!A1',values:[sheetColsFor(t),...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r))]}))
+      data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t],...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r))]}))
     }});
     [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
+    TABS.forEach(t=>{SHEET_HEADERS[t]=SHEET_COLS[t].slice();});   // the Sheet now has this arrangement
     rememberSheet();
     closeSetupAlert();
     flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
@@ -1451,7 +1481,7 @@ async function fetchSheetData(){
     while(headers.length&&headers[headers.length-1]==='')headers.pop();
     if(headers.length)SHEET_HEADERS[sheet]=headers;
     const missing=missingSheetCols(sheet,headers);
-    if(missing.length)warn.push(sheet+': '+missing.join(', '));
+    if(missing.length)warn.push(sheet);
     return rows.slice(1)
       .filter(row=>row.some(v=>String(v??'').trim()!==''))   // ignore trailing blank rows
       .map(row=>sheetRowToRec(sheet,row,headers));
@@ -1463,7 +1493,7 @@ async function fetchSheetData(){
     receipts:map('ClientReceipts',3),
     expenses:map('Expenses',4)
   };
-  sheetLayoutWarning=warn.length?('⚠ The Sheet is missing column(s) — '+warn.join(' • ')+'. Everything else still goes to the right column.'):'';
+  sheetLayoutWarning=warn.length?('⚠ This Sheet is still in the old arrangement on: '+warn.join(', ')+' — everything is read correctly; press 🔄 Send all saved data to Sheet once to write it in the new column layout.'):'';
   return data;
 }
 function applySheetData(fresh,keepUnsynced){
@@ -1522,7 +1552,8 @@ async function autoLoadFromSheet(){
     applySheetData(data,true);
     rememberSheet();
     if(switched)toast('⚠ Different Google Sheet — entries saved on this device were kept, not sent yet');
-    else toast(sheetLayoutWarning?sheetLayoutWarning:'✅ Data refreshed from Google Sheet');
+    else if(sheetLayoutWarning){if(!layoutNotified){layoutNotified=true;toast(sheetLayoutWarning);}}
+    else toast('✅ Data refreshed from Google Sheet');
     closeSetupAlert();
   }catch(e){
     const explained=reportProblem(e);
