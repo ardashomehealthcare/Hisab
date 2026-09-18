@@ -2059,7 +2059,7 @@ function confirmJoinDuty(){
   if(isGoogleConnected()){toast('Updating Google Sheet…');syncAll();}
   renderAll();
   if(closedSubs.length)openJoinSummary(r,closedSubs);   /* substitute salary is calculated automatically */
-  else toast('🤝 '+r.empName+' joined duty — '+r.days+' day(s) leave recorded.');
+  else toast('🤝 '+r.empName+' joined duty — '+dayWord(r.days)+' of leave recorded.');
 }
 /* ---------- Join-duty summary: substitute duty ended + salary calculated automatically ---------- */
 function openJoinSummary(leaveRec,subs){
@@ -2574,6 +2574,12 @@ function rowTimes(r,empTime){
 }
 /* Start clock of a row — the one place the app asks "which time does this count on?" */
 function rowTimeFor(r,empTime){return rowTimes(r,empTime).st;}
+/* The days a finished row shows: what its hours give, else its saved days value */
+function shownDays(r){
+  const t=rowTimes(r);
+  if(!t.st||!r.from)return r.days||'';
+  return hoursToDays(hoursBetween(r.from,t.st,r.to||r.from,t.et||t.st));
+}
 /* Days one duty/leave row covers inside [from,to]. A row on a clock (24-hr duty,
    or a leave/substitute with a time) is counted in HOURS: from the row's own start
    to its end — or to the far edge of the period at the same clock when the duty is
@@ -3471,8 +3477,7 @@ function dutyRow(r,list,withActions){
   const endD=todayStr(),t=rowTimes(r);
   /* a row on a clock shows the days the hours give (the same number the salary
      uses); a row with no readable time keeps its saved days */
-  const computed=(t.st&&r.from)?hoursToDays(hoursBetween(r.from,t.st,r.to||endD,t.et||t.st)):null;
-  const rawDays=live?liveLeaveDays(r,endD,rowTimeFor(r)):(computed!=null?computed:(r.days||''));
+  const rawDays=live?liveLeaveDays(r,endD,rowTimeFor(r)):shownDays(r);
   const days=(Number(rawDays)>0&&Math.abs(Number(rawDays)-Math.round(Number(rawDays)))>0.01)
     ?daysHrsTxt(rawDays,(t.st?hoursBetween(r.from,t.st,r.to||endD,t.et||t.st):Number(rawDays)*24))
     :rawDays;
@@ -3505,7 +3510,8 @@ function renderOnLeave(){
       const es=s.to?s:effSubRec(s,todayStr());
       const c=substitutePay(es);
       const payTxt=c.pay!=null?' • salary '+(s.to?'':'≈ ')+'<b>'+fmt(c.pay)+'</b>'+(s.to?'':' so far'):'';
-      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
+      const sd=s.to?shownDays(s):'';
+      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${sd?' = <b>'+dayWord(sd)+'</b>':''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
     }).join('');
     return `<div class="onLeaveItem">
       <div class="onLeaveHead"><b>${esc(r.empName)}</b> <span class="badge red">ON LEAVE</span>${r.client?` <span class="badge blue">📍 ${esc(r.client)}</span>`:''}</div>
