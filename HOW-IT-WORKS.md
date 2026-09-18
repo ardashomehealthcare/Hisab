@@ -211,8 +211,9 @@ follows the hours instead of being rounded up to a whole day:
   remembered** from that client's newest receipt, so they only have to be typed once.
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
-* Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → the invoice image is saved
-  and the client's chat opens **directly on the client's number**. A number saved without the
+* Print / save as PDF; 📲 WhatsApp → the invoice is rendered to a PNG (html2canvas), the image is saved
+  and the client's chat opens **directly on the client's number**. (The PNG is produced only here —
+  there is no separate save-as-image button.) A number saved without the
   country code still opens the right chat — the app adds **91** (or the set `WA_DEFAULT_CC`)
   itself, because `wa.me` only accepts full international numbers. No number saved? The app asks
   for it once on the spot (typed numbers are remembered per client), or the share sheet / chooser

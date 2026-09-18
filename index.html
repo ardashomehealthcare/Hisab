@@ -365,7 +365,6 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
-      <button class="btn amber" onclick="saveInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="shareInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
     </div>
@@ -490,7 +489,6 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
-      <button class="btn amber" onclick="savePayInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="sharePayInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
@@ -2314,24 +2312,8 @@ function downloadBlob(blob,filename){
   a.href=URL.createObjectURL(blob);a.download=filename;a.click();
   setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},5000);
 }
-/* 🖼 Save as image */
-async function saveNodeImage(nodeId,filename){
-  let blob;
-  try{blob=await renderNodeToBlob(nodeId);}
-  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
-  downloadBlob(blob,filename);
-  toast('🖼 Image saved: '+filename);
-}
-function saveInvoiceImage(){
-  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
-  const no=String(document.getElementById('invNo').textContent).replace(/[^A-Za-z0-9-]/g,'');
-  saveNodeImage('invoicePrintArea','Invoice-'+no+'.png');
-}
-function savePayInvoiceImage(){
-  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
-  const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
-  saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
-}
+/* 🖼 The invoice / receipt image is produced only inside 📲 Send on WhatsApp
+   (there is no separate save-as-image button). */
 /* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
    WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
    the message already typed (wa.me/<number>). Without a saved number the app
