@@ -59,6 +59,9 @@ also written into the Sheet **while that column exists there**, so an older Shee
 |---|---|---|
 | Days in a range | `dayCount(from,to)` | Inclusive: 1 Aug → 3 Aug = **3** days |
 | 24-hour shifts | `shiftCount(from,fromTime,to,toTime)` | Whole 24-hour blocks: 8 AM → next day 8 AM = **1** day. Falls back to calendar days when no time is given |
+| Hours → days (24-hr duty) | `hoursToDays(h)` | `h ÷ 24`, rounded to 2 decimals, never below `0.04` (= about one hour). 18 hrs = **0.75 day**, 12 hrs = **0.5 day** |
+| Hours between two datetimes | `hoursBetween(from,fromTime,to,toTime)` | `hoursToDays(0)` = 0 hours if the range is empty or reversed |
+| Days a row covers inside a period | `rowDaysInRange(r,from,to,empTime)` | Row clipped to the period; **if the row (or the employee) carries a time, the hours decide** the fraction, otherwise calendar days |
 | Days a record covers | `recordDates(r,from,to)` | When a row has `fromTime` **and** `days` (e.g. `"3 days and 6 hours"`), that `days` value wins; otherwise calendar days |
 | Split over months | `splitAcrossMonths(from,to,total)` | Proportional to calendar days, last month absorbs rounding |
 | Days per month | `groupByMonth(dateSet)` | Simple count of dated days per `yyyy-mm` |
@@ -103,9 +106,9 @@ On-leave card / join box:
   more substitutes can be added any time          → same rows
 
 🤝 Join duty (asks date + time for 24-hr):
-  leave row      : to = join date      days = dutyDayCount(r)          (24-hr: whole shifts)
+  leave row      : to = join date      days = dutyDayCount(r)          (24-hr: hours ÷ 24)
   every open substitute for that person:
-                 : to = join date      days = shifts/days it covered
+                 : to = join date      days = hours it covered / 24     (only whole if whole)
   then the “substitute salary” dialog opens →  💸 Record payment
 ```
 
@@ -124,9 +127,13 @@ On-leave card / join box:
 
 | Action | Writes | Effect |
 |---|---|---|
-| ⏹ End employee duty | `type:'endEmployeeDuty'`, `to:<today>`, `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date |
+| ⏹ End employee duty | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
 | 🛑 End client duty | `type:'endClientDuty'`, `to:<today>`, `client`, same `reason`/`notes` wording | The client and everyone posted there become inactive |
 | ↩ Re-activate (row button) | Deletes that end-duty row | They come back; the sheet is re-pushed |
+
+For a 24-hour employee the dialog first asks the reason and then the **time the duty ended**
+(blank, or a full shift, keeps the usual duty time = a whole day). That time lands in the
+`toTime` column of the DutyLeave row, so the last part shift is paid by its hours.
 
 “Ended” is derived, never stored: `endedState()` scans the DutyLeave rows and any employee
 whose name — or whose client — has an end row is treated as inactive. Showing them again is a
@@ -147,16 +154,44 @@ checkbox (*Show ended employees*), and no record, invoice or salary is touched.
    *“count the whole period as duty”* only widens the **start** to the From date — the end-duty
    date always stops the count.
 4. **Leave days are removed from duty days**, so a leave shortens the month automatically.
-5. **24-hour employees** with a time given are counted in whole shifts instead of calendar days.
+5. **24-hour employees are paid according to hours** (see the box below). The count is made
+   by `duty24For()` once and used by the calculator, the payment summaries and re-printed
+   receipts, so all of them always agree.
 6. **Money**: per-day → `rate × duty days`; monthly → `wage ÷ days-in-month × duty days`
    summed month by month (so the on-screen table shows each month's duty days, leave days and
-   amount).
+   amount). A fractional day is multiplied as it is — 4.25 days at ₹1,000/day = **₹4,250**, a
+   monthly ₹31,000 ÷ 30 × 4.25 days = **₹4,392** (rounded to the rupee at the end).
 7. **Balance** = salary − payments whose `date` falls inside the period. Payments outside the
    period are ignored; the history table lists the ones inside, plus the all-time total.
 8. **Outputs**: 📋 copy-message (duty/leave detail, day totals, balance in words-free plain
    text), 🧾 payment receipt (PAID stamp, duty detail, salary, paid, balance, online-payment
    screenshot, WhatsApp share), and 💸 *Record balance as payment given today* which writes an
    EmployeePayments row with `periodFrom` `periodTo` `summary` `balance` filled from the same rules.
+
+### 24-hour duty is paid according to hours
+
+A 24-hour duty is **one day** when it runs the full shift (the duty time on the Employees row →
+same time next day, usually 8 AM → 8 AM). Whenever it does **not** fill whole days, the money
+follows the hours instead of being rounded up to a whole day:
+
+| Situation | Days counted | Why |
+|---|---|---|
+| Employee joins mid-shift (save leave time / join-duty time on the form) | `hours ÷ 24` | The leave starts at the real hour, so the part already worked is paid |
+| Duty ends part-way (the end-duty dialog asks **what time it ended** for 24-hr employees) | `hours ÷ 24` | The last shift's hours are paid, e.g. ending 2 PM after an 8 AM start = **0.25 day** |
+| Substitute covers only part of a shift (their own row's times) | `hours ÷ 24` | `substitutePay()` uses the row's `fromTime`/`toTime`; a saved `days` value still wins |
+| Leave taken part-way (e.g. 8 AM → 8 PM = 12 hrs) | **0.5 day** removed from duty | Duty days go down by exactly the leave hours |
+| No time anywhere (duty time not saved, or a whole period with only dates) | Calendar days, exactly as before | “According to hours **if required**” — nothing changes until real hours are known |
+
+* The formula is always the same in the code: `days = hours ÷ 24`, and then
+  `rate × days` (daily wage) or `wage ÷ days-in-month × days` (monthly wage).
+* On screen and on messages a part day is written with its hours — *“4.25 days (102 hrs)”*,
+  *“₹800 / day × 0.75 days (18 hrs)”* — so the number never looks like a mistake.
+* If a 24-hr employee has **no duty time** on the Employees row, the calculator shows a hint:
+  add the duty time (or type the From/To times in the calculator) and the hours rule turns on
+  for that person.
+* Join duty (`jTime`), leave start (`lFromT`) and the end-duty question all feed the same rule.
+* If a leave or duty row is still open, it is clipped to the period and counted up to *today*,
+  so a running leave shows a fraction that grows while you look at it.
 
 ---
 
@@ -303,6 +338,8 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 ## 16. Rules of thumb
 
 * Money is counted by the **date the money moved**, duty is counted by **dates and times of duty**.
+* A 24-hour duty is one day when it runs the full shift; any part shift, late joining or early
+  ending is paid by its hours (`hours ÷ 24`), and a part day always shows its hours next to it.
 * A monthly wage is always `wage ÷ days-in-month × days actually served`, month by month.
 * A duty starts at the earlier of joining date / client duty start, and stops at an end-duty row.
 * Leave removes days from duty; a substitute adds its own paid days, priced from its row.

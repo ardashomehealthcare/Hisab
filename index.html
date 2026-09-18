@@ -1834,7 +1834,8 @@ function updLvSub(){
   const ft=(val('lvSubTime')||ftRaw||'');
   const end=todayStr();
   if(end<from){prev.innerHTML='';return;}
-  const days=ft?Math.max(1,shiftCount(from,ft,end,ft)):dayCount(from,end);
+  /* a 24-hr duty with a time is estimated by its hours (8 AM → 2 PM = 0.25 day) */
+  const days=ft?hoursToDays(hoursBetween(from,ft,end,ft)):dayCount(from,end);
   const c=substitutePay({empName,from,to:end,days,subWage:val('lvSubWage')});
   prev.innerHTML=c.pay!=null
     ?`Substitute salary ${esc(empName)}: <b>≈ ${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule} — updated live, final total at Join duty)</span>`
@@ -1890,14 +1891,14 @@ function liveLeaveDays(r,upto){
   const end=upto||todayStr();
   if(!r||!r.from||end<r.from)return 0;
   if(r.fromTime){
-    const h=(new Date(end+'T'+r.fromTime)-new Date(r.from+'T'+r.fromTime))/36e5;
-    return h>0?Math.max(1,Math.ceil(h/24)):1;
+    const h=hoursBetween(r.from,r.fromTime,end,r.fromTime);
+    return h>0?hoursToDays(h):1;           /* 24-hr duty: part days show as fractions */
   }
   return dayCount(r.from,end);
 }
 /* Closed copy of an open leave, extended to `end` (range end) so salary counting works while still on leave */
 function effLeaveRec(r,end){
-  return {...r,to:end,ongoing:true,days:r.fromTime?shiftCount(r.from,r.fromTime,end,r.fromTime):dayCount(r.from,end)};
+  return {...r,to:end,ongoing:true,days:r.fromTime?hoursToDays(hoursBetween(r.from,r.fromTime,end,r.fromTime)):dayCount(r.from,end)};
 }
 /* Closed copy of an open substitution, extended to `end` — days counted like the
    covered duty (24-hr shifts, using the substitute's own start time when saved,
@@ -1906,7 +1907,7 @@ function effSubRec(r,end){
   if(r.to)return r;
   const lv=DB.dutyLeave.find(x=>x.type==='leave'&&x.empName===r.forEmp&&!x.to);
   const ft=r.fromTime||(lv&&lv.fromTime)||'';
-  const days=ft?Math.max(1,shiftCount(r.from,ft,end,ft)):dayCount(r.from,end);
+  const days=ft?hoursToDays(hoursBetween(r.from,ft,end,ft)):dayCount(r.from,end);
   return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||!!ft};
 }
 /* Expected pay for a finished substitution — a per-day wage entered when the
@@ -1920,7 +1921,14 @@ function effSubRec(r,end){
    app's own subWage column, kept for older Sheets. */
 function substitutePay(sub){
   const emp=DB.employees.find(e=>e.name===sub.empName);
-  const days=Math.max(1,Number(sub.days)||dayCount(sub.from,sub.to||sub.from));
+  /* a row with a time is 24-hr duty → days come from the hours actually covered
+     (18 h = 0.75 day); a saved days value wins, else calendar days */
+  const empTime=(emp&&emp.dutyHours==='24')?(emp.dutyTime||''):'';
+  const st=sub.fromTime||empTime||'',et=sub.toTime||sub.fromTime||empTime||'';
+  const hoursCovered=(sub.from&&st)?hoursBetween(sub.from,st,sub.to||sub.from,et):0;
+  const days=Number(sub.days)>0
+    ? round2(Number(sub.days))
+    : (hoursCovered>0?hoursToDays(hoursCovered):dayCount(sub.from,sub.to||sub.from));
   const rowAmount=Number(sub.wageAmount||sub.subWage||0);
   const rowType=String(sub.wageType||'').trim();
   const empAmount=Number((emp&&emp.wageAmount)||0);
@@ -1929,13 +1937,14 @@ function substitutePay(sub){
   else if(empAmount>0){wage=empAmount;wt=String((emp&&emp.wageType)||'');source=' — from the Employees row';}
   if(!wage||!wt)return {emp,days,pay:null,rule:''};
   if(wt==='daily'){
-    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')+source};
+    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+daysHrsTxt(days,hoursCovered)+source};
   }
   const counts=splitAcrossMonths(sub.from,sub.to||sub.from,days);
   let pay=0;const parts=[];
   Object.keys(counts).sort().forEach(ym=>{
     const p=Math.round(wage/daysInMonth(ym)*counts[ym]);
-    pay+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+counts[ym]+' day'+(counts[ym]===1?'':'s'));
+    pay+=p;
+    parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+daysHrsTxt(counts[ym],counts[ym]*24));
   });
   return {emp,days,pay,rule:parts.join(' + ')+source};
 }
@@ -2018,16 +2027,23 @@ function confirmJoinDuty(){
   const r=DB.dutyLeave.find(x=>x.id===dlgCtx.id);if(!r)return;
   const d=val('jDate'),t=dlgCtx.is24?val('jTime'):'';
   if(!d||d<r.from){toast('Check the join duty date.');return;}
-  r.to=d;r.toTime=t;r.days=dutyDayCount(r)||1;
-  /* end substitute duty automatically at the join date — days counted like the
-     covered duty (24-hr shifts, using the substitute's own start time when
-     saved, else the employee on leave's: 8 AM → next day 8 AM = 1 day) */
+  /* the duty time saved on the employee's row (24-hr duty) — used for both the
+     employee's own leave days and the substitute covering them */
+  const lvEmp=DB.employees.find(e=>e.name===r.empName);
+  const et=(lvEmp&&lvEmp.dutyTime)||r.fromTime||'';
+  r.to=d;r.toTime=t;
+  r.days=dlgCtx.is24
+    ? hoursToDays(hoursBetween(r.from,et||r.fromTime,d,t||et||r.fromTime))
+    : (dutyDayCount(r)||1);
+  /* end substitute duty automatically at the join date — days counted the same way
+     (the substitute's own start time when saved, else the employee on leave's), so
+     a part shift is paid by its hours */
   const closedSubs=[];
   DB.dutyLeave.forEach(s=>{
     if(s.type==='substitute'&&s.forEmp===r.empName&&!s.to){
-      const ft=s.fromTime||r.fromTime||'';
+      const ft=s.fromTime||r.fromTime||et||'';
       s.to=d;
-      s.days=ft?Math.max(1,shiftCount(s.from,ft,d,t||ft)):dayCount(s.from,d);
+      s.days=ft?hoursToDays(hoursBetween(s.from,ft,d,t||ft)):dayCount(s.from,d);
       if(ft)s.byShifts=true;
       s.toTime=ft?(t||ft):'';
       closedSubs.push(s);
@@ -2089,10 +2105,8 @@ function dutyDayCount(rec){
   if(!rec.from)return '';
   if(!rec.to)return '';   /* open leave — days are counted when the employee joins duty */
   if(rec.fromTime&&rec.to){
-    const start=new Date(rec.from+'T'+rec.fromTime);
-    const end=new Date(rec.to+'T'+(rec.toTime||rec.fromTime));
-    const hrs=(end-start)/3600000;
-    if(hrs>0)return Math.max(1,Math.round(hrs/24));
+    const hrs=hoursBetween(rec.from,rec.fromTime,rec.to,rec.toTime||rec.fromTime);
+    if(hrs>0)return hoursToDays(hrs);      /* 8 AM → 8 AM = 1 day • 8 AM → 2 PM = 0.25 */
   }
   return dayCount(rec.from,rec.to);
 }
@@ -2355,24 +2369,31 @@ function salarySummaryFor(name,from,to){
   const dutySet=new Set(),leaveSet=new Set();
   DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute'||r.type==='leave')&&overlaps(r,from,to))
     .forEach(r=>{(recordDates(r,from,to)||new Set()).forEach(d=>{(r.type==='leave'?leaveSet:dutySet).add(d);});});
-  let windowTxt='';
-  if(!dutySet.size){
-    /* same rule as the Salary Calculator: duty window from the columns */
-    const ws=dutyWindowStart(name,emp,from,to),we=dutyWindowEnd(name,emp,to);
-    if(ws&&ws<=we){
-      for(let d=ws;d<=we;d=addDaysStr(d,1))dutySet.add(d);
-      if(ws>from||we<to)windowTxt=' (duty '+ws+' → '+we+')';
+  let windowTxt='',twentyFour='';
+  const h24=duty24For(name,emp,from,to,{});
+  let dutyPerMonth,dutyDays,leaveDays;
+  if(h24){
+    /* 24-hour duty → the same hours-based count as the Salary Calculator */
+    dutyPerMonth=h24.perMonth;dutyDays=h24.dutyDays;leaveDays=h24.leaveDays;twentyFour=h24.txt;
+  }else{
+    if(!dutySet.size){
+      /* same rule as the Salary Calculator: duty window from the columns */
+      const ws=dutyWindowStart(name,emp,from,to),we=dutyWindowEnd(name,emp,to);
+      if(ws&&ws<=we){
+        for(let d=ws;d<=we;d=addDaysStr(d,1))dutySet.add(d);
+        if(ws>from||we<to)windowTxt=' (duty '+ws+' → '+we+')';
+      }
     }
+    leaveSet.forEach(d=>dutySet.delete(d));
+    dutyPerMonth=groupByMonth(dutySet);dutyDays=dutySet.size;leaveDays=leaveSet.size;
   }
-  leaveSet.forEach(d=>dutySet.delete(d));
-  const dutyPerMonth=groupByMonth(dutySet),dutyDays=dutySet.size,leaveDays=leaveSet.size;
   let salary=0;const parts=[];
   Object.keys(dutyPerMonth).sort().forEach(ym=>{
-    if(wt==='monthly'){const p=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+dutyPerMonth[ym]);}
-    else if(wt==='daily'){const p=Math.round(wage*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' × '+dutyPerMonth[ym]);}
+    if(wt==='monthly'){const p=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+round2(dutyPerMonth[ym]));}
+    else if(wt==='daily'){const p=Math.round(wage*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' × '+round2(dutyPerMonth[ym]));}
   });
   const paid=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
-  return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,rule:parts.join(' + '),windowTxt};
+  return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,rule:parts.join(' + '),windowTxt,twentyFour};
 }
 function savePayment(){
   const rec={id:uid(),empName:val('pEmpSel'),date:todayStr(),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),periodFrom:val('pFrom'),periodTo:val('pTo'),savedAt:new Date().toLocaleString()};
@@ -2383,7 +2404,7 @@ function savePayment(){
   if(rec.empName&&rec.periodFrom&&rec.periodTo){
     const sm=salarySummaryFor(rec.empName,rec.periodFrom,rec.periodTo);
     const amt=Number(rec.amount||0),after=sm.bal-amt;
-    rec.summary='Duty '+sm.dutyDays+' day'+(sm.dutyDays===1?'':'s')+' • Leave '+sm.leaveDays+' day'+(sm.leaveDays===1?'':'s')
+    rec.summary='Duty '+dayWord(sm.dutyDays)+' • Leave '+dayWord(sm.leaveDays)
       +'\nPeriod '+rec.periodFrom+' → '+rec.periodTo+sm.windowTxt
       +(sm.wage?('\nSalary '+fmt(sm.salary)+(sm.rule?' ('+sm.rule+')':'')):'')
       +'\nPaid '+fmt(sm.paid+amt)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'');
@@ -2463,6 +2484,45 @@ function shiftCount(fromStr,fromTime,toStr,toTime){
   }
   return dayCount(fromStr,toStr);
 }
+
+/* ================= 24-HOUR DUTY — PAID ACCORDING TO HOURS =================
+   A 24-hour duty is one day when it runs a full shift (8 AM → next day 8 AM).
+   When it does not — the employee joins mid-shift, the duty ends at 2 PM, or a
+   substitute covers only 18 hours — the day count becomes a fraction of a day
+   and the money follows the hours:
+        per-day  : rate ÷ 24 × hours
+        monthly  : wage ÷ days-in-month ÷ 24 × hours
+   Both come out of the same number: hours ÷ 24 = days (e.g. 18 h = 0.75 day). */
+function hoursBetween(from,fromTime,to,toTime){
+  if(!from||!to)return 0;
+  const a=new Date(from+'T'+(fromTime||'00:00')),b=new Date(to+'T'+(toTime||fromTime||'00:00'));
+  const h=(b-a)/36e5;
+  return h>0?h:0;
+}
+const round2=n=>Math.round(Number(n||0)*100)/100;
+/* whole hours → days, never below about one hour of duty */
+const hoursToDays=h=>Math.max(0.04,Math.round((Number(h)||0)/24*100)/100);
+function hrsTxt(h){const v=round2(h);return v+' hr'+(Math.abs(v-1)<0.01?'':'s');}
+/* "0.75 day (18 hrs)" — a part day always shows its hours */
+function daysHrsTxt(days,hours){
+  const d=round2(days);
+  if(Math.abs(d-Math.round(d))<0.01)return d+' day'+(Math.round(d)===1?'':'s');
+  return d+' day'+(d===1?'':'s')+' ('+hrsTxt(hours||d*24)+')';
+}
+/* Days one duty/leave row covers inside [from,to]. Rows that carry a time (24-hr
+   duty) are counted in hours, so a part-shift counts as its fraction. */
+function rowDaysInRange(r,from,to,empTime){
+  const rs=r.from,re=r.to||r.from;
+  if(!rs||!re)return 0;
+  const s=rs<from?from:rs,e=re>to?to:re;
+  if(s>e)return 0;
+  const st=r.fromTime||empTime||'',et=r.toTime||r.fromTime||empTime||'';
+  if(st){
+    const h=hoursBetween(s,st,e,et);
+    if(h>0)return hoursToDays(h);
+  }
+  return dayCount(s,e);
+}
 /* Starting "From" date: last salary payment date, or joining date for a new hire (no salary paid yet),
    or the earliest duty/substitute record for manually-added substitutes with no employee record */
 function salaryFromDate(name,emp){
@@ -2527,7 +2587,7 @@ function buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,b
       lines.push(l);
     });
   }
-  lines.push('Total duty days: '+dutyDays);
+  lines.push('Total duty days: '+dayWord(dutyDays));
   lines.push('');
   lines.push('Leave:');
   if(leaveRecs.length){
@@ -2544,7 +2604,7 @@ function buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,b
   }else{
     lines.push('- none');
   }
-  lines.push('Total leave days: '+leaveDays);
+  lines.push('Total leave days: '+dayWord(leaveDays));
   lines.push('');
   lines.push(bal>=0?('Balance to pay: '+fmt(bal)):('Overpaid / advance: '+fmt(Math.abs(bal))));
   return lines.join('\n');
@@ -2590,6 +2650,53 @@ function dutyWindowEnd(name,emp,to){
   const e=list.filter(Boolean).sort().slice(-1)[0]||'';
   return (e&&e<to)?e:to;
 }
+/* The time that duty ended at (the toTime of that same end row) — so the last
+   partial shift of a 24-hr duty is paid for the hours worked. */
+function dutyWindowEndTime(name,emp){
+  const key=String((emp&&emp.client)||'').trim().toLowerCase();
+  let best=null;
+  DB.dutyLeave.forEach(r=>{
+    const d=r.to||r.from;
+    if(!d)return;
+    const mine=(r.empName===name&&r.type==='endEmployeeDuty')||(key&&r.type==='endClientDuty'&&String(r.client||'').trim().toLowerCase()===key);
+    if(!mine)return;
+    if(!best||d>=best.d)best={d,time:r.toTime||r.fromTime||''};
+  });
+  return best?best.time:'';
+}
+/* ---- 24-hour duty counted in hours (one place, used by the Salary Calculator
+   and by the salary summaries in the payments tab) ----
+   Every part counts by its real hours: hiring mid-shift, a duty that ends at
+   2 PM, a substitute who covers 18 hours, a leave that starts mid-shift.
+   Returns null for employees who are not on 24-hour duty. */
+function duty24For(name,emp,from,to,opts){
+  opts=opts||{};
+  /* base time = the employee's saved duty time, or the times typed in the calculator */
+  const base=(emp&&String(emp.dutyHours)==='24')?((emp.dutyTime)||opts.time||''):(opts.time||'');
+  if(!base)return null;
+  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute')&&overlaps(r,from,to))
+    .map(r=>effSubRec(r,to));
+  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to))
+    .map(r=>r.to?r:effLeaveRec(r,to));
+  const ws=(opts.force?from:dutyWindowStart(name,emp,from,to))||from,we=dutyWindowEnd(name,emp,to);
+  const endTime=opts.time||dutyWindowEndTime(name,emp)||base;
+  let dd=0;
+  if(dutyRecs.length){
+    dutyRecs.forEach(r=>{dd+=rowDaysInRange(r,from,to,base);});
+  }else if(ws&&ws<=we){
+    dd=rowDaysInRange({from:ws,to:we,fromTime:base,toTime:endTime},from,to,base);
+  }
+  let lv=0;leaveRecs.forEach(r=>{lv+=rowDaysInRange(r,from,to,base);});
+  const dutyDays=Math.max(0,round2(dd-lv)),leaveDays=round2(lv);
+  const sTxt=(dutyRecs.length?from:ws||from),eTxt=(dutyRecs.length?to:we||to);
+  return {dutyDays,leaveDays,
+    perMonth:splitAcrossMonths(from,to,dutyDays),leavePerMonth:splitAcrossMonths(from,to,leaveDays),
+    assumed:!dutyRecs.length&&dutyDays>0,
+    txt:'⏱ 24-hr duty counted in hours: '+sTxt+' '+base+' → '+eTxt+' '+endTime+' = '+hrsTxt(dutyDays*24)+' duty'
+      +(leaveDays>0?' − '+hrsTxt(leaveDays*24)+' leave':'')
+      +' = '+dayWord(dutyDays)+' — paid according to hours.'};
+}
+const dayWord=v=>daysHrsTxt(Number(v)||0,(Number(v)||0)*24);
 function calcSalary(){
   const name=val('sEmpSel'),from=val('sFrom'),to=val('sTo');
   const fromTime=val('sFromT'),toTime=val('sToT');
@@ -2605,30 +2712,31 @@ function calcSalary(){
     .map(r=>r.to?r:effLeaveRec(r,to));
   const rawDuty=new Set();dutyRecs.forEach(r=>recordDates(r,from,to).forEach(d=>rawDuty.add(d)));
   const leaveSet=new Set();leaveRecs.forEach(r=>recordDates(r,from,to).forEach(d=>leaveSet.add(d)));
-  let assumed=false,joinNote='';
-  if(rawDuty.size===0){
-    /* No duty rows for this person → the duty window comes from the columns:
-       start = joining date / client duty start (whichever is earlier, or their
-       first duty record), end = the endEmployeeDuty / endClientDuty date. The
-       checkbox above widens the start to the whole period. */
-    const force=document.getElementById('sAssumeFull').checked;
-    const ws=force?from:dutyWindowStart(name,emp,from,to);
-    const we=dutyWindowEnd(name,emp,to);
-    if(ws&&ws<=we){
-      assumed=true;
-      for(let d=ws;d<=we;d=addDaysStr(d,1))rawDuty.add(d);
-      if(ws>from||we<to)joinNote=' (counted '+ws+' → '+we+')';
-    }
+  let assumed=false,joinNote='',duty24Txt='';
+  /* duty window from the columns: start = joining date / client duty start
+     (whichever is earlier, or their first duty record), end = the
+     endEmployeeDuty / endClientDuty date. The checkbox widens the start. */
+  const force=document.getElementById('sAssumeFull').checked;
+  const ws=force?from:dutyWindowStart(name,emp,from,to);
+  const we=dutyWindowEnd(name,emp,to);
+  if(rawDuty.size===0&&ws&&ws<=we){
+    assumed=true;
+    for(let d=ws;d<=we;d=addDaysStr(d,1))rawDuty.add(d);
+    if(ws>from||we<to)joinNote=' (counted '+ws+' → '+we+')';
   }
   const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
   let dutyDays,leaveDays,dutyPerMonth,leavePerMonth;
-  if(is24&&fromTime&&assumed){
-    const shifts=shiftCount(from,fromTime,to,toTime);
-    const leaveShifts=leaveRecs.reduce((s,r)=>s+(Number(r.days)||dayCount(r.from,r.to||r.from)),0);
-    dutyDays=Math.max(0,shifts-leaveShifts);
-    leaveDays=leaveShifts;
-    dutyPerMonth=splitAcrossMonths(from,to,dutyDays);
-    leavePerMonth=splitAcrossMonths(from,to,leaveDays);
+  /* ---- 24-hour duty: joining, part shifts and part leaves are counted in hours ---- */
+  const h24=duty24For(name,emp,from,to,{time:is24?(fromTime||''):'',force:force});
+  if(h24){
+    dutyDays=h24.dutyDays;leaveDays=h24.leaveDays;
+    dutyPerMonth=h24.perMonth;leavePerMonth=h24.leavePerMonth;
+    duty24Txt=h24.txt;
+    assumed=h24.assumed;
+  }else if(is24&&!fromTime){
+    /* 24-hr duty with no duty time: days are counted the old way until the time
+       is known — the employees tab holds it */
+    duty24Txt='⏱ 24-hr duty: no duty time saved for '+name+' — add “Duty time” on the Employees row (or type the From/To times above) to pay part shifts and part leaves according to hours.';
   }else{
     dutyDays=dutySet.size;
     leaveDays=leaveSet.size;
@@ -2659,6 +2767,7 @@ function calcSalary(){
   }else{
     ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
   }
+  if(duty24Txt)ruleTxt=(ruleTxt?ruleTxt+'<br>':'')+duty24Txt;
   const rangeLabel=from+(from!==to?' → '+to:'');
   const periodPays=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to)
     .sort((x,z)=>String(x.date).localeCompare(String(z.date)));
@@ -2748,7 +2857,7 @@ function buildPayDetailsHtml(dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,from,
       L.push(l);
     });
   }
-  L.push('Total duty days: <b>'+dutyDays+'</b><br>');
+  L.push('Total duty days: <b>'+dayWord(dutyDays)+'</b><br>');
   L.push('<b>Leave:</b>');
   if(leaveRecs.length){
     leaveRecs.forEach(r=>{
@@ -2764,7 +2873,7 @@ function buildPayDetailsHtml(dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,from,
   }else{
     L.push('&nbsp;&nbsp;• none');
   }
-  L.push('Total leave days: <b>'+leaveDays+'</b>');
+  L.push('Total leave days: <b>'+dayWord(leaveDays)+'</b>');
   return L.join('<br>');
 }
 /* Recompute salary pieces for a saved payment (used when re-printing old receipts) */
@@ -2783,11 +2892,18 @@ function salaryDetailsFor(name,from,to){
     if(jd&&jd>from&&jd<=to)start=jd;
     for(let d=start;d<=to;d=addDaysStr(d,1))rawDuty.add(d);
   }
-  const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
-  const dutyDays=dutySet.size,leaveDays=leaveSet.size;
+  /* 24-hour duty → same hours-based count as the calculator, so an old receipt
+     re-printed today shows the same numbers it showed then */
+  const h24=duty24For(name,emp,from,to,{});
+  let dutyDays,leaveDays,perMonth;
+  if(h24){
+    dutyDays=h24.dutyDays;leaveDays=h24.leaveDays;perMonth=h24.perMonth;assumed=h24.assumed;
+  }else{
+    const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
+    dutyDays=dutySet.size;leaveDays=leaveSet.size;perMonth=groupByMonth(dutySet);
+  }
   let salary=0;
   const wage=Number((emp&&emp.wageAmount)||0),wt=(emp&&emp.wageType)||'';
-  const perMonth=groupByMonth(dutySet);
   if(wt==='monthly'){Object.keys(perMonth).forEach(ym=>{salary+=Math.round(wage/daysInMonth(ym)*perMonth[ym]);});}
   else if(wt==='daily'){salary=Math.round(wage*dutyDays);}
   return {dutyRecs,leaveRecs,dutyDays,leaveDays,salary,assumed};
@@ -3143,6 +3259,24 @@ function askEndReason(def){
   try{r=prompt('Reason for ending the duty?\n(written into the reason column of the DutyLeave tab)',def)||'';}catch(e){r='';}
   return String(r).trim()||def;
 }
+/* 24-hour duty: the closing shift is paid by its hours too, so ask what time the
+   duty ended. Blank (or a full shift) keeps the usual duty time = whole day. */
+function askEndTime(empNames){
+  const list=String(empNames||'').split('|').map(x=>x.trim().toLowerCase()).filter(Boolean);
+  const is24=list.some(n=>{const e=DB.employees.find(x=>String(x.name||'').trim().toLowerCase()===n);return e&&String(e.dutyHours)==='24';});
+  if(!is24)return '';
+  let t='';
+  try{t=prompt('24-hour duty — what time did it end?\nExample 14:00 or 2 pm. Leave blank for the normal duty time.\n\n(If it ended part-way, that shift is paid by its hours.)','')||'';}catch(e){t='';}
+  t=String(t).trim();
+  if(!t)return '';
+  const m=t.match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
+  if(!m)return '';
+  let h=Number(m[1]);const mi=m[2],ap=(m[3]||'').toLowerCase();
+  if(ap==='pm'&&h<12)h+=12;
+  if(ap==='am'&&h===12)h=0;
+  if(h>23||Number(mi)>59)return '';
+  return String(h).padStart(2,'0')+':'+mi;
+}
 function endEmployeeDuty(){
   const empName=val('cbEmpSel');
   if(!empName){toast('Choose an employee first to end their duty.');return;}
@@ -3151,6 +3285,7 @@ function endEmployeeDuty(){
   if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime by deleting the "End employee duty" row in Duty & Leave records.'))return;
   const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,
     reason:askEndReason('Assignment completed'),notes:'Employee duty ended',
+    toTime:askEndTime(empName),
     savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
@@ -3164,6 +3299,7 @@ function endClientDuty(){
   if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" row in Duty & Leave records.'))return;
   const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,
     reason:askEndReason('Assignment completed'),notes:'Client service ended',
+    toTime:askEndTime(emps.map(e=>e.name).join('|')),
     savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
@@ -3252,7 +3388,10 @@ function renderEmployees(){
 }
 function dutyRow(r,list,withActions){
   const open=isOnLeaveRec(r),subOpen=(r.type==='substitute'&&!r.to);
-  const days=(open||subOpen)?liveLeaveDays(r):(r.days||'');
+  const rawDays=(open||subOpen)?liveLeaveDays(r):(r.days||'');
+  const days=(Number(rawDays)>0&&Math.abs(Number(rawDays)-Math.round(Number(rawDays)))>0.01)
+    ?daysHrsTxt(rawDays,(r.fromTime?hoursBetween(r.from,r.fromTime,r.to||todayStr(),r.toTime||r.fromTime):Number(rawDays)*24))
+    :rawDays;
   const toTxt=open?'<span style="color:var(--red);font-weight:700;">on leave…</span>'
     :(subOpen?'<i style="color:var(--muted);">till join</i>':esc(r.to)||'');
   /* substitute info lives in the TYPE column: badge + "for <employee>" */
