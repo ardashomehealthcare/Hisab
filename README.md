@@ -10,10 +10,33 @@ each submit to **your Google Sheet** in its respective tab.
 |---|---|
 | **Employees** | Name, phone, monthly / per-day wage, wage amount, 24 hr / 12 hr duty — **24 hr: duty start time • 12 hr: ☀️ day or 🌙 night duty** — joining date, client name |
 | **Leave Entry** | One form: pick the employee and the leave start (time option appears for 24-hr duty) — a **Substitute box sits right below in the same form**: type any name (new/temporary OK), add a Wage per day if they're not in Employees, and one Submit saves leave + substitute together. Select an employee who is **already on leave** and the same form shows their status, a substitute type bar and the **🤝 Join duty** button (also in the live On-leave card below). On join duty the leave days are totalled automatically (24-hr shifts: 8 AM → next day 8 AM = 1 day, from the substitute's own start time), every substitute's duty **ends automatically** and their **salary is calculated automatically** (daily: rate × days • monthly: wage ÷ days-in-month × days) — record it as paid in one tap; it lands in All Records, Profit/Loss and the salary balance. Running substitute salaries are shown live while they cover |
-| **Money Entry** | Client payment received — the client is selected from the client names saved on Employees • **Auto-generated invoice** (invoice #, date, amount + amount-in-words, employee, mode — only client name, address & WhatsApp number are editable; round **PAID stamp** with the company name on the border + date; print / save as PDF, and re-print any past invoice from All Records) • **📲 Send on WhatsApp** — the invoice goes as an **image**: **WhatsApp opens directly on their number** — the invoice image is saved to the device and their chat opens with the message typed; just attach the saved picture and send (number saved per client and auto-filled next time). There is also a **🖼 Save as image** button to keep the PNG anytime • Payment given to employee (with date) • Other expenses — each with its **own Submit button**, **no field is compulsory** |
+| **Money Entry** | Client payment received — the client is selected from the client names saved on Employees • **Auto-generated invoice** (invoice #, date, amount + amount-in-words, employee, mode — only client name, address & WhatsApp number are editable; round **PAID stamp** with the company name on the border + date; the bottom line is just **Thank you**; print / save as PDF, and re-print any past invoice from All Records) • **📲 Send on WhatsApp** — the invoice goes as an **image**: **WhatsApp opens directly on their number** — the invoice image is saved to the device and their chat opens with the message typed; just attach the saved picture and send (number saved per client and auto-filled next time). There is also a **🖼 Save as image** button to keep the PNG anytime • Payment given to employee (with date) • Other expenses — each with its **own Submit button**, **no field is compulsory** |
 | **Salary Calculator** | Pick employee + a date range (From → To). **Manually-added substitutes (temporary workers) also appear in the employee list** — calculate their salary even if they are not in the Employees tab yet; one click takes them there to save the wage (From date auto-fills to their first substitute duty). The From date auto-fills to the employee's **last paid salary** date (or joining date). Shows full employee details, duty/leave days, salary, complete payment history for the range, and balance to pay. Monthly employees: per-day pro-rata (wage ÷ days-in-month × duty days, summed across any months in the range) — a full month with no leave equals full salary. Per-day employees = rate × duty days. Leave days deducted. For 24-hr duty employees a time option appears so days are counted by 24-hour shifts (8 AM → next day 8 AM = 1 day). **Auto-generated salary payment receipt** (same style as the client invoice, with the PAID stamp): receipt #, date, duty & leave details exactly like the copy message, salary, amount paid, balance, amount-in-words — plus an **online payment screenshot** (UPI / bank transfer) attached to the receipt when paid online. Preview first, then print / save as PDF, or **📲 Send on WhatsApp** — the receipt image is saved and WhatsApp opens directly on the employee's saved number (substitutes not in Employees get the share sheet / contact chooser), plus **🖼 Save as image**; re-print any past receipt from All Records. |
 | **Profit / Loss** | Per calendar month: Received − Employee payments − Expenses, split **50-50 between the two partners** |
 | **All Records** | Every saved entry, filter by employee/month, delete entries, download / import JSON backup |
+
+## How it works — every rule in one place
+
+📖 **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** — the five tables (= the five Sheet tabs), how days and
+24-hour shifts are counted, employee / leave / substitute / join-duty / end-duty logic, the salary
+calculator step by step, Money Entry, client billing, Profit/Loss, the Google Sheets sync
+(push & pull, column-name mapping), the data that ships with the app, and what is stored in the browser.
+
+## Data included in the app
+
+Hisab ships with the records in **`data/hisab-data.json`** — the employees, duty & leave rows, employee payments, client receipts and expenses. It is only the **rows**: the app is not connected to any other spreadsheet, and nothing points at one — `config.js` still names the single Sheet Hisab writes into (`HISAB_SPREADSHEET_ID`).
+
+| File | What it holds |
+|---|---|
+| `data/hisab-data.json` | 11 employees • 19 duty/leave rows • 13 employee payments • 10 client receipts • 10 expenses — the same columns as the Sheet tabs |
+
+* **On a device with no data at all** (a new phone, a cleared browser) they load by themselves the first time the app opens — so the app starts with the full history instead of empty.
+* **On a device that already has data:** *All Records* → **📥 Add the data included in the app**. It shows what is new, asks first, merges, and never deletes anything.
+* **Duplicates are skipped** — an employee is matched by name, everything else by person/client + date + amount — so importing twice cannot double the books.
+* Added records are marked *not sent yet*, so **🔄 Push app data to Sheet** writes them into your own Sheet when you are ready.
+* The file is a plain Hisab backup (the same shape as *⬇ Download backup (JSON)*), so you can also edit it, or import it on a phone with *⬆ Import backup (JSON)*.
+
+> ⚠️ This file contains real business data (names, wages, client numbers/addresses). On a **public** GitHub repo it is readable by anyone — keep the repo private (or delete `data/hisab-data.json`) if the app is public.
 
 ## How to run
 
@@ -39,6 +62,53 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
+
+### The Sheet layout — column for column
+
+This is the **arrangement the app writes into** — the column order of every tab:
+
+* **Reading is by column name.** The app reads the Sheet's own header row every time it loads, so a Sheet that is still in an older arrangement (or that has an extra column of your own) is read correctly, and a single new entry is still appended under the right headings.
+* **Writing it once.** Press **🔄 Push app data to Sheet** (it sits on the *Google Sheet* tab and in *All Records*) one time to rewrite all five tabs in the arrangement below (it writes the same rows in the new order — nothing is lost, because everything was read by name first). The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement.
+* If the Sheet does not have a column the app needs at all, the app says which one — it never guesses and never shifts values into the wrong column.
+
+| Tab | Columns (A → …) |
+|---|---|
+| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` |
+| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` |
+| **EmployeePayments** | `id` • `empName` • `date` • `amount` • `payType` • `mode` • `savedAt` • `periodFrom` • `periodTo` • `invoiceNo` • `summary` • `balance` |
+| **ClientReceipts** | `id` • `client` • `clientPhone` • `date` • `amount` • `empName` • `mode` • `savedAt` • `clientAddress` • `invoiceNo` • `dealAmount` |
+| **Expenses** | `id` • `item` • `date` • `amount` • `savedAt` |
+
+Where each value comes from:
+
+* **Employees** — the last three client boxes of the *Add employee* form are the Sheet's `clientDutyStartDate`, `clientPhone` and `clientDeal` columns. Typing a client name fills the phone and the deal automatically from Money Entry (the client's last receipt); press **✎** on any row to edit it later.
+* **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries `Assignment completed` in `reason` plus `Employee duty ended` / `Client service ended` in `notes`.
+* **12-hour duty has no day/night column in the new layout** — the ☀️ day / 🌙 night choice travels in `dutyTime` (that column only holds a start time for 24-hour duty) and comes back as day/night duty on every device. While a Sheet still has the older `dutyShift` column, that column keeps being filled as well.
+* Nothing is dropped while your Sheet is still in the older arrangement: the app also keeps filling the old `dutyShift` (Employees) and `byShifts` / `subWage` (DutyLeave) columns until the tabs are rewritten.
+* Amounts and dates are written as **plain text** (`RAW`), so nothing is re-typed by Google Sheets and what you entered is what comes back.
+
+### What every column drives
+
+The app calculates from the columns, so a row typed straight into the Sheet works the same as one entered in the app:
+
+| Column | What it decides |
+|---|---|
+| `Employees.wageType` + `wageAmount` | The salary rule: per-day = rate × duty days • monthly = wage ÷ days-in-month × duty days, summed across months |
+| `Employees.joinDate` + `clientDutyStartDate` | **When duty starts** — the earlier of the two. The salary's *From* date and the "count duty" window use it, and the client bill starts there |
+| `Employees.dutyHours` + `dutyTime` | 24-hour duty → days counted as 24-hr shifts (8 AM → next day 8 AM = 1 day) |
+| `Employees.client` • `clientDeal` • `clientPhone` | The client bill rate (deal), the client's WhatsApp number, and the *From* date of a client bill |
+| `DutyLeave.type` | `leave` • `substitute` • `endEmployeeDuty` • `endClientDuty` — the app's whole duty/leave state |
+| `DutyLeave.from` `fromTime` `to` `toTime` `days` | Day and shift counting; an empty `to` means the leave/substitute is still open. **Join duty** fills `to` + `days`; the substitute's duty is closed with the same dates and its salary is calculated at once |
+| `DutyLeave.forEmp` | Who the substitute is covering (and who is on leave) |
+| `DutyLeave.wageType` + `wageAmount` | The pay for **that** substitute duty: `daily` × days, or `monthly` pro-rata ÷ days-in-month. Empty → the person's Employees row is used |
+| `DutyLeave.reason` + `notes` | Why a duty ended (`Assignment completed` by default — the app asks) and the leave note; both are shown again in the app's records |
+| `endEmployeeDuty.to` / `endClientDuty.to` | **When duty stops** — the salary window closes on this date, so no salary accrues after it |
+| `EmployeePayments.amount` / `date` / `periodFrom` / `periodTo` | What has been paid, and over which period (the Salary Calculator picks up from the last paid date) |
+| `EmployeePayments.summary` / `balance` / `invoiceNo` | Written by the app: duty + leave days, the rule used, paid and balance left, plus the receipt number |
+| `ClientReceipts.amount` / `date` | Money received; the client bill and Profit/Loss count these per month |
+| `ClientReceipts.dealAmount` / `clientPhone` / `clientAddress` / `invoiceNo` | Saved with each receipt, and used to pre-fill the next invoice (deal, WhatsApp number, address) |
+| `Expenses.amount` / `date` | Counted in the monthly Profit/Loss for the partners |
+
 
 To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
 
