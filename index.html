@@ -3384,6 +3384,24 @@ function endEmployeeDuty(empName){
   writeEndEmployeeDutyRow(empName,client,askEndReason('Assignment completed'),askEndTime(empName));
   persist();
   renderAll();toast('⏹ Employee duty ended — '+empName);
+  maybeOfferReplacement(empName,client);
+}
+/* The employee ended but their client is still running → offer to open the
+   Add-employee form with that client (phone & deal) already filled in, so the
+   replacement is "type a name and wage, ✔ Submit". */
+function maybeOfferReplacement(empName,client){
+  if(!client||isClientEnded(client))return;
+  if(!confirm(empName+'\'s duty at "'+client+'" is ended.\n\nAssign a replacement to "'+client+'" now?'))return;
+  showTab('emp');
+  clear('eName','ePhone','eWage','eJoin','eTime','eClientStart');
+  const set=(id,v)=>{const n=document.getElementById(id);if(n)n.value=v;};
+  set('eClient',client);
+  prefillClientExtras();
+  toggleDutyField();
+  const box=document.querySelector('#tab-emp .card');
+  if(box&&box.scrollIntoView)box.scrollIntoView({block:'start',behavior:'smooth'});
+  flash('eMsg','👤 Replacement for '+esc(client)+' — client, phone & deal are pre-filled. Type the new name and wage, then ✔ Submit employee.',true);
+  const nm=document.getElementById('eName');if(nm&&nm.focus)nm.focus();
 }
 function endEmployeeDutyById(id){
   const e=DB.employees.find(x=>x.id===id);

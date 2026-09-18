@@ -127,7 +127,7 @@ On-leave card / join box:
 
 | Action | Writes | Effect |
 |---|---|---|
-| ⏹ End employee duty — billing-calculator button, or the small ⏹ on each employee's row in the Employees table | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
+| ⏹ End employee duty — billing-calculator button, or the small ⏹ on each employee's row in the Employees table | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour. If their client is still active the app then offers to open the Add-employee form with the client, phone & deal **pre-filled for the replacement** |
 | 🛑 End client duty | One `type:'endClientDuty'` row (`to:<today>`, `client`, same `reason`/`notes` wording) **plus one `endEmployeeDuty` row for every still-active employee posted with that client** — the same reason and end time lands on every row | The client becomes inactive and everyone posted there is ended together with it; employees already ended earlier are not touched again |
 | ↩ Re-activate (row button) | Deletes that end-duty row | They come back; the sheet is re-pushed |
 
