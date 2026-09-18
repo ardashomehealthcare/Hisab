@@ -143,6 +143,15 @@ checkbox (*Show ended employees*), and no record, invoice or salary is touched.
 
 ## 7. Salary Calculator
 
+0. **Everyone on the app can be calculated.** The employee list holds **every** person: active
+   employees, employees whose **duty ended** (marked “— duty ended”, so past months stay
+   calculable) and every person who appears **only in Duty & Leave** (a substitute, or someone
+   with just a leave row — marked “— not in Employees”). A substitute without an Employees row
+   is paid from the **rate on their own substitute rows** (newest row in the period wins;
+   `daily` → rate × days, `monthly` → pro-rata); a saved day count on the row
+   (“3”, “2 days”, “3 days and 6 hours”) is the billed truth and is counted as such. If no rate
+   exists anywhere, the result explains it and one click takes them to the Employees tab to
+   save a wage.
 1. **Period** = From → To. From auto-fills to the employee's **last paid salary** date; for a
    new hire it is the earlier of `joinDate` / `clientDutyStartDate`; for a substitute-only
    person, their first duty row.
@@ -295,13 +304,14 @@ replacing.
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
 
-### The reference Sheet's data, row for row
-`data/hisab-data.json` matches the reference Sheet cell-for-cell — same rows, same order, same
-columns (verified by a parity test against the Sheet's own CSV). 🔄 **Push app data to Sheet**
-writes exactly those rows into the app's own Sheet: headers in §2's arrangement (the reference
-Sheet's arrangement), the same rows underneath in the same order. One cell that Google Sheets
-displays as a date (Simranjeet Kaur's `clientDeal`) is really the number 30000 — the app writes
-it back as plain text `30000`, which also fixes the display.
+### The bundled records, row for row
+`data/hisab-data.json` holds the app's own books and matches the intended books cell-for-cell —
+same rows, same order, same columns (verified by a parity test against their source). The app
+stores **no link to any other spreadsheet** — no "reference sheet", no URL, no id; it reads and
+writes only its own Sheet. 🔄 **Push app data to Sheet** writes exactly those rows into the
+app's own Sheet: headers in §2's arrangement, the same rows underneath in the same order. One
+cell that Google Sheets displays as a date (Simranjeet Kaur's `clientDeal`) is really the
+number 30000 — the app writes it back as plain text `30000`, which also fixes the display.
 
 ---
 

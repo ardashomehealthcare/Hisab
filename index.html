@@ -2510,11 +2510,26 @@ function overlaps(r,from,to){
   const rf=r.from,rt=r.to||((r.type==='leave'||r.type==='substitute')?to:r.from);
   return rf&&rt&&rf<=to&&rt>=from;
 }
-/* All YYYY-MM-DD dates a record covers, clipped to [from,to] */
+/* "3" / "2 days" / "3 days and 6 hours" → 3 / 2 / 3.25 (rows written by the old
+   script carry day counts in these shapes — Number() alone would give NaN) */
+function daysNumOf(v){
+  if(typeof v==='number')return v>0?v:0;
+  const nums=String(v??'').match(/\d+(\.\d+)?/g);
+  if(!nums||!nums.length)return 0;
+  let d=parseFloat(nums[0]);
+  if(nums[1]&&/hour/i.test(String(v)))d+=parseFloat(nums[1])/24;
+  return d>0?d:0;
+}
+/* All YYYY-MM-DD dates a record covers, clipped to [from,to].
+   A saved day count wins for substitute / leave rows (it is the billed truth —
+   e.g. 27→30 Aug at "3 days" counts 27, 28, 29, not 4 calendar dates). */
 function recordDates(r,from,to){
   const set=new Set();
   if(!r.from)return set;
-  const n=((r.fromTime||r.byShifts)&&r.days)?Math.round(Number(r.days)):dayCount(r.from,r.to||r.from);
+  const saved=daysNumOf(r.days);
+  const n=(saved>0&&(r.type==='substitute'||r.type==='leave'||r.fromTime||r.byShifts))
+    ?Math.round(saved)
+    :dayCount(r.from,r.to||r.from);
   for(let i=0;i<n;i++){
     const ds=addDaysStr(r.from,i);
     if(ds<from||ds>to)continue;
@@ -2801,8 +2816,13 @@ function calcSalary(){
     assumed=h24.assumed;
   }else if(is24&&!fromTime){
     /* 24-hr duty with no duty time: days are counted the old way until the time
-       is known — the employees tab holds it */
+       is known — the employees tab holds it. The day counts are still filled in,
+       so the calculator always shows a salary instead of dying on this branch. */
     duty24Txt='⏱ 24-hr duty: no duty time saved for '+name+' — add “Duty time” on the Employees row (or type the From/To times above) to pay part shifts and part leaves according to hours.';
+    dutyDays=dutySet.size;
+    leaveDays=leaveSet.size;
+    dutyPerMonth=groupByMonth(dutySet);
+    leavePerMonth=groupByMonth(leaveSet);
   }else{
     dutyDays=dutySet.size;
     leaveDays=leaveSet.size;
@@ -2821,17 +2841,30 @@ function calcSalary(){
       +(paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
     return;
   }
-  const wage=Number(emp?.wageAmount||0),wt=emp?.wageType||'';
+  /* Wage: the Employees row first. A substitute (or anyone) whose Employees row
+     has no wage gets the rate saved on their OWN duty rows — a row inside the
+     period wins, else the newest of their rows — so the calculator computes a
+     real salary for every substitute added on the app. */
+  let wage=Number(emp?.wageAmount||0),wt=String(emp?.wageType||''),wageSrc='';
+  if(!(wage>0&&wt)){
+    const rateRow=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='substitute'&&Number(r.wageAmount||r.subWage||0)>0)
+      .sort((a,b)=>(overlaps(b,from,to)-overlaps(a,from,to))||String(b.from).localeCompare(String(a.from)))[0];
+    if(rateRow){
+      wage=Number(rateRow.wageAmount||rateRow.subWage||0);
+      wt=String(rateRow.wageType||'').trim()||'daily';
+      wageSrc='Rate taken from their substitute row of '+rateRow.from+': ₹'+wage.toLocaleString('en-IN')+(wt==='daily'?' / day':' / month')+'.';
+    }
+  }
   const salaryPerMonth={};let salary=0,ruleTxt='';
   const months=Object.keys(dutyPerMonth).sort();
   if(wt==='monthly'){
     months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
-    ruleTxt='Per-day pro-rata: '+months.map(ym=>`₹${wage.toLocaleString('en-IN')} ÷ ${daysInMonth(ym)} days × ${dutyPerMonth[ym]}`).join(' + ');
+    ruleTxt='Per-day pro-rata: '+months.map(ym=>`₹${wage.toLocaleString('en-IN')} ÷ ${daysInMonth(ym)} days × ${dutyPerMonth[ym]}`).join(' + ')+(wageSrc?' — '+wageSrc:'');
   }else if(wt==='daily'){
     months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
-    ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`;
+    ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`+(wageSrc?' — '+wageSrc:'');
   }else{
-    ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
+    ruleTxt=wageSrc||'⚠ Wage type/amount not saved for this person — add a wage on their Employees row (or on the substitute row) to auto-calculate.';
   }
   if(duty24Txt)ruleTxt=(ruleTxt?ruleTxt+'<br>':'')+duty24Txt;
   const rangeLabel=from+(from!==to?' → '+to:'');
@@ -2871,7 +2904,9 @@ function calcSalary(){
       ${emp.dutyHours?` &nbsp;•&nbsp; Duty: <b>${esc(emp.dutyHours)} hr${emp.dutyTime?' from '+esc(emp.dutyTime):''}</b>`:''}
       ${emp.joinDate?` &nbsp;•&nbsp; Joined: <b>${esc(emp.joinDate)}</b>`:''}
       ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`
-      :`<i>⚠ Not in the Employees tab (substitute-only) — no wage saved, so salary shows ₹0.</i><br>
+      :`<i>${wage>0
+        ?'Not in the Employees tab — salary uses the rate on their substitute rows. 👤 Add '+esc(name)+' to Employees to keep the wage permanent.'
+        :'⚠ Not in the Employees tab (substitute-only) — no wage saved on the app, so salary shows ₹0.'}</i><br>
         <button class="btn ghost" style="padding:7px 14px;font-size:.82rem;" onclick="addSubstituteToEmployees('${esc(name)}')">👤 Add ${esc(name)} to Employees (save wage) → then Calculate again</button>`}
     </div>
     ${breakdown}
@@ -3398,16 +3433,23 @@ function fillEmpSelects(){
   const actives=activeEmployees();
   document.querySelectorAll('.empSelect').forEach(sel=>{
     const cur=sel.value;
-    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option>${esc(e.name)}</option>`).join('');
-    /* Salary Calculator + All Records filter: also list people who appear only as
-       manually-added substitutes (temporary workers not in the Employees tab),
-       so their salary can be calculated and their records filtered */
+    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('');
+    /* Salary Calculator + All Records filter list EVERYONE that is on the app —
+       employees whose duty ended too (their past salary stays calculable), and
+       every person who appears in Duty & Leave only (a substitute, or someone
+       with just a leave row). The leave form keeps active employees only. */
     if(sel.id==='sEmpSel'||sel.id==='fEmp'){
       const known=new Set(actives.map(e=>e.name));
-      const ended=new Set(DB.employees.filter(isEmployeeEnded).map(e=>e.name));
-      const subs=[];
-      DB.dutyLeave.forEach(r=>{if(r.type==='substitute'&&r.empName&&!known.has(r.empName)&&!ended.has(r.empName)&&!subs.includes(r.empName))subs.push(r.empName);});
-      if(subs.length)sel.insertAdjacentHTML('beforeend',subs.map(n=>`<option>${esc(n)}</option>`).join(''));
+      const ended=DB.employees.filter(e=>e.name&&isEmployeeEnded(e)&&!known.has(e.name));
+      if(ended.length)sel.insertAdjacentHTML('beforeend',ended.map(e=>`<option value="${esc(e.name)}">${esc(e.name)} — duty ended</option>`).join(''));
+      const others=[];
+      DB.dutyLeave.forEach(r=>{
+        const n=String(r.empName||'').trim();
+        if(!n||known.has(n)||ended.some(e=>e.name===n))return;
+        if(r.type!=='substitute'&&r.type!=='leave'&&r.type!=='duty')return;
+        if(!others.includes(n))others.push(n);
+      });
+      if(others.length)sel.insertAdjacentHTML('beforeend',others.map(n=>`<option value="${esc(n)}">${esc(n)} — not in Employees</option>`).join(''));
     }
     sel.value=[...sel.options].some(o=>o.value===cur)?cur:'';
   });
