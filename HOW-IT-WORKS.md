@@ -143,6 +143,15 @@ checkbox (*Show ended employees*), and no record, invoice or salary is touched.
 
 ## 7. Salary Calculator
 
+0. **Everyone on the app can be calculated.** The employee list holds **every** person: active
+   employees, employees whose **duty ended** (marked “— duty ended”, so past months stay
+   calculable) and every person who appears **only in Duty & Leave** (a substitute, or someone
+   with just a leave row — marked “— not in Employees”). A substitute without an Employees row
+   is paid from the **rate on their own substitute rows** (newest row in the period wins;
+   `daily` → rate × days, `monthly` → pro-rata); a saved day count on the row
+   (“3”, “2 days”, “3 days and 6 hours”) is the billed truth and is counted as such. If no rate
+   exists anywhere, the result explains it and one click takes them to the Employees tab to
+   save a wage.
 1. **Period** = From → To. From auto-fills to the employee's **last paid salary** date; for a
    new hire it is the earlier of `joinDate` / `clientDutyStartDate`; for a substitute-only
    person, their first duty row.
@@ -203,7 +212,11 @@ follows the hours instead of being rounded up to a whole day:
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
 * Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → the invoice image is saved
-  and the client's chat opens with the message typed (falls back to the share sheet / chooser).
+  and the client's chat opens **directly on the client's number**. A number saved without the
+  country code still opens the right chat — the app adds **91** (or the set `WA_DEFAULT_CC`)
+  itself, because `wa.me` only accepts full international numbers. No number saved? The app asks
+  for it once on the spot (typed numbers are remembered per client), or the share sheet / chooser
+  picks the chat.
 
 **Payment given to an employee** → `payments`:
 * `payType`, `mode`, optional `periodFrom`/`periodTo`. When a period is given, the app fills the
@@ -291,6 +304,15 @@ replacing.
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
 
+### The bundled records, row for row
+`data/hisab-data.json` holds the app's own books and matches the intended books cell-for-cell —
+same rows, same order, same columns (verified by a parity test against their source). The app
+stores **no link to any other spreadsheet** — no "reference sheet", no URL, no id; it reads and
+writes only its own Sheet. 🔄 **Push app data to Sheet** writes exactly those rows into the
+app's own Sheet: headers in §2's arrangement, the same rows underneath in the same order. One
+cell that Google Sheets displays as a date (Simranjeet Kaur's `clientDeal`) is really the
+number 30000 — the app writes it back as plain text `30000`, which also fixes the display.
+
 ---
 
 ## 13. The data that ships with the app
@@ -320,6 +342,7 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 | `hisabClientId` | Client ID typed on this device (overrides `config.js`) |
 | `hisabSheetId` | Sheet ID typed on this device (overrides `config.js`) |
 | `hisabSyncedSheetId` | which Sheet this device last synced with |
+| `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
 

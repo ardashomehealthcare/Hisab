@@ -1438,10 +1438,12 @@ async function syncAll(){
     rememberSheet();
     closeSetupAlert();
     flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
+    return true;
   }catch(e){
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Google refused the write — the fix is shown above.':'❌ Could not write to the Sheet: '+((e&&e.message)||e),false);
     toast('❌ Could not reach Google Sheet — nothing is lost, it is still on this device.');
+    return false;
   }
   updateSheetStatus();
 }
@@ -2239,13 +2241,63 @@ function closeInvoice(){document.getElementById('invoiceCard').style.display='no
 /* ================= WHATSAPP SHARE (invoice / receipt as image) ================= */
 /* Clean a phone number for WhatsApp (keep digits only). */
 function waDigits(phone){return String(phone||'').replace(/[^0-9]/g,'');}
+/* Country code added to numbers saved as 10 digits (India) — wa.me only opens the
+   RIGHT chat with the full international number, e.g. 9876543210 → 919876543210. */
+const WA_DEFAULT_CC='91';
+/* A number in international form: 9876543210 / 098765 43210 / +91 98765 43210 /
+   919876543210 all become 919876543210. Empty when no usable number remains. */
+function waNumber(phone){
+  let p=waDigits(phone);
+  if(!p)return '';
+  if(p.slice(0,2)==='00')p=p.slice(2);        // 00 international dial-out prefix
+  while(p.slice(0,1)==='0')p=p.slice(1);      // 0 trunk prefix (098765 43210)
+  if(p.length===10)p=WA_DEFAULT_CC+p;         // local 10-digit mobile → +91…
+  return (p.length>=10&&p.length<=13)?p:'';
+}
 /* WhatsApp click-to-chat link. With a number the chat opens on that exact
    client / employee; without one WhatsApp shows the contact chooser. */
 function waLink(phone,text){
-  const p=waDigits(phone),t=encodeURIComponent(text||'');
+  const p=waNumber(phone),t=encodeURIComponent(text||'');
   return p?('https://wa.me/'+p+'?text='+t):('https://api.whatsapp.com/send?text='+t);
 }
 function openWhatsAppChat(text,phone){window.open(waLink(phone,text),'_blank');}
+/* Remember the number typed for a person without a saved one (a substitute, for
+   example) — the next invoice / receipt to them fills it in by itself. */
+const WA_NUM_KEY='hisabWaNum:';
+function rememberWaNumber(name,phone){
+  const p=waNumber(phone),k=keyOf(name);
+  if(p&&k)setStoreItem(WA_NUM_KEY+k,p);
+}
+function rememberedWaNumber(name){
+  const k=keyOf(name);
+  return k?storeItem(WA_NUM_KEY+k):'';
+}
+/* No saved number? Ask once — type it and the chat still opens on THEM directly;
+   skip it and the share sheet / WhatsApp chooser picks the chat instead. */
+function askWhatsAppNumber(name,cb){
+  dlgCtx={kind:'waPhone',cb,name:String(name||'')};
+  document.getElementById('dlgTitle').innerHTML='📲 '+(name?esc(name)+' — ':'')+'WhatsApp number';
+  document.getElementById('dlgHint').innerHTML='Their WhatsApp opens straight on their chat with the message already typed — just attach the saved image and send. With or without <b>91</b> in front is both fine.';
+  document.getElementById('dlgBody').innerHTML=
+    '<div class="field"><label>WhatsApp number (leave empty to pick a chat yourself)</label>'
+    +'<input id="waPhoneInp" type="tel" inputmode="numeric" placeholder="e.g. 98765 43210" value="'+esc(rememberedWaNumber(name))+'"></div>'
+    +'<div class="actions"><button class="btn green sm" onclick="waPhoneUse()">📲 Open their chat</button>'
+    +'<button class="btn ghost sm" onclick="waPhoneSkip()">No number — choose a chat</button>'
+    +'<button class="btn ghost sm" onclick="closeDlg()">✕ Cancel</button></div>';
+  showDlg();
+  setTimeout(()=>{const i=document.getElementById('waPhoneInp');if(i)i.focus();},60);
+}
+function waPhoneUse(){
+  if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
+  const cb=dlgCtx.cb,name=dlgCtx.name,n=val('waPhoneInp'),p=waNumber(n);
+  if(!p){toast('❌ That number does not look right — check it once (10 digits, with or without 91).');return;}
+  rememberWaNumber(name,p);
+  closeDlg();cb(p);
+}
+function waPhoneSkip(){
+  if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
+  const cb=dlgCtx.cb;closeDlg();cb('');
+}
 /* Render an element (invoice / receipt) to a PNG image. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
@@ -2281,29 +2333,39 @@ function savePayInvoiceImage(){
   saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
 }
 /* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
-   WhatsApp opens DIRECTLY on the client's / employee's chat with the message
-   already typed (wa.me/<number>). Without a saved number the image goes
-   through the share sheet (phone) or the WhatsApp chooser. */
-async function sendNodeOnWhatsApp(nodeId,text,phone,filename){
+   WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
+   the message already typed (wa.me/<number>). Without a saved number the app
+   asks for one on the spot — type it and their chat still opens by itself —
+   or skip to go through the share sheet (phone) / the WhatsApp chooser. */
+async function sendNodeOnWhatsApp(nodeId,text,phone,filename,askName){
   let blob;
   try{blob=await renderNodeToBlob(nodeId);}
   catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
-  if(waDigits(phone)){
+  if(waNumber(phone)){
     downloadBlob(blob,filename);              // image saved, ready to attach
     openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
     toast('✅ Image saved — attach it in the chat that just opened');
     return;
   }
-  const file=new File([blob],filename,{type:'image/png'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],text});}catch(e){/* cancelled */}
-    return;
-  }
-  downloadBlob(blob,filename);
-  openWhatsAppChat(text,'');                  // WhatsApp chooser — pick any chat
+  askWhatsAppNumber(askName,chosen=>{
+    if(waNumber(chosen)){
+      downloadBlob(blob,filename);            // image saved, ready to attach
+      openWhatsAppChat(text,chosen);          // straight to their WhatsApp chat
+      toast('✅ Image saved — attach it in the chat that just opened');
+      return;
+    }
+    const file=new File([blob],filename,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      navigator.share({files:[file],text}).catch(()=>{/* cancelled */});
+      return;
+    }
+    downloadBlob(blob,filename);
+    openWhatsAppChat(text,'');                // WhatsApp chooser — pick any chat
+  });
 }
 /* Client invoice → WhatsApp image. Number: the field, else the number remembered
-   on the client's most recent receipt. Opens directly on the client's chat. */
+   on the client's most recent receipt, else the client phone saved on the
+   employee's row — the chat then opens directly on the client. */
 async function shareInvoiceWhatsApp(){
   if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
   const client=document.getElementById('invClient').textContent;
@@ -2316,13 +2378,17 @@ async function shareInvoiceWhatsApp(){
     const k=String(client||'').trim().toLowerCase();
     const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
     if(prev&&prev.clientPhone)phone=prev.clientPhone;
+    if(!phone){
+      const emp=DB.employees.find(e=>e.client&&String(e.client).trim().toLowerCase()===k&&waNumber(e.clientPhone));
+      if(emp&&emp.clientPhone)phone=emp.clientPhone;
+    }
   }
   const text='🧾 Invoice '+no+' — Ardas Caretaker Manager\n'
     +'Client: '+client+'\nDate: '+date+'\n'
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Pick the client\'s chat — number not saved)\n')
+    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Invoice image attached. Thank you! 🙏';
-  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png',client?client+' (client)':'');
 }
 function saveReceipt(){
   const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
@@ -2444,11 +2510,26 @@ function overlaps(r,from,to){
   const rf=r.from,rt=r.to||((r.type==='leave'||r.type==='substitute')?to:r.from);
   return rf&&rt&&rf<=to&&rt>=from;
 }
-/* All YYYY-MM-DD dates a record covers, clipped to [from,to] */
+/* "3" / "2 days" / "3 days and 6 hours" → 3 / 2 / 3.25 (rows written by the old
+   script carry day counts in these shapes — Number() alone would give NaN) */
+function daysNumOf(v){
+  if(typeof v==='number')return v>0?v:0;
+  const nums=String(v??'').match(/\d+(\.\d+)?/g);
+  if(!nums||!nums.length)return 0;
+  let d=parseFloat(nums[0]);
+  if(nums[1]&&/hour/i.test(String(v)))d+=parseFloat(nums[1])/24;
+  return d>0?d:0;
+}
+/* All YYYY-MM-DD dates a record covers, clipped to [from,to].
+   A saved day count wins for substitute / leave rows (it is the billed truth —
+   e.g. 27→30 Aug at "3 days" counts 27, 28, 29, not 4 calendar dates). */
 function recordDates(r,from,to){
   const set=new Set();
   if(!r.from)return set;
-  const n=((r.fromTime||r.byShifts)&&r.days)?Math.round(Number(r.days)):dayCount(r.from,r.to||r.from);
+  const saved=daysNumOf(r.days);
+  const n=(saved>0&&(r.type==='substitute'||r.type==='leave'||r.fromTime||r.byShifts))
+    ?Math.round(saved)
+    :dayCount(r.from,r.to||r.from);
   for(let i=0;i<n;i++){
     const ds=addDaysStr(r.from,i);
     if(ds<from||ds>to)continue;
@@ -2735,8 +2816,13 @@ function calcSalary(){
     assumed=h24.assumed;
   }else if(is24&&!fromTime){
     /* 24-hr duty with no duty time: days are counted the old way until the time
-       is known — the employees tab holds it */
+       is known — the employees tab holds it. The day counts are still filled in,
+       so the calculator always shows a salary instead of dying on this branch. */
     duty24Txt='⏱ 24-hr duty: no duty time saved for '+name+' — add “Duty time” on the Employees row (or type the From/To times above) to pay part shifts and part leaves according to hours.';
+    dutyDays=dutySet.size;
+    leaveDays=leaveSet.size;
+    dutyPerMonth=groupByMonth(dutySet);
+    leavePerMonth=groupByMonth(leaveSet);
   }else{
     dutyDays=dutySet.size;
     leaveDays=leaveSet.size;
@@ -2755,17 +2841,30 @@ function calcSalary(){
       +(paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
     return;
   }
-  const wage=Number(emp?.wageAmount||0),wt=emp?.wageType||'';
+  /* Wage: the Employees row first. A substitute (or anyone) whose Employees row
+     has no wage gets the rate saved on their OWN duty rows — a row inside the
+     period wins, else the newest of their rows — so the calculator computes a
+     real salary for every substitute added on the app. */
+  let wage=Number(emp?.wageAmount||0),wt=String(emp?.wageType||''),wageSrc='';
+  if(!(wage>0&&wt)){
+    const rateRow=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='substitute'&&Number(r.wageAmount||r.subWage||0)>0)
+      .sort((a,b)=>(overlaps(b,from,to)-overlaps(a,from,to))||String(b.from).localeCompare(String(a.from)))[0];
+    if(rateRow){
+      wage=Number(rateRow.wageAmount||rateRow.subWage||0);
+      wt=String(rateRow.wageType||'').trim()||'daily';
+      wageSrc='Rate taken from their substitute row of '+rateRow.from+': ₹'+wage.toLocaleString('en-IN')+(wt==='daily'?' / day':' / month')+'.';
+    }
+  }
   const salaryPerMonth={};let salary=0,ruleTxt='';
   const months=Object.keys(dutyPerMonth).sort();
   if(wt==='monthly'){
     months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
-    ruleTxt='Per-day pro-rata: '+months.map(ym=>`₹${wage.toLocaleString('en-IN')} ÷ ${daysInMonth(ym)} days × ${dutyPerMonth[ym]}`).join(' + ');
+    ruleTxt='Per-day pro-rata: '+months.map(ym=>`₹${wage.toLocaleString('en-IN')} ÷ ${daysInMonth(ym)} days × ${dutyPerMonth[ym]}`).join(' + ')+(wageSrc?' — '+wageSrc:'');
   }else if(wt==='daily'){
     months.forEach(ym=>{salaryPerMonth[ym]=Math.round(wage*dutyPerMonth[ym]);salary+=salaryPerMonth[ym];});
-    ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`;
+    ruleTxt=`Per day: ₹${wage.toLocaleString('en-IN')} × ${dutyDays} duty days.`+(wageSrc?' — '+wageSrc:'');
   }else{
-    ruleTxt='⚠ Wage type/amount not saved for this employee — add it in the Employees tab to auto-calculate.';
+    ruleTxt=wageSrc||'⚠ Wage type/amount not saved for this person — add a wage on their Employees row (or on the substitute row) to auto-calculate.';
   }
   if(duty24Txt)ruleTxt=(ruleTxt?ruleTxt+'<br>':'')+duty24Txt;
   const rangeLabel=from+(from!==to?' → '+to:'');
@@ -2805,7 +2904,9 @@ function calcSalary(){
       ${emp.dutyHours?` &nbsp;•&nbsp; Duty: <b>${esc(emp.dutyHours)} hr${emp.dutyTime?' from '+esc(emp.dutyTime):''}</b>`:''}
       ${emp.joinDate?` &nbsp;•&nbsp; Joined: <b>${esc(emp.joinDate)}</b>`:''}
       ${emp.client?` &nbsp;•&nbsp; Client: <b>${esc(emp.client)}</b>`:''}`
-      :`<i>⚠ Not in the Employees tab (substitute-only) — no wage saved, so salary shows ₹0.</i><br>
+      :`<i>${wage>0
+        ?'Not in the Employees tab — salary uses the rate on their substitute rows. 👤 Add '+esc(name)+' to Employees to keep the wage permanent.'
+        :'⚠ Not in the Employees tab (substitute-only) — no wage saved on the app, so salary shows ₹0.'}</i><br>
         <button class="btn ghost" style="padding:7px 14px;font-size:.82rem;" onclick="addSubstituteToEmployees('${esc(name)}')">👤 Add ${esc(name)} to Employees (save wage) → then Calculate again</button>`}
     </div>
     ${breakdown}
@@ -2986,8 +3087,9 @@ function printPayInvoice(){
   setTimeout(()=>document.body.classList.remove('printPay'),300);
 }
 function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
-/* Salary receipt → WhatsApp image. Number: the employee's saved phone
-   (substitutes not in Employees get the contact chooser). */
+/* Salary receipt → WhatsApp image. Number: the employee's saved phone.
+   A substitute not in Employees (no saved number) is asked for one on the spot —
+   type it and their chat opens directly — or the share sheet / chooser picks. */
 async function sharePayInvoiceWhatsApp(){
   if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
   const emp=findEmpByName(payInvData.name);
@@ -2997,9 +3099,9 @@ async function sharePayInvoiceWhatsApp(){
   const text='🧾 Salary receipt '+payInvData.no+' — Ardas Caretaker Manager\n'
     +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
     +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
+    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Receipt image attached. Thank you! 🙏';
-  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png',payInvData.name);
 }
 /* Re-open a saved payment's receipt from All Records */
 function openPayInvoiceFromRecord(id){
@@ -3331,16 +3433,23 @@ function fillEmpSelects(){
   const actives=activeEmployees();
   document.querySelectorAll('.empSelect').forEach(sel=>{
     const cur=sel.value;
-    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option>${esc(e.name)}</option>`).join('');
-    /* Salary Calculator + All Records filter: also list people who appear only as
-       manually-added substitutes (temporary workers not in the Employees tab),
-       so their salary can be calculated and their records filtered */
+    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('');
+    /* Salary Calculator + All Records filter list EVERYONE that is on the app —
+       employees whose duty ended too (their past salary stays calculable), and
+       every person who appears in Duty & Leave only (a substitute, or someone
+       with just a leave row). The leave form keeps active employees only. */
     if(sel.id==='sEmpSel'||sel.id==='fEmp'){
       const known=new Set(actives.map(e=>e.name));
-      const ended=new Set(DB.employees.filter(isEmployeeEnded).map(e=>e.name));
-      const subs=[];
-      DB.dutyLeave.forEach(r=>{if(r.type==='substitute'&&r.empName&&!known.has(r.empName)&&!ended.has(r.empName)&&!subs.includes(r.empName))subs.push(r.empName);});
-      if(subs.length)sel.insertAdjacentHTML('beforeend',subs.map(n=>`<option>${esc(n)}</option>`).join(''));
+      const ended=DB.employees.filter(e=>e.name&&isEmployeeEnded(e)&&!known.has(e.name));
+      if(ended.length)sel.insertAdjacentHTML('beforeend',ended.map(e=>`<option value="${esc(e.name)}">${esc(e.name)} — duty ended</option>`).join(''));
+      const others=[];
+      DB.dutyLeave.forEach(r=>{
+        const n=String(r.empName||'').trim();
+        if(!n||known.has(n)||ended.some(e=>e.name===n))return;
+        if(r.type!=='substitute'&&r.type!=='leave'&&r.type!=='duty')return;
+        if(!others.includes(n))others.push(n);
+      });
+      if(others.length)sel.insertAdjacentHTML('beforeend',others.map(n=>`<option value="${esc(n)}">${esc(n)} — not in Employees</option>`).join(''));
     }
     sel.value=[...sel.options].some(o=>o.value===cur)?cur:'';
   });
@@ -3529,8 +3638,8 @@ function alreadyIn(snap,tab,r){
 function includedCounts(data){
   const snap=dbSnapshot(),counts={},fresh={};
   DB_TABS.forEach(([k])=>{
-    const rows=(Array.isArray(data[k])?data[k]:[]).filter(r=>r&&typeof r==='object');
-    counts[k]=rows.length;
+    const rows=(Array.isArray(data[k])?data[k]:[]).filter(r=>r&&typeof r==='object'&&naturalKey(k,r));
+    counts[k]=rows.length;                        // rows without a person/client are never shown or added
     fresh[k]=rows.filter(r=>!alreadyIn(snap,k,r)).length;
   });
   return {counts,fresh};
@@ -3542,7 +3651,9 @@ function mergeIncludedData(data){
     if(!Array.isArray(data[k]))return;
     let n=0;
     data[k].forEach(r=>{
-      if(!r||typeof r!=='object'||alreadyIn(snap,k,r))return;
+      if(!r||typeof r!=='object')return;
+      if(!naturalKey(k,r))return;             // no person/client to identify it → not a real record
+      if(alreadyIn(snap,k,r))return;
       const rec=Object.assign({},r);
       rec.synced=false;                       // so it reaches the Sheet on the next sync
       if(!rec.id)rec.id=uid();
