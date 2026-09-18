@@ -15,6 +15,13 @@ each submit to **your Google Sheet** in its respective tab.
 | **Profit / Loss** | Per calendar month: Received − Employee payments − Expenses, split **50-50 between the two partners** |
 | **All Records** | Every saved entry, filter by employee/month, delete entries, download / import JSON backup |
 
+## How it works — every rule in one place
+
+📖 **[HOW-IT-WORKS.md](HOW-IT-WORKS.md)** — the five tables (= the five Sheet tabs), how days and
+24-hour shifts are counted, employee / leave / substitute / join-duty / end-duty logic, the salary
+calculator step by step, Money Entry, client billing, Profit/Loss, the Google Sheets sync
+(push & pull, column-name mapping), the data that ships with the app, and what is stored in the browser.
+
 ## Data included in the app
 
 Hisab ships with the records in **`data/hisab-data.json`** — the employees, duty & leave rows, employee payments, client receipts and expenses. It is only the **rows**: the app is not connected to any other spreadsheet, and nothing points at one — `config.js` still names the single Sheet Hisab writes into (`HISAB_SPREADSHEET_ID`).
