@@ -15,6 +15,22 @@ each submit to **your Google Sheet** in its respective tab.
 | **Profit / Loss** | Per calendar month: Received − Employee payments − Expenses, split **50-50 between the two partners** |
 | **All Records** | Every saved entry, filter by employee/month, delete entries, download / import JSON backup |
 
+## Data included in the app
+
+Hisab ships with the records in **`data/hisab-data.json`** — the employees, duty & leave rows, employee payments, client receipts and expenses. It is only the **rows**: the app is not connected to any other spreadsheet, and nothing points at one — `config.js` still names the single Sheet Hisab writes into (`HISAB_SPREADSHEET_ID`).
+
+| File | What it holds |
+|---|---|
+| `data/hisab-data.json` | 11 employees • 19 duty/leave rows • 13 employee payments • 10 client receipts • 10 expenses — the same columns as the Sheet tabs |
+
+* **On a device with no data at all** (a new phone, a cleared browser) they load by themselves the first time the app opens — so the app starts with the full history instead of empty.
+* **On a device that already has data:** *All Records* → **📥 Add the data included in the app**. It shows what is new, asks first, merges, and never deletes anything.
+* **Duplicates are skipped** — an employee is matched by name, everything else by person/client + date + amount — so importing twice cannot double the books.
+* Added records are marked *not sent yet*, so **🔄 Send all saved data to Sheet** writes them into your own Sheet when you are ready.
+* The file is a plain Hisab backup (the same shape as *⬇ Download backup (JSON)*), so you can also edit it, or import it on a phone with *⬆ Import backup (JSON)*.
+
+> ⚠️ This file contains real business data (names, wages, client numbers/addresses). On a **public** GitHub repo it is readable by anyone — keep the repo private (or delete `data/hisab-data.json`) if the app is public.
+
 ## How to run
 
 Host it anywhere — GitHub Pages works great (sign-in with Google needs a proper `https://` address, so hosting is required for the Sheet sync; opening the file directly still works for on-device saving only).

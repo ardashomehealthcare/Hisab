@@ -550,10 +550,13 @@
       <div class="field"><label>Filter by employee</label><select id="fEmp" class="empSelect" onchange="renderRecords()"></select></div>
       <div class="field"><label>Filter by month</label><input id="fMonth" type="month" onchange="renderRecords()"></div>
       <button class="btn ghost" onclick="document.getElementById('fEmp').value='';document.getElementById('fMonth').value='';renderRecords();">Clear filters</button>
+      <button class="btn ghost" onclick="loadIncludedData()">📥 Add the data included in the app</button>
       <button class="btn ghost" onclick="exportBackup()">⬇ Download backup (JSON)</button>
       <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Update Google Sheet</button>
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
+      <span class="msg" id="bkMsg"></span>
+      <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Send all saved data to Sheet</b>.</div>
       <button class="btn red" onclick="clearAllData()">🗑 Clear all data</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
     </div>
@@ -3353,6 +3356,117 @@ function renderDash(){
 }
 function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();}
 
+/* ================= DATA THAT SHIPS WITH THE APP ================= */
+/* Hisab carries a plain records file — data/hisab-data.json — with the employees,
+   duty/leave, payments, receipts and expenses. It is only the rows; the app is not
+   connected to any other spreadsheet (config.js names the Sheet it writes into). */
+const DATA_FILE='data/hisab-data.json';
+const DB_TABS=[['employees','employees'],['dutyLeave','dutyLeave'],['payments','payments'],['receipts','receipts'],['expenses','expenses']];
+const DB_LABEL={employees:'Employees',dutyLeave:'Duty / Leave',payments:'Payments',receipts:'Client receipts',expenses:'Expenses'};
+function sameDay(a,b){return String(a||'')===String(b||'');}
+const keyOf=v=>String(v==null?'':v).trim().toLowerCase();
+/* The same real-world entry, whatever id it carries: an employee by name, the
+   rest by person/client + date + amount. This is what stops an import from
+   doubling entries that are already in the books. */
+function naturalKey(tab,r){
+  if(tab==='employees')return keyOf(r.name)&&('emp:'+keyOf(r.name));
+  if(tab==='dutyLeave')return keyOf(r.empName)&&('dl:'+keyOf(r.empName)+'|'+keyOf(r.type)+'|'+String(r.from||'')+'|'+String(r.to||''));
+  if(tab==='payments')return keyOf(r.empName)&&('pay:'+keyOf(r.empName)+'|'+String(r.date||'')+'|'+String(r.amount||''));
+  if(tab==='receipts')return keyOf(r.client)&&('rec:'+keyOf(r.client)+'|'+String(r.date||'')+'|'+String(r.amount||''));
+  if(tab==='expenses')return keyOf(r.item)&&('exp:'+keyOf(r.item)+'|'+String(r.date||'')+'|'+String(r.amount||''));
+  return '';
+}
+/* What the device has right now — ids and natural keys — taken once before a merge,
+   so two identical rows inside the data file are both kept (they are two rows in
+   the Sheet too) while anything already on the device is skipped. */
+function dbSnapshot(){
+  const snap={};
+  DB_TABS.forEach(([k])=>{
+    const ids=new Set(),keys=new Set();
+    (DB[k]||[]).forEach(r=>{
+      if(r&&r.id)ids.add(String(r.id));
+      const nk=r?naturalKey(k,r):'';
+      if(nk)keys.add(nk);
+    });
+    snap[k]={ids,keys};
+  });
+  return snap;
+}
+function alreadyIn(snap,tab,r){
+  const s=snap[tab];if(!s)return false;
+  if(r.id&&s.ids.has(String(r.id)))return true;
+  const nk=naturalKey(tab,r);
+  return !!(nk&&s.keys.has(nk));
+}
+function includedCounts(data){
+  const snap=dbSnapshot(),counts={},fresh={};
+  DB_TABS.forEach(([k])=>{
+    const rows=(Array.isArray(data[k])?data[k]:[]).filter(r=>r&&typeof r==='object');
+    counts[k]=rows.length;
+    fresh[k]=rows.filter(r=>!alreadyIn(snap,k,r)).length;
+  });
+  return {counts,fresh};
+}
+function mergeIncludedData(data){
+  const snap=dbSnapshot();                    // fixed before the merge: the file's own rows stay
+  const added={},total={};
+  DB_TABS.forEach(([k])=>{
+    if(!Array.isArray(data[k]))return;
+    let n=0;
+    data[k].forEach(r=>{
+      if(!r||typeof r!=='object'||alreadyIn(snap,k,r))return;
+      const rec=Object.assign({},r);
+      rec.synced=false;                       // so it reaches the Sheet on the next sync
+      if(!rec.id)rec.id=uid();
+      DB[k].push(rec);n++;
+    });
+    added[k]=n;total[k]=(DB[k]||[]).length;
+  });
+  persist();renderAll();
+  return {added,total};
+}
+async function loadIncludedData(){
+  try{
+    const url=(location.pathname.replace(/[^/]*$/,'')||'')+DATA_FILE+'?_='+Date.now();
+    const res=await fetch(url,{cache:'no-store'});
+    if(!res||!res.ok)throw new Error('data file not found');
+    const txt=await res.text();
+    let data;
+    try{data=JSON.parse(txt);}catch(e){throw new Error('the data file is not readable');}
+    if(!data||!Array.isArray(data.employees))throw new Error('the data file has no records');
+    const {counts,fresh}=includedCounts(data);
+    const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
+    const lines=DB_TABS.map(([k])=>DB_LABEL[k]+': '+counts[k]+' row'+(counts[k]===1?'':'s')+(fresh[k]!==counts[k]?' ('+fresh[k]+' new)':'')).join('\n');
+    if(!totalNew){toast('ℹ️ Everything in the app\'s data file is already on this device.');return;}
+    if(!confirm('Add the records that come with Hisab to this device?\n\n'+lines
+      +'\n\nDuplicates are skipped and nothing on this device is deleted.'
+      +' The added records go to your Google Sheet on the next 🔄 Send all saved data to Sheet.'))return;
+    const {added,total}=mergeIncludedData(data);
+    const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ');
+    flash('bkMsg','✅ Added: '+sum+'. Now on this device: '+DB_TABS.map(([k])=>DB_LABEL[k]+' '+total[k]).join(' • ')+'.',true);
+    toast('✅ '+totalNew+' record'+(totalNew===1?'':'s')+' added — press 🔄 Send all saved data to Sheet to put them in your Sheet');
+  }catch(e){
+    toast('⚠️ Could not read '+DATA_FILE+' — '+(e&&e.message?e.message:'not available on this device')+'. You can still import a JSON backup.');
+  }
+}
+/* On a device that has nothing at all, the included records load by themselves —
+   so a new phone starts with the full history instead of an empty app. */
+async function autoLoadIncludedDataOnce(){
+  const empty=DB_TABS.every(([k])=>!(DB[k]||[]).length);
+  if(!empty)return;
+  if(storeItem('hisabIncludedDataAuto')==='done')return;
+  setStoreItem('hisabIncludedDataAuto','done');
+  try{
+    const res=await fetch((location.pathname.replace(/[^/]*$/,'')||'')+DATA_FILE,{cache:'no-store'});
+    if(!res||!res.ok)return;
+    const data=await res.json();
+    if(!data||!Array.isArray(data.employees))return;
+    const total=DB_TABS.reduce((n,[k])=>n+((data[k]||[]).length),0);
+    if(!total)return;
+    mergeIncludedData(data);
+    toast('📥 Loaded the '+total+' records that come with Hisab — press 🔄 Send all saved data to Sheet to put them in your Google Sheet');
+  }catch(e){}
+}
 function exportBackup(){
   const a=document.createElement('a');
   a.href='data:application/json,'+encodeURIComponent(JSON.stringify(DB,null,2));
@@ -3381,6 +3495,7 @@ document.getElementById('plMonth').value=todayStr().slice(0,7);
 document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
 updateSheetStatus();renderAll();
+autoLoadIncludedDataOnce();
 autoLoadFromSheet();
 if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
 </script>
