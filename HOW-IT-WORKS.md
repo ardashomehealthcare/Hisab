@@ -228,6 +228,22 @@ follows the hours instead of being rounded up to a whole day:
 
 ---
 
+## 8a. Payment collection reminders (Dashboard)
+
+* The company collects from each client **every 15 days from the client's duty start**
+  (`clientDutyStartDate`, falling back to joining date).
+* The next collection due = the latest of *duty start*, *the last recorded payment for that
+  client*, *a cancelled due* **+ 15 days** — so recording the payment in Money Entry (or
+  cancelling once) moves the reminder to the next cycle by itself.
+* The Dashboard card shows the earliest open due per **active** client: **DUE TODAY**,
+  **OVERDUE — N days** (red), or **due in N days** when it is 3 or fewer days away. Ended
+  clients and clients with no duty start never appear.
+* **✕ Cancel reminder** stores that one due date in `hisabRemindDismiss` on the device —
+  the cycle after it (hidden due + 15 days) shows again on its own. Nothing syncs to the
+  Sheet; each partner's phone keeps its own dismissals.
+
+---
+
 ## 9. Client billing calculator
 
 * Deal = the client's newest `dealAmount`, or `clientDeal` from the Employees row.
@@ -346,6 +362,7 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 | `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
+| `hisabRemindDismiss` | cancelled payment-reminder due dates per client (this device only) |
 
 ---
 

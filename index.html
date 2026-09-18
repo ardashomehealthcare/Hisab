@@ -199,6 +199,11 @@
     <div class="stat"><div class="lbl">Profit (this month)</div><div class="val" id="dPr">₹0</div></div>
     <div class="stat"><div class="lbl">Each partner share</div><div class="val" id="dSh">₹0</div></div>
   </div>
+  <div class="card" id="remindCard" style="display:none;">
+    <h2>⏰ Payment collection reminders <span class="badge amber">every 15 days</span></h2>
+    <div class="hint">Each client's collection is due every <b>15 days from their duty start</b>; recording the payment in Money Entry moves the reminder to the next cycle by itself. <b>✕ Cancel reminder</b> hides that one cycle only — it returns for the next cycle automatically.</div>
+    <div id="remindList"></div>
+  </div>
   <div class="card">
     <h2>Recent entries</h2>
     <div class="hint">Latest 12 entries from every section. Full lists are in “All Records”.</div>
@@ -3588,6 +3593,78 @@ function renderRecords(){
   document.querySelector('#recExpenses tbody').innerHTML=DB.expenses.filter(okM).slice().reverse().map(r=>
     `<tr><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td class="right money">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('expenses','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">Nothing here.</td></tr>';
 }
+/* ================= 15-DAY PAYMENT COLLECTION REMINDERS ================= */
+/* The company collects from each client every 15 days, counted from the client's
+   duty start. The next collection is due 15 days after the latest of: duty start,
+   the last recorded payment, or a hidden (cancelled) due. So recording the payment
+   — or cancelling once — moves the reminder to the next cycle by itself, and a
+   cancelled cycle comes back automatically 15 days later. Dismissals are kept on
+   this device only; ended clients never remind. */
+const REMIND_CYCLE_DAYS=15, REMIND_SOON_DAYS=3;
+function addDaysNum(d,n){const dt=new Date(d+'T00:00:00');if(isNaN(dt))return '';dt.setDate(dt.getDate()+n);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+function daysDiff(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
+function activeClientNames(){
+  const out=new Set();
+  DB.employees.forEach(e=>{const c=String(e.client||'').trim();if(c&&!isClientEnded(c))out.add(c);});
+  DB.receipts.forEach(r=>{const c=String(r.client||'').trim();if(c&&!isClientEnded(c))out.add(c);});
+  DB.dutyLeave.forEach(r=>{const c=String(r.client||'').trim();if(c&&r.type!=='endClientDuty'&&!isClientEnded(c))out.add(c);});
+  return [...out];
+}
+function remindDismissMap(){try{return JSON.parse(localStorage.getItem('hisabRemindDismiss')||'{}');}catch(e){return {};}}
+/* What, if anything, should be shown for one client right now. */
+function paymentReminderFor(client){
+  if(isClientEnded(client))return null;
+  const start=clientDutyStartFor(client);
+  if(!start)return null;
+  const key=String(client).trim().toLowerCase();
+  let base=start;
+  DB.receipts.forEach(r=>{
+    if(String(r.client||'').trim().toLowerCase()!==key||!r.date)return;
+    if(String(r.date)>base)base=String(r.date);
+  });
+  const dismissed=remindDismissMap()[key];
+  if(Array.isArray(dismissed))dismissed.forEach(d=>{if(d&&String(d)>base)base=String(d);});
+  const due=addDaysNum(base,REMIND_CYCLE_DAYS);
+  if(!due)return null;
+  const t=todayStr();
+  if(due>t){
+    const inDays=daysDiff(t,due);
+    if(inDays<=REMIND_SOON_DAYS)return {client,start,due,state:'soon',days:inDays};
+    return null;
+  }
+  const over=daysDiff(due,t);
+  return {client,start,due,state:over>0?'overdue':'due',days:over};
+}
+let lastReminders=[];
+function renderReminders(){
+  const card=document.getElementById('remindCard'),list=document.getElementById('remindList');
+  if(!card||!list)return;
+  lastReminders=activeClientNames().map(paymentReminderFor).filter(Boolean)
+    .sort((a,b)=>(a.state==='soon'?1:0)-(b.state==='soon'?1:0)||b.days-a.days||String(a.due).localeCompare(String(b.due)));
+  if(!lastReminders.length){card.style.display='none';return;}
+  card.style.display='';
+  list.innerHTML=lastReminders.map((r,i)=>{
+    const when=r.state==='overdue'
+      ?'<span class="badge red">OVERDUE — '+r.days+' day'+(r.days===1?'':'s')+'</span>'
+      :(r.state==='due'
+        ?'<span class="badge amber">DUE TODAY</span>'
+        :'<span class="badge blue">due in '+r.days+' day'+(r.days===1?'':'s')+'</span>');
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--soft);">'
+      +'<div style="flex:1;min-width:180px;"><b>'+esc(r.client)+'</b> <span style="color:var(--muted);font-size:.78rem;">duty from '+esc(r.start)+' • collection due '+esc(r.due)+'</span> '+when+'</div>'
+      +'<button class="miniBtn amber" onclick="cancelReminderIdx('+i+')" title="Hide this cycle only — it returns for the next cycle">✕ Cancel reminder</button>'
+      +'</div>';
+  }).join('');
+}
+function cancelReminderIdx(i){
+  const r=lastReminders[i];if(!r)return;
+  if(!confirm('Hide the payment reminder for "'+r.client+'" (due '+r.due+') until its next 15-day cycle?\n\nIt returns automatically for the next cycle.\n\nIf the payment was collected, record it in Money Entry instead — the reminder then moves ahead by itself.'))return;
+  const m=remindDismissMap(),k=String(r.client).trim().toLowerCase();
+  if(!Array.isArray(m[k]))m[k]=[];
+  if(!m[k].includes(r.due))m[k].push(r.due);
+  try{localStorage.setItem('hisabRemindDismiss',JSON.stringify(m));}catch(e){}
+  renderReminders();
+  toast('✕ Reminder hidden for '+r.client+' until the next cycle');
+}
 function renderDash(){
   const ym=todayStr().slice(0,7);
   const {inn,out,exp,profit}=plForMonth(ym);
@@ -3612,6 +3689,7 @@ function renderDash(){
   rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
+  renderReminders();
 }
 function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();}
 
