@@ -203,7 +203,11 @@ follows the hours instead of being rounded up to a whole day:
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
 * Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → the invoice image is saved
-  and the client's chat opens with the message typed (falls back to the share sheet / chooser).
+  and the client's chat opens **directly on the client's number**. A number saved without the
+  country code still opens the right chat — the app adds **91** (or the set `WA_DEFAULT_CC`)
+  itself, because `wa.me` only accepts full international numbers. No number saved? The app asks
+  for it once on the spot (typed numbers are remembered per client), or the share sheet / chooser
+  picks the chat.
 
 **Payment given to an employee** → `payments`:
 * `payType`, `mode`, optional `periodFrom`/`periodTo`. When a period is given, the app fills the
@@ -291,6 +295,20 @@ replacing.
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
 
+### 📥 Reference Sheet → this app's Sheet
+On the Google Sheet tab, **“Reference Sheet — add all its data to this app's Sheet”**: paste the
+other Sheet's address (the old / master Sheet) and press the button.
+
+1. The reference Sheet's tabs are listed (`sheets.properties.title`) and the five Hisab tabs it
+   actually has are read with one `values:batchGet` — **read-only**, nothing is created or changed
+   there, and a tab it does not have counts as empty (a note says which).
+2. The rows are merged into the device with the §13 rules — duplicates skipped, rows without a
+   person/client to identify them ignored, nothing deleted.
+3. 🔄 **Push app data to Sheet** runs by itself, so the app's own Sheet ends up with **all** the
+   reference data (old + new). If that write fails, the merged rows stay safely on the device,
+   marked unsent.
+4. The reference address is remembered on the device (`hisabRefSheetId`) so it can be reused.
+
 ---
 
 ## 13. The data that ships with the app
@@ -320,6 +338,8 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 | `hisabClientId` | Client ID typed on this device (overrides `config.js`) |
 | `hisabSheetId` | Sheet ID typed on this device (overrides `config.js`) |
 | `hisabSyncedSheetId` | which Sheet this device last synced with |
+| `hisabRefSheetId` | the reference Sheet address (for 📥 add-all-its-data) |
+| `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
 

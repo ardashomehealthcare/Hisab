@@ -606,6 +606,23 @@
         </div>
       </div>
     </details>
+    <details class="setupBox" id="gRefSheetBox">
+      <summary>📥 Reference Sheet — add all its data to this app's Sheet <span class="tag" id="refTag"></span></summary>
+      <div class="boxBody">
+        <div class="hint" style="margin-bottom:10px;">Paste the <b>reference Sheet</b> — the other Sheet whose data you want (the old / master Sheet). Hisab reads its five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses), adds every row that is not already saved on this device, and then writes the combined data into <b>this app's own Sheet</b> (the one in “Google Sheet to write into” above). The reference Sheet itself is only read — nothing in it is changed.</div>
+        <div class="field" style="max-width:680px;">
+          <label>Reference Sheet ID — or paste the whole Sheet address</label>
+          <input id="refSheetId" placeholder="https://docs.google.com/spreadsheets/d/…/edit" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="refSheetTyped()">
+          <div class="hint" id="refHint"></div>
+        </div>
+        <div class="actions">
+          <button class="btn green sm" onclick="importRefSheet()">📥 Add all reference-Sheet data to my Sheet</button>
+          <button class="btn ghost sm" onclick="clearRefSheet()">↩ Clear the reference Sheet</button>
+          <span class="msg" id="refMsg"></span>
+        </div>
+        <div class="hint" style="margin-top:8px;">Your Google account must be able to <b>open</b> the reference Sheet (Viewer is enough). Rows already on this device are skipped — importing twice cannot double the books.</div>
+      </div>
+    </details>
     <div class="actions">
       <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
@@ -1046,6 +1063,102 @@ function resetSheetId(){
   flash('shMsg',FILE_SHEET_ID?'✅ Back to the Sheet in config.js.':'config.js has no Sheet ID yet — paste one in the box above.',!!FILE_SHEET_ID);
 }
 
+/* ================= REFERENCE SHEET → this app's Sheet =================
+   One tap copies ALL data of another Google Sheet (the reference) into the app:
+   its five tabs are read (read-only), every row not already on this device is
+   added (duplicates skipped), and everything is then written into the app's own
+   Sheet — the one in “Google Sheet to write into”. The reference Sheet itself
+   is never changed. */
+const REF_KEY='hisabRefSheetId';
+function getRefSheetId(){return regSheetId(storeItem(REF_KEY));}
+function refSheetTyped(){
+  const inp=document.getElementById('refSheetId'),raw=inp?inp.value.trim():'',v=checkSheetRef(raw),hint=document.getElementById('refHint');
+  if(hint)hint.innerHTML=raw?esc(v.msg):esc('Paste the reference Sheet’s address (or just its ID) — its data is copied into this app’s Sheet.');
+}
+function clearRefSheet(){
+  setStoreItem(REF_KEY,'');renderRefSheetBox();
+  flash('refMsg','Reference Sheet cleared — nothing was read or written.',true);
+}
+function renderRefSheetBox(){
+  const id=getRefSheetId(),inp=document.getElementById('refSheetId'),tag=document.getElementById('refTag');
+  if(inp&&document.activeElement!==inp)inp.value=id;
+  if(tag){tag.textContent=id?'saved on this device':'not set';tag.className='tag '+(id?'ok':'');}
+}
+/* Read the reference Sheet: only the five Hisab tabs it actually has (a tab it
+   does not have counts as empty — nothing is created in the reference Sheet). */
+async function fetchRefSheetData(id){
+  const meta=await sheetJSON(GS_API+id+'?fields=sheets.properties.title');
+  const have=new Set((meta.sheets||[]).map(s=>s.properties&&s.properties.title));
+  const present=TABS.filter(t=>have.has(t)),absent=TABS.filter(t=>!have.has(t));
+  if(!present.length)throw new Error('this Sheet has none of the five Hisab tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) — is that the right Sheet?');
+  const url=GS_API+id+'/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&'+present.map(t=>'ranges='+encodeURIComponent(t)).join('&');
+  const j=await sheetJSON(url);
+  const out={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
+  const oldArrangement=[];
+  present.forEach((sheet,i)=>{
+    const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
+    const headers=(rows[0]||[]).map(v=>String(v??'').trim());
+    while(headers.length&&headers[headers.length-1]==='')headers.pop();
+    if(missingSheetCols(sheet,headers).length)oldArrangement.push(sheet);
+    out[TAB_TO_DB[sheet]]=rows.slice(1)
+      .filter(row=>row.some(v=>String(v??'').trim()!==''))
+      .map(row=>sheetRowToRec(sheet,row,headers));
+  });
+  out._notes=[];
+  if(absent.length)out._notes.push('not found in the reference Sheet (treated as empty): '+absent.join(', '));
+  if(oldArrangement.length)out._notes.push('older column arrangement, read correctly by name: '+oldArrangement.join(', '));
+  return out;
+}
+async function importRefSheet(){
+  const inp=document.getElementById('refSheetId');
+  const raw=inp?inp.value.trim():'';
+  let id=getRefSheetId();
+  if(raw){
+    const v=checkSheetRef(raw);
+    if(!v.ok){showSetupAlert(sheetProblem(v));return;}
+    id=regSheetId(raw);
+  }
+  if(!id){flash('refMsg','Paste the reference Sheet’s address first.',false);return;}
+  setStoreItem(REF_KEY,id);renderRefSheetBox();
+  if(id===String(getSheetId()||'')){flash('refMsg','That is this app’s own Sheet — paste the reference (the other) Sheet here.',false);return;}
+  if(!getClientId()){flash('refMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
+  flash('refMsg','Reading the reference Sheet…');
+  try{
+    /* the press IS the user gesture — sign-in opens first if needed */
+    await getAccessToken(true);
+    const data=await fetchRefSheetData(id);
+    const {counts,fresh}=includedCounts(data);
+    const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
+    const lines=DB_TABS.map(([k])=>DB_LABEL[k]+': '+counts[k]+' row'+(counts[k]===1?'':'s')+(fresh[k]!==counts[k]?' ('+fresh[k]+' new)':'')).join('\n');
+    const notes=(data._notes||[]).length?('\n\nNote: '+data._notes.join('\n')):'';
+    let go;
+    if(!totalNew){
+      go=confirm('Everything in the reference Sheet is already on this device:\n\n'+lines+notes
+        +'\n\nWrite everything saved on this device into your Sheet anyway?\n'+sheetLink(getSheetId()));
+    }else{
+      go=confirm('Add the reference Sheet’s records to this device?\n\n'+lines+notes
+        +'\n\nDuplicates are skipped and nothing is deleted.\n\nThen EVERYTHING on this device (old + new) is written into your own Sheet:\n'+sheetLink(getSheetId())
+        +'\n\nThe reference Sheet itself is not changed.');
+    }
+    if(!go){flash('refMsg','Cancelled — nothing was added or written.',false);return;}
+    const {added,total}=mergeIncludedData(data);
+    const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ')||'nothing new';
+    flash('refMsg','✅ Reference Sheet read ('+sum+') — now writing everything into your Sheet…');
+    const pushed=await syncAll();
+    if(pushed){
+      flash('refMsg','✅ Done — your Sheet now has all the reference-Sheet data'+(totalNew?' (+'+totalNew+' new row'+(totalNew===1?'':'s')+' added)':' (everything was already here)')+'.',true);
+      toast('✅ Reference-Sheet data is now in your Google Sheet.');
+    }else{
+      flash('refMsg','⚠ The reference data was added on this device ('+sum+'), but writing to your Sheet failed — the fix is shown above, then press 🔄 Push app data to Sheet.',false);
+    }
+  }catch(e){
+    const explained=reportProblem(e,true);
+    flash('refMsg',explained?'❌ Could not read the reference Sheet — the fix is shown above.':'❌ Could not read the reference Sheet: '+((e&&e.message)||e),false);
+    toast('❌ Reference Sheet not read — nothing was changed.');
+  }
+  renderRefSheetBox();
+}
+
 /* A phone can keep serving an OLD cached copy of config.js, and then the app
    signs in with a Client ID that the server no longer has — which Google answers
    with 401 invalid_client. config.js is therefore re-read uncached whenever the
@@ -1438,10 +1551,12 @@ async function syncAll(){
     rememberSheet();
     closeSetupAlert();
     flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
+    return true;
   }catch(e){
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Google refused the write — the fix is shown above.':'❌ Could not write to the Sheet: '+((e&&e.message)||e),false);
     toast('❌ Could not reach Google Sheet — nothing is lost, it is still on this device.');
+    return false;
   }
   updateSheetStatus();
 }
@@ -2239,13 +2354,63 @@ function closeInvoice(){document.getElementById('invoiceCard').style.display='no
 /* ================= WHATSAPP SHARE (invoice / receipt as image) ================= */
 /* Clean a phone number for WhatsApp (keep digits only). */
 function waDigits(phone){return String(phone||'').replace(/[^0-9]/g,'');}
+/* Country code added to numbers saved as 10 digits (India) — wa.me only opens the
+   RIGHT chat with the full international number, e.g. 9876543210 → 919876543210. */
+const WA_DEFAULT_CC='91';
+/* A number in international form: 9876543210 / 098765 43210 / +91 98765 43210 /
+   919876543210 all become 919876543210. Empty when no usable number remains. */
+function waNumber(phone){
+  let p=waDigits(phone);
+  if(!p)return '';
+  if(p.slice(0,2)==='00')p=p.slice(2);        // 00 international dial-out prefix
+  while(p.slice(0,1)==='0')p=p.slice(1);      // 0 trunk prefix (098765 43210)
+  if(p.length===10)p=WA_DEFAULT_CC+p;         // local 10-digit mobile → +91…
+  return (p.length>=10&&p.length<=13)?p:'';
+}
 /* WhatsApp click-to-chat link. With a number the chat opens on that exact
    client / employee; without one WhatsApp shows the contact chooser. */
 function waLink(phone,text){
-  const p=waDigits(phone),t=encodeURIComponent(text||'');
+  const p=waNumber(phone),t=encodeURIComponent(text||'');
   return p?('https://wa.me/'+p+'?text='+t):('https://api.whatsapp.com/send?text='+t);
 }
 function openWhatsAppChat(text,phone){window.open(waLink(phone,text),'_blank');}
+/* Remember the number typed for a person without a saved one (a substitute, for
+   example) — the next invoice / receipt to them fills it in by itself. */
+const WA_NUM_KEY='hisabWaNum:';
+function rememberWaNumber(name,phone){
+  const p=waNumber(phone),k=keyOf(name);
+  if(p&&k)setStoreItem(WA_NUM_KEY+k,p);
+}
+function rememberedWaNumber(name){
+  const k=keyOf(name);
+  return k?storeItem(WA_NUM_KEY+k):'';
+}
+/* No saved number? Ask once — type it and the chat still opens on THEM directly;
+   skip it and the share sheet / WhatsApp chooser picks the chat instead. */
+function askWhatsAppNumber(name,cb){
+  dlgCtx={kind:'waPhone',cb,name:String(name||'')};
+  document.getElementById('dlgTitle').innerHTML='📲 '+(name?esc(name)+' — ':'')+'WhatsApp number';
+  document.getElementById('dlgHint').innerHTML='Their WhatsApp opens straight on their chat with the message already typed — just attach the saved image and send. With or without <b>91</b> in front is both fine.';
+  document.getElementById('dlgBody').innerHTML=
+    '<div class="field"><label>WhatsApp number (leave empty to pick a chat yourself)</label>'
+    +'<input id="waPhoneInp" type="tel" inputmode="numeric" placeholder="e.g. 98765 43210" value="'+esc(rememberedWaNumber(name))+'"></div>'
+    +'<div class="actions"><button class="btn green sm" onclick="waPhoneUse()">📲 Open their chat</button>'
+    +'<button class="btn ghost sm" onclick="waPhoneSkip()">No number — choose a chat</button>'
+    +'<button class="btn ghost sm" onclick="closeDlg()">✕ Cancel</button></div>';
+  showDlg();
+  setTimeout(()=>{const i=document.getElementById('waPhoneInp');if(i)i.focus();},60);
+}
+function waPhoneUse(){
+  if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
+  const cb=dlgCtx.cb,name=dlgCtx.name,n=val('waPhoneInp'),p=waNumber(n);
+  if(!p){toast('❌ That number does not look right — check it once (10 digits, with or without 91).');return;}
+  rememberWaNumber(name,p);
+  closeDlg();cb(p);
+}
+function waPhoneSkip(){
+  if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
+  const cb=dlgCtx.cb;closeDlg();cb('');
+}
 /* Render an element (invoice / receipt) to a PNG image. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
@@ -2281,29 +2446,39 @@ function savePayInvoiceImage(){
   saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
 }
 /* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
-   WhatsApp opens DIRECTLY on the client's / employee's chat with the message
-   already typed (wa.me/<number>). Without a saved number the image goes
-   through the share sheet (phone) or the WhatsApp chooser. */
-async function sendNodeOnWhatsApp(nodeId,text,phone,filename){
+   WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
+   the message already typed (wa.me/<number>). Without a saved number the app
+   asks for one on the spot — type it and their chat still opens by itself —
+   or skip to go through the share sheet (phone) / the WhatsApp chooser. */
+async function sendNodeOnWhatsApp(nodeId,text,phone,filename,askName){
   let blob;
   try{blob=await renderNodeToBlob(nodeId);}
   catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
-  if(waDigits(phone)){
+  if(waNumber(phone)){
     downloadBlob(blob,filename);              // image saved, ready to attach
     openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
     toast('✅ Image saved — attach it in the chat that just opened');
     return;
   }
-  const file=new File([blob],filename,{type:'image/png'});
-  if(navigator.canShare&&navigator.canShare({files:[file]})){
-    try{await navigator.share({files:[file],text});}catch(e){/* cancelled */}
-    return;
-  }
-  downloadBlob(blob,filename);
-  openWhatsAppChat(text,'');                  // WhatsApp chooser — pick any chat
+  askWhatsAppNumber(askName,chosen=>{
+    if(waNumber(chosen)){
+      downloadBlob(blob,filename);            // image saved, ready to attach
+      openWhatsAppChat(text,chosen);          // straight to their WhatsApp chat
+      toast('✅ Image saved — attach it in the chat that just opened');
+      return;
+    }
+    const file=new File([blob],filename,{type:'image/png'});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){
+      navigator.share({files:[file],text}).catch(()=>{/* cancelled */});
+      return;
+    }
+    downloadBlob(blob,filename);
+    openWhatsAppChat(text,'');                // WhatsApp chooser — pick any chat
+  });
 }
 /* Client invoice → WhatsApp image. Number: the field, else the number remembered
-   on the client's most recent receipt. Opens directly on the client's chat. */
+   on the client's most recent receipt, else the client phone saved on the
+   employee's row — the chat then opens directly on the client. */
 async function shareInvoiceWhatsApp(){
   if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
   const client=document.getElementById('invClient').textContent;
@@ -2316,13 +2491,17 @@ async function shareInvoiceWhatsApp(){
     const k=String(client||'').trim().toLowerCase();
     const prev=DB.receipts.filter(r=>r.client&&String(r.client).trim().toLowerCase()===k).slice(-1)[0];
     if(prev&&prev.clientPhone)phone=prev.clientPhone;
+    if(!phone){
+      const emp=DB.employees.find(e=>e.client&&String(e.client).trim().toLowerCase()===k&&waNumber(e.clientPhone));
+      if(emp&&emp.clientPhone)phone=emp.clientPhone;
+    }
   }
   const text='🧾 Invoice '+no+' — Ardas Caretaker Manager\n'
     +'Client: '+client+'\nDate: '+date+'\n'
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Pick the client\'s chat — number not saved)\n')
+    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Invoice image attached. Thank you! 🙏';
-  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png',client?client+' (client)':'');
 }
 function saveReceipt(){
   const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
@@ -2986,8 +3165,9 @@ function printPayInvoice(){
   setTimeout(()=>document.body.classList.remove('printPay'),300);
 }
 function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
-/* Salary receipt → WhatsApp image. Number: the employee's saved phone
-   (substitutes not in Employees get the contact chooser). */
+/* Salary receipt → WhatsApp image. Number: the employee's saved phone.
+   A substitute not in Employees (no saved number) is asked for one on the spot —
+   type it and their chat opens directly — or the share sheet / chooser picks. */
 async function sharePayInvoiceWhatsApp(){
   if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
   const emp=findEmpByName(payInvData.name);
@@ -2997,9 +3177,9 @@ async function sharePayInvoiceWhatsApp(){
   const text='🧾 Salary receipt '+payInvData.no+' — Ardas Caretaker Manager\n'
     +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
     +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Pick the employee\'s chat — number not saved)\n')
+    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Receipt image attached. Thank you! 🙏';
-  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png');
+  await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png',payInvData.name);
 }
 /* Re-open a saved payment's receipt from All Records */
 function openPayInvoiceFromRecord(id){
@@ -3529,8 +3709,8 @@ function alreadyIn(snap,tab,r){
 function includedCounts(data){
   const snap=dbSnapshot(),counts={},fresh={};
   DB_TABS.forEach(([k])=>{
-    const rows=(Array.isArray(data[k])?data[k]:[]).filter(r=>r&&typeof r==='object');
-    counts[k]=rows.length;
+    const rows=(Array.isArray(data[k])?data[k]:[]).filter(r=>r&&typeof r==='object'&&naturalKey(k,r));
+    counts[k]=rows.length;                        // rows without a person/client are never shown or added
     fresh[k]=rows.filter(r=>!alreadyIn(snap,k,r)).length;
   });
   return {counts,fresh};
@@ -3542,7 +3722,9 @@ function mergeIncludedData(data){
     if(!Array.isArray(data[k]))return;
     let n=0;
     data[k].forEach(r=>{
-      if(!r||typeof r!=='object'||alreadyIn(snap,k,r))return;
+      if(!r||typeof r!=='object')return;
+      if(!naturalKey(k,r))return;             // no person/client to identify it → not a real record
+      if(alreadyIn(snap,k,r))return;
       const rec=Object.assign({},r);
       rec.synced=false;                       // so it reaches the Sheet on the next sync
       if(!rec.id)rec.id=uid();
@@ -3633,7 +3815,7 @@ document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
-updateSheetStatus();renderAll();
+updateSheetStatus();renderAll();renderRefSheetBox();
 autoLoadIncludedDataOnce();
 autoLoadFromSheet();
 if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
