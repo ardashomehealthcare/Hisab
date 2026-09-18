@@ -145,7 +145,7 @@
   .invTable th{background:var(--soft);padding:8px 9px;font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--brand-dark);}
   .invTable td{padding:8px 9px;border-top:1px solid var(--line);}
   .invWords{font-size:.85rem;color:var(--muted);margin-top:8px;}
-  .invFoot{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px;font-size:.8rem;color:var(--muted);text-align:center;}
+  .invFoot{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px;font-size:.92rem;font-weight:600;color:var(--brand-dark);text-align:center;letter-spacing:.02em;}
 
   /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
@@ -331,6 +331,7 @@
           <div class="invTitle">INVOICE</div>
           <div class="invRow">Invoice #: <b id="invNo">—</b></div>
           <div class="invRow">Date: <b id="invDate">—</b></div>
+          <div class="invRow">Mode: <b id="invMode">—</b></div>
         </div>
         <div class="invTo">
           <div class="invRow">Bill To:</div>
@@ -362,7 +363,7 @@
         </svg>
       </div>
       <div class="invWords">In words: <b id="invWords">—</b></div>
-      <div class="invFoot">Thank you! Payment received via <span id="invMode">—</span>.</div>
+      <div class="invFoot">Thank you</div>
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
@@ -453,6 +454,7 @@
           <div class="invTitle">SALARY PAYMENT RECEIPT</div>
           <div class="invRow">Receipt #: <b id="piNo">—</b></div>
           <div class="invRow">Date: <b id="piDate">—</b></div>
+          <div class="invRow">Mode: <b id="piModeTxt">—</b></div>
         </div>
         <div class="invTo">
           <div class="invRow">Paid To:</div>
@@ -486,7 +488,7 @@
         <img id="piImgView" alt="Online payment screenshot">
         <div class="payImgCap">Online payment screenshot</div>
       </div>
-      <div class="invFoot">Thank you! Payment via <span id="piModeTxt">—</span>.</div>
+      <div class="invFoot">Thank you</div>
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
