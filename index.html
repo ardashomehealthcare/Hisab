@@ -261,6 +261,7 @@
       <div id="lTimeFields" style="display:none;">
         <div class="field"><label>Leave start time (24-hr duty)</label><input id="lFromT" type="time"></div>
       </div>
+      <div class="field"><label>Note (optional)</label><input id="lNote" placeholder="e.g. Sick leave / family function — saved in the notes column"></div>
     </div>
     <!-- selected employee already on leave: substitute bar + Join duty right here -->
     <div id="lvJoinBox" style="display:none;"></div>
@@ -421,7 +422,7 @@
     <div class="actions" style="margin-top:8px;">
       <label style="font-size:.83rem; color:var(--muted); display:flex; align-items:center; gap:6px; cursor:pointer;">
         <input type="checkbox" id="sAssumeFull" checked style="width:16px;height:16px;">
-        No duty entries for this period? Count the full period as duty (from joining date if later, minus leaves)
+        No duty entries? Count the <b>whole period</b> as duty. Untick it and the duty window is read from the columns — joining date / client duty start date up to any end-duty date — minus leaves.
       </label>
     </div>
     <div class="actions"><button class="btn primary" onclick="calcSalary()">🧾 Calculate salary</button></div>
@@ -1871,8 +1872,14 @@ function addCardSub(p,leaveId){
   const name=e?e.name:typed;
   if(name===lv.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
   const ft=lv.fromTime||'';
+  const typedWage=Number(val(p+'Wage'))>0?val(p+'Wage'):'';
   const rec={id:uid(),empName:name,type:'substitute',forEmp:lv.empName,from:lv.from,to:'',fromTime:ft,toTime:'',
-    days:'',byShifts:ft?true:'',subWage:Number(val(p+'Wage'))>0?val(p+'Wage'):'',client:lv.client||'',savedAt:new Date().toLocaleString()};
+    days:'',byShifts:ft?true:'',subWage:typedWage,
+    /* the Sheet's own columns: the wage agreed for THIS substitute duty —
+       the typed per-day rate, else the wage saved on the person's Employees row */
+    wageType:typedWage?'daily':String((e&&e.wageType)||''),
+    wageAmount:typedWage||String((e&&e.wageAmount)||''),
+    client:lv.client||'',savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();sendRecord('DutyLeave',rec);
   toast('➕ '+name+' added as substitute for '+lv.empName+(rec.client?' at '+rec.client:'')+'.');
   renderAll();
@@ -1914,16 +1921,23 @@ function effSubRec(r,end){
    substitute was added wins (rate agreed for that duty); otherwise the
    SUBSTITUTE's own saved employee wage is used.
    daily: rate × days • monthly: per-day pro-rata (wage ÷ days-in-month × days), split across months */
+/* Substitute salary. The rule is read from the DutyLeave row's own columns —
+   wageType + wageAmount (a row typed into the Sheet by hand works the same),
+   and from from/to/days. If the row carries no rate, the person's Employees row
+   is used (wageType + wageAmount); the per-day wage typed in the form is the
+   app's own subWage column, kept for older Sheets. */
 function substitutePay(sub){
   const emp=DB.employees.find(e=>e.name===sub.empName);
   const days=Math.max(1,Number(sub.days)||dayCount(sub.from,sub.to||sub.from));
-  const subWage=Number(sub.subWage||0);
-  const useSub=subWage>0;
-  const wage=useSub?subWage:Number((emp&&emp.wageAmount)||0);
-  const wt=useSub?'daily':((emp&&emp.wageType)||'');
+  const rowAmount=Number(sub.wageAmount||sub.subWage||0);
+  const rowType=String(sub.wageType||'').trim();
+  const empAmount=Number((emp&&emp.wageAmount)||0);
+  let wage=0,wt='',source='';
+  if(rowAmount>0){wage=rowAmount;wt=rowType||'daily';source=' — rate saved on this substitute row';}
+  else if(empAmount>0){wage=empAmount;wt=String((emp&&emp.wageType)||'');source=' — from the Employees row';}
   if(!wage||!wt)return {emp,days,pay:null,rule:''};
   if(wt==='daily'){
-    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')+(useSub?' (rate entered for this substitute)':'')};
+    return {emp,days,pay:Math.round(wage*days),rule:'₹'+wage.toLocaleString('en-IN')+' / day × '+days+' day'+(days===1?'':'s')+source};
   }
   const counts=splitAcrossMonths(sub.from,sub.to||sub.from,days);
   let pay=0;const parts=[];
@@ -1931,7 +1945,7 @@ function substitutePay(sub){
     const p=Math.round(wage/daysInMonth(ym)*counts[ym]);
     pay+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+counts[ym]+' day'+(counts[ym]===1?'':'s'));
   });
-  return {emp,days,pay,rule:parts.join(' + ')};
+  return {emp,days,pay,rule:parts.join(' + ')+source};
 }
 /* Employee goes ON LEAVE — only the start date (+ time for 24-hr duty) is needed.
    The leave stays open until "Join duty" sets the end. A substitute typed in the
@@ -1943,7 +1957,8 @@ function saveLeaveStart(){
   if(open){flash('lMsg',name+' is already on leave since '+open.from+(open.fromTime?' '+open.fromTime:'')+' — press "Join duty" for them first.',false);return;}
   const emp=DB.employees.find(e=>e.name===name);
   const rec={id:uid(),empName:name,type:'leave',from,fromTime,to:'',toTime:'',days:'',
-    client:(emp&&emp.client)||'',savedAt:new Date().toLocaleString()};
+    client:(emp&&emp.client)||'',notes:val('lNote'),
+    savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   /* optional substitute typed in the same form — saved together with the leave */
@@ -1954,14 +1969,18 @@ function saveLeaveStart(){
     flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Substitute skipped — same person.');
   }else if(subName){
     const ft=fromTime?(val('lvSubTime')||fromTime):'';
+    const typedWage=Number(val('lvSubWage'))>0?val('lvSubWage'):'';
     const srec={id:uid(),empName:subName,type:'substitute',forEmp:name,from,to:'',fromTime:ft,toTime:'',
-      days:'',byShifts:ft?true:'',subWage:Number(val('lvSubWage'))>0?val('lvSubWage'):'',client:rec.client||'',savedAt:new Date().toLocaleString()};
+      days:'',byShifts:ft?true:'',subWage:typedWage,
+      wageType:typedWage?'daily':String((subEmp&&subEmp.wageType)||''),
+      wageAmount:typedWage||String((subEmp&&subEmp.wageAmount)||''),
+      client:rec.client||'',savedAt:new Date().toLocaleString()};
     DB.dutyLeave.push(srec);persist();sendRecord('DutyLeave',srec);
     flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+' — 🤝 '+subName+' saved as substitute.');
   }else{
     flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Days will be counted when they join duty.');
   }
-  clear('lvSubName','lvSubWage','lvSubTime');
+  clear('lvSubName','lvSubWage','lvSubTime','lNote');
   document.getElementById('lvSubHint').innerHTML='';
   document.getElementById('lvPrev').innerHTML='';
   document.getElementById('lBtn').textContent='✔ Employee is on leave';
@@ -2140,16 +2159,21 @@ function onClientNameChange(){
     }
   }
 }
+/* The agreed monthly deal for a client: the newest dealAmount in ClientReceipts,
+   else the clientDeal saved on that client's Employees row. */
 function lastDealForClient(client){
+  const fromReceipts=receiptFieldForClient(client,'dealAmount');
+  if(fromReceipts)return fromReceipts;
   const key=String(client||'').trim().toLowerCase();
   if(!key)return '';
-  let best='';
-  DB.receipts.forEach(r=>{
-    if(String(r.client||'').trim().toLowerCase()===key && r.dealAmount && Number(r.dealAmount)>0){
-      if(!best || String(r.date||'')>String(best.date||''))best=r.dealAmount;
-    }
+  let best=null;
+  DB.employees.forEach(e=>{
+    if(String(e.client||'').trim().toLowerCase()!==key)return;
+    if(!(Number(e.clientDeal||0)>0))return;
+    const d=String(e.clientDutyStartDate||e.joinDate||'');
+    if(!best||d>=String(best.date||''))best={date:d,value:e.clientDeal};
   });
-  return best;
+  return best?best.value:'';
 }
 /* Live invoice preview — auto-fills from the payment form; only client name & address are editable */
 function updateInvoicePreview(force){
@@ -2330,10 +2354,49 @@ function onPaymentEmpChange(){
   document.getElementById('pFrom').value=salaryFromDate(name,emp);
   document.getElementById('pTo').value=todayStr();
 }
+/* Duty/leave days and the money position of one employee over a period — the same
+   rules as the Salary Calculator, read from the columns: Employees.wageType /
+   wageAmount, DutyLeave.type / from / to / days, EmployeePayments.amount. */
+function salarySummaryFor(name,from,to){
+  const emp=DB.employees.find(e=>e.name===name)||null;
+  const wage=Number((emp&&emp.wageAmount)||0),wt=String((emp&&emp.wageType)||'');
+  const dutySet=new Set(),leaveSet=new Set();
+  DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute'||r.type==='leave')&&overlaps(r,from,to))
+    .forEach(r=>{(recordDates(r,from,to)||new Set()).forEach(d=>{(r.type==='leave'?leaveSet:dutySet).add(d);});});
+  let windowTxt='';
+  if(!dutySet.size){
+    /* same rule as the Salary Calculator: duty window from the columns */
+    const ws=dutyWindowStart(name,emp,from,to),we=dutyWindowEnd(name,emp,to);
+    if(ws&&ws<=we){
+      for(let d=ws;d<=we;d=addDaysStr(d,1))dutySet.add(d);
+      if(ws>from||we<to)windowTxt=' (duty '+ws+' → '+we+')';
+    }
+  }
+  leaveSet.forEach(d=>dutySet.delete(d));
+  const dutyPerMonth=groupByMonth(dutySet),dutyDays=dutySet.size,leaveDays=leaveSet.size;
+  let salary=0;const parts=[];
+  Object.keys(dutyPerMonth).sort().forEach(ym=>{
+    if(wt==='monthly'){const p=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+dutyPerMonth[ym]);}
+    else if(wt==='daily'){const p=Math.round(wage*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' × '+dutyPerMonth[ym]);}
+  });
+  const paid=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
+  return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,rule:parts.join(' + '),windowTxt};
+}
 function savePayment(){
   const rec={id:uid(),empName:val('pEmpSel'),date:todayStr(),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),periodFrom:val('pFrom'),periodTo:val('pTo'),savedAt:new Date().toLocaleString()};
   if(rec.periodFrom&&rec.periodTo&&rec.periodFrom>rec.periodTo){flash('pMsg','Salary period From date must be before the To date.',false);return;}
   if(!anyFilled([rec.empName,rec.amount,rec.payType,rec.mode,rec.periodFrom,rec.periodTo])){flash('pMsg','Fill at least one field.',false);return;}
+  /* the Sheet has summary + balance columns — fill them from the same rules as the
+     Salary Calculator, so the tab explains itself without opening the app */
+  if(rec.empName&&rec.periodFrom&&rec.periodTo){
+    const sm=salarySummaryFor(rec.empName,rec.periodFrom,rec.periodTo);
+    const amt=Number(rec.amount||0),after=sm.bal-amt;
+    rec.summary='Duty '+sm.dutyDays+' day'+(sm.dutyDays===1?'':'s')+' • Leave '+sm.leaveDays+' day'+(sm.leaveDays===1?'':'s')
+      +'\nPeriod '+rec.periodFrom+' → '+rec.periodTo+sm.windowTxt
+      +(sm.wage?('\nSalary '+fmt(sm.salary)+(sm.rule?' ('+sm.rule+')':'')):'')
+      +'\nPaid '+fmt(sm.paid+amt)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'');
+    rec.balance=after;
+  }
   DB.payments.push(rec);persist();flash('pMsg','Employee payment saved.');
   sendRecord('EmployeePayments',rec);
   clear('pEmpSel','pFrom','pTo','pAmt','pType','pMode');renderAll();
@@ -2414,7 +2477,9 @@ function salaryFromDate(name,emp){
   const pays=DB.payments.filter(p=>p.empName===name&&p.date&&/salary/i.test(p.payType||''))
     .sort((a,b)=>String(b.date).localeCompare(String(a.date)));
   if(pays.length)return pays[0].date;             // existing employee → last salary paid
-  if(emp&&emp.joinDate)return emp.joinDate;       // new hire → joining date
+  /* duty started on the earlier of the joining date and the client duty start date */
+  const starts=[emp&&emp.joinDate,emp&&emp.clientDutyStartDate].filter(Boolean).sort();
+  if(starts.length)return starts[0];
   const first=DB.dutyLeave.filter(r=>r.empName===name&&r.from&&r.type!=='endEmployeeDuty'&&r.type!=='endClientDuty')
     .sort((a,b)=>String(a.from).localeCompare(String(b.from)))[0];
   if(first)return first.from;                     // substitute-only person → first recorded duty
@@ -2510,6 +2575,29 @@ function copySalaryMessage(){
   if(!lastSalary||!lastSalary.copyText){toast('Calculate salary first.');return;}
   copyText(lastSalary.copyText);
 }
+/* When must this employee's duty be counted from? The columns answer it:
+   joinDate and clientDutyStartDate on the Employees row (earlier one wins), or
+   the first duty/substitute row of that person. Clipped to the chosen period. */
+function dutyWindowStart(name,emp,from,to){
+  const list=[emp&&emp.joinDate,emp&&emp.clientDutyStartDate];
+  DB.dutyLeave.forEach(r=>{
+    if(r.empName===name&&r.from&&r.type!=='leave'&&r.type!=='endEmployeeDuty'&&r.type!=='endClientDuty')list.push(r.from);
+  });
+  const s=list.filter(Boolean).sort()[0]||'';
+  return s?(s>from?s:from):'';
+}
+/* When did it stop? The endEmployeeDuty row of that person, or the endClientDuty
+   row of the client they were posted at (the date lives in the \"to\" column). */
+function dutyWindowEnd(name,emp,to){
+  const key=String((emp&&emp.client)||'').trim().toLowerCase();
+  const list=[];
+  DB.dutyLeave.forEach(r=>{
+    if(r.empName===name&&r.type==='endEmployeeDuty')list.push(r.to||r.from);
+    if(key&&r.type==='endClientDuty'&&String(r.client||'').trim().toLowerCase()===key)list.push(r.to||r.from);
+  });
+  const e=list.filter(Boolean).sort().slice(-1)[0]||'';
+  return (e&&e<to)?e:to;
+}
 function calcSalary(){
   const name=val('sEmpSel'),from=val('sFrom'),to=val('sTo');
   const fromTime=val('sFromT'),toTime=val('sToT');
@@ -2526,12 +2614,19 @@ function calcSalary(){
   const rawDuty=new Set();dutyRecs.forEach(r=>recordDates(r,from,to).forEach(d=>rawDuty.add(d)));
   const leaveSet=new Set();leaveRecs.forEach(r=>recordDates(r,from,to).forEach(d=>leaveSet.add(d)));
   let assumed=false,joinNote='';
-  if(rawDuty.size===0&&document.getElementById('sAssumeFull').checked){
-    assumed=true;
-    let start=from;
-    const jd=emp?.joinDate||'';
-    if(jd&&jd>from&&jd<=to){start=jd;joinNote=` (counted from joining date ${jd})`;}
-    for(let d=start;d<=to;d=addDaysStr(d,1))rawDuty.add(d);
+  if(rawDuty.size===0){
+    /* No duty rows for this person → the duty window comes from the columns:
+       start = joining date / client duty start (whichever is earlier, or their
+       first duty record), end = the endEmployeeDuty / endClientDuty date. The
+       checkbox above widens the start to the whole period. */
+    const force=document.getElementById('sAssumeFull').checked;
+    const ws=force?from:dutyWindowStart(name,emp,from,to);
+    const we=dutyWindowEnd(name,emp,to);
+    if(ws&&ws<=we){
+      assumed=true;
+      for(let d=ws;d<=we;d=addDaysStr(d,1))rawDuty.add(d);
+      if(ws>from||we<to)joinNote=' (counted '+ws+' → '+we+')';
+    }
   }
   const dutySet=new Set(rawDuty);leaveSet.forEach(d=>dutySet.delete(d));
   let dutyDays,leaveDays,dutyPerMonth,leavePerMonth;
@@ -2550,10 +2645,14 @@ function calcSalary(){
   }
   if(dutyDays===0&&!assumed){
     const paidRange=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
+    const endedOn=dutyWindowEnd(name,emp,to);
+    const endRow=endedOn&&endedOn<from?endedOn:'';
     box.style.display='block';
-    box.innerHTML=`<b>${esc(name)}</b> — no duty days for this period, so salary = <b>₹0</b>.<br>
-      Tick the checkbox above to count the full period as duty, or use existing duty history loaded from the Google Sheet.`+
-      (paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
+    box.innerHTML=`<b>${esc(name)}</b> — no duty days for this period, so salary = <b>₹0</b>.<br>`
+      +(endRow
+        ?`Their duty <b>ended on ${esc(endRow)}</b> (the endEmployeeDuty row in Duty &amp; Leave), before this period started.`
+        :`Fill <b>joining date / client duty start date</b> in the Employees tab, or tick the checkbox above to count the whole period as duty.`)
+      +(paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
     return;
   }
   const wage=Number(emp?.wageAmount||0),wt=emp?.wageType||'';
@@ -2824,8 +2923,21 @@ function openPayInvoiceFromRecord(id){
 
 /* ================= CLIENT BILLING CALCULATOR ================= */
 let lastClientBill=null;
+/* When the client's duty started — the earliest clientDutyStartDate among that
+   client's Employees rows (the clientDutyStartDate column). */
+function clientDutyStartFor(client){
+  const key=String(client||'').trim().toLowerCase();
+  if(!key)return '';
+  let best='';
+  DB.employees.forEach(e=>{
+    if(String(e.client||'').trim().toLowerCase()!==key)return;
+    [e.clientDutyStartDate,e.joinDate].filter(Boolean).forEach(d=>{if(!best||String(d)<best)best=String(d);});
+  });
+  return best;
+}
 /* When a client is chosen in the billing calculator, auto-fill their monthly deal
-   amount from the most recent saved receipt (the agreed package rate). */
+   amount from the most recent saved receipt (the agreed package rate) and start the
+   bill on the day their duty started (clientDutyStartDate). */
 function onClientBillClientChange(){
   const client=val('cbClient');
   const dealEl=document.getElementById('cbDeal');
@@ -2834,7 +2946,7 @@ function onClientBillClientChange(){
     if(last)dealEl.value=last;
     else if(!dealEl.value)dealEl.value='';
   }
-  if(!val('cbFrom'))document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
+  document.getElementById('cbFrom').value=clientDutyStartFor(client)||todayStr().slice(0,8)+'01';
   if(!val('cbTo'))document.getElementById('cbTo').value=todayStr();
 }
 /* Per-month service days + pro-rata deal amount over [from,to].
@@ -2909,6 +3021,7 @@ function calcClientBill(){
   const allPays=DB.receipts.filter(isClient);
   const paidAll=allPays.reduce((s,p)=>s+Number(p.amount||0),0);
   const rangeLabel=from+(from!==to?' → '+to:'');
+  const cd=clientDutyStartFor(client);
   box.style.display='block';
   box.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
@@ -2917,7 +3030,7 @@ function calcClientBill(){
     </div>
     <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
       <b style="font-size:1.05rem;">${esc(client)}</b> — ${esc(rangeLabel)}<br>
-      Monthly deal: <b>${fmt(deal)}</b>
+      Monthly deal: <b>${fmt(deal)}</b>${cd?` &nbsp;•&nbsp; Duty started: <b>${esc(cd)}</b> <span style="color:var(--muted);font-size:.76rem;">(Employees row)</span>`:''}
     </div>
     ${breakdown}
     <span style="font-size:1.02rem;">Total bill: <b>${fmt(totalBill)}</b> &nbsp;•&nbsp; Received: <b class="pos">${fmt(totalPaid)}</b></span><br>
@@ -3029,13 +3142,24 @@ function isEmployeeEnded(e){
   return false;
 }
 function activeEmployees(){return DB.employees.filter(e=>e.name&&!isEmployeeEnded(e));}
+/* Reason for ending a duty — stored in the DutyLeave reason column (with the
+   matching text in notes), so the Sheet says why a duty ended. */
+function askEndReason(def){
+  let r='';
+  /* a blocked prompt (some in-app browsers) or a cancelled one simply keeps the
+     default text — the duty end itself was already confirmed by the user */
+  try{r=prompt('Reason for ending the duty?\n(written into the reason column of the DutyLeave tab)',def)||'';}catch(e){r='';}
+  return String(r).trim()||def;
+}
 function endEmployeeDuty(){
   const empName=val('cbEmpSel');
   if(!empName){toast('Choose an employee first to end their duty.');return;}
   const emp=DB.employees.find(e=>e.name===empName);
   const client=(emp&&emp.client)||val('cbClient')||'';
   if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime by deleting the "End employee duty" row in Duty & Leave records.'))return;
-  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,
+    reason:askEndReason('Assignment completed'),notes:'Employee duty ended',
+    savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   renderAll();toast('⏹ Employee duty ended — '+empName);
@@ -3046,7 +3170,9 @@ function endClientDuty(){
   const emps=DB.employees.filter(e=>e.client&&String(e.client).trim().toLowerCase()===client.trim().toLowerCase());
   const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name).join('\n• ')):'';
   if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" row in Duty & Leave records.'))return;
-  const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,
+    reason:askEndReason('Assignment completed'),notes:'Client service ended',
+    savedAt:new Date().toLocaleString()};
   DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   renderAll();toast('🛑 Client duty ended — '+client);
@@ -3138,7 +3264,9 @@ function dutyRow(r,list,withActions){
   const toTxt=open?'<span style="color:var(--red);font-weight:700;">on leave…</span>'
     :(subOpen?'<i style="color:var(--muted);">till join</i>':esc(r.to)||'');
   /* substitute info lives in the TYPE column: badge + "for <employee>" */
-  const typeTxt=dutyTypeBadge(r)+(r.forEmp?`<div style="font-size:.7rem;color:#7c3aed;margin-top:3px;font-weight:600;">for ${esc(r.forEmp)}</div>`:'');
+  const noteTxt=(r.reason||r.notes)
+    ?`<div style="font-size:.72rem;color:var(--muted);margin-top:3px;">${esc(r.reason||'')}${r.reason&&r.notes?' — ':''}${esc(r.notes||'')}</div>`:'';
+  const typeTxt=dutyTypeBadge(r)+(r.forEmp?`<div style="font-size:.7rem;color:#7c3aed;margin-top:3px;font-weight:600;">for ${esc(r.forEmp)}</div>`:'')+noteTxt;
   const joinBtn=(withActions&&open)?`<button class="miniBtn green" onclick="openJoinDuty('${r.id}')" title="Close this leave — employee is back">🤝 Join duty</button> `:'';
   return `<tr><td>${esc(r.empName)||'—'}</td><td>${typeTxt}</td>
     <td>${esc(r.from)||''}${r.fromTime?' '+esc(r.fromTime):''}</td><td>${toTxt}${(!open&&r.toTime)?' '+esc(r.toTime):''}</td><td>${days}</td><td>${esc(r.client||r.note)||''}</td>

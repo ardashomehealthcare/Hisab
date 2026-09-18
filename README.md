@@ -64,6 +64,29 @@ Where each value comes from:
 * Nothing is dropped while your Sheet is still in the older arrangement: the app also keeps filling the old `dutyShift` (Employees) and `byShifts` / `subWage` (DutyLeave) columns until the tabs are rewritten.
 * Amounts and dates are written as **plain text** (`RAW`), so nothing is re-typed by Google Sheets and what you entered is what comes back.
 
+### What every column drives
+
+The app calculates from the columns, so a row typed straight into the Sheet works the same as one entered in the app:
+
+| Column | What it decides |
+|---|---|
+| `Employees.wageType` + `wageAmount` | The salary rule: per-day = rate × duty days • monthly = wage ÷ days-in-month × duty days, summed across months |
+| `Employees.joinDate` + `clientDutyStartDate` | **When duty starts** — the earlier of the two. The salary's *From* date and the "count duty" window use it, and the client bill starts there |
+| `Employees.dutyHours` + `dutyTime` | 24-hour duty → days counted as 24-hr shifts (8 AM → next day 8 AM = 1 day) |
+| `Employees.client` • `clientDeal` • `clientPhone` | The client bill rate (deal), the client's WhatsApp number, and the *From* date of a client bill |
+| `DutyLeave.type` | `leave` • `substitute` • `endEmployeeDuty` • `endClientDuty` — the app's whole duty/leave state |
+| `DutyLeave.from` `fromTime` `to` `toTime` `days` | Day and shift counting; an empty `to` means the leave/substitute is still open. **Join duty** fills `to` + `days`; the substitute's duty is closed with the same dates and its salary is calculated at once |
+| `DutyLeave.forEmp` | Who the substitute is covering (and who is on leave) |
+| `DutyLeave.wageType` + `wageAmount` | The pay for **that** substitute duty: `daily` × days, or `monthly` pro-rata ÷ days-in-month. Empty → the person's Employees row is used |
+| `DutyLeave.reason` + `notes` | Why a duty ended (`Assignment completed` by default — the app asks) and the leave note; both are shown again in the app's records |
+| `endEmployeeDuty.to` / `endClientDuty.to` | **When duty stops** — the salary window closes on this date, so no salary accrues after it |
+| `EmployeePayments.amount` / `date` / `periodFrom` / `periodTo` | What has been paid, and over which period (the Salary Calculator picks up from the last paid date) |
+| `EmployeePayments.summary` / `balance` / `invoiceNo` | Written by the app: duty + leave days, the rule used, paid and balance left, plus the receipt number |
+| `ClientReceipts.amount` / `date` | Money received; the client bill and Profit/Loss count these per month |
+| `ClientReceipts.dealAmount` / `clientPhone` / `clientAddress` / `invoiceNo` | Saved with each receipt, and used to pre-fill the next invoice (deal, WhatsApp number, address) |
+| `Expenses.amount` / `date` | Counted in the monthly Profit/Loss for the partners |
+
+
 To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
 
 ### If Google refuses the sign-in — what each error means
