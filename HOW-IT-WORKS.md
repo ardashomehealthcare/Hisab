@@ -45,7 +45,7 @@ server — the rules below run in the browser each time the screen is drawn.
 |---|---|---|
 | `leave` | Employee is (or was) on leave. Empty `to` = still on leave. | Leave Entry |
 | `substitute` | Someone covers a person on leave. Empty `to` = still covering. `forEmp` = who is covered. | Leave Entry / On-leave card / Join duty |
-| `endEmployeeDuty` | That employee stopped working (`to` = last day) | ⏹ End employee duty |
+| `endEmployeeDuty` | That employee stopped working (`to` = last day) | ⏹ End employee duty (billing calculator, the per-employee ⏹ in the Employees table, or the End-client cascade) |
 | `endClientDuty` | The whole client posting stopped (`to` = last day) | 🛑 End client duty |
 
 App-only helpers (`dutyShift`, `byShifts`, `subWage`, `synced`) are kept in memory and are
@@ -127,8 +127,8 @@ On-leave card / join box:
 
 | Action | Writes | Effect |
 |---|---|---|
-| ⏹ End employee duty | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
-| 🛑 End client duty | `type:'endClientDuty'`, `to:<today>`, `client`, same `reason`/`notes` wording | The client and everyone posted there become inactive |
+| ⏹ End employee duty — billing-calculator button, or the small ⏹ on each employee's row in the Employees table | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
+| 🛑 End client duty | One `type:'endClientDuty'` row (`to:<today>`, `client`, same `reason`/`notes` wording) **plus one `endEmployeeDuty` row for every still-active employee posted with that client** — the same reason and end time lands on every row | The client becomes inactive and everyone posted there is ended together with it; employees already ended earlier are not touched again |
 | ↩ Re-activate (row button) | Deletes that end-duty row | They come back; the sheet is re-pushed |
 
 For a 24-hour employee the dialog first asks the reason and then the **time the duty ended**
