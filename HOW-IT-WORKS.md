@@ -45,7 +45,7 @@ server — the rules below run in the browser each time the screen is drawn.
 |---|---|---|
 | `leave` | Employee is (or was) on leave. Empty `to` = still on leave. | Leave Entry |
 | `substitute` | Someone covers a person on leave. Empty `to` = still covering. `forEmp` = who is covered. | Leave Entry / On-leave card / Join duty |
-| `endEmployeeDuty` | That employee stopped working (`to` = last day) | ⏹ End employee duty |
+| `endEmployeeDuty` | That employee stopped working (`to` = last day) | ⏹ End employee duty (billing calculator, the per-employee ⏹ in the Employees table, or the End-client cascade) |
 | `endClientDuty` | The whole client posting stopped (`to` = last day) | 🛑 End client duty |
 
 App-only helpers (`dutyShift`, `byShifts`, `subWage`, `synced`) are kept in memory and are
@@ -127,8 +127,8 @@ On-leave card / join box:
 
 | Action | Writes | Effect |
 |---|---|---|
-| ⏹ End employee duty | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
-| 🛑 End client duty | `type:'endClientDuty'`, `to:<today>`, `client`, same `reason`/`notes` wording | The client and everyone posted there become inactive |
+| ⏹ End employee duty — billing-calculator button, or the small ⏹ on each employee's row in the Employees table | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour. If their client is still active the app then offers to open the Add-employee form with the client, phone & deal **pre-filled for the replacement** |
+| 🛑 End client duty | One `type:'endClientDuty'` row (`to:<today>`, `client`, same `reason`/`notes` wording) **plus one `endEmployeeDuty` row for every still-active employee posted with that client** — the same reason and end time lands on every row | The client becomes inactive and everyone posted there is ended together with it; employees already ended earlier are not touched again |
 | ↩ Re-activate (row button) | Deletes that end-duty row | They come back; the sheet is re-pushed |
 
 For a 24-hour employee the dialog first asks the reason and then the **time the duty ended**
@@ -211,8 +211,9 @@ follows the hours instead of being rounded up to a whole day:
   remembered** from that client's newest receipt, so they only have to be typed once.
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
-* Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → the invoice image is saved
-  and the client's chat opens **directly on the client's number**. A number saved without the
+* Print / save as PDF; 📲 WhatsApp → the invoice is rendered to a PNG (html2canvas), the image is saved
+  and the client's chat opens **directly on the client's number**. (The PNG is produced only here —
+  there is no separate save-as-image button.) A number saved without the
   country code still opens the right chat — the app adds **91** (or the set `WA_DEFAULT_CC`)
   itself, because `wa.me` only accepts full international numbers. No number saved? The app asks
   for it once on the spot (typed numbers are remembered per client), or the share sheet / chooser
@@ -224,6 +225,22 @@ follows the hours instead of being rounded up to a whole day:
   columns from the same rules as the calculator.
 
 **Expense** → `expenses`. Each block has its own Submit and no compulsory field.
+
+---
+
+## 8a. Payment collection reminders (Dashboard)
+
+* The company collects from each client **every 15 days from the client's duty start**
+  (`clientDutyStartDate`, falling back to joining date).
+* The next collection due = the latest of *duty start*, *the last recorded payment for that
+  client*, *a cancelled due* **+ 15 days** — so recording the payment in Money Entry (or
+  cancelling once) moves the reminder to the next cycle by itself.
+* The Dashboard card shows the earliest open due per **active** client: **DUE TODAY**,
+  **OVERDUE — N days** (red), or **due in N days** when it is 3 or fewer days away. Ended
+  clients and clients with no duty start never appear.
+* **✕ Cancel reminder** stores that one due date in `hisabRemindDismiss` on the device —
+  the cycle after it (hidden due + 15 days) shows again on its own. Nothing syncs to the
+  Sheet; each partner's phone keeps its own dismissals.
 
 ---
 
@@ -345,6 +362,7 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 | `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
+| `hisabRemindDismiss` | cancelled payment-reminder due dates per client (this device only) |
 
 ---
 

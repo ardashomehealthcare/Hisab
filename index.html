@@ -66,6 +66,7 @@
   .miniBtn{border:none; border-radius:7px; padding:4px 10px; font-size:.72rem; font-weight:700; cursor:pointer; white-space:nowrap;}
   .miniBtn.green{background:var(--green); color:#fff;}
   .miniBtn.blue{background:var(--brand); color:#fff;}
+  .miniBtn.amber{background:var(--amber); color:#fff;}
 
   .grid{display:grid; gap:10px 12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));}
   .field label{display:block; font-size:.74rem; font-weight:700; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.4px;}
@@ -197,6 +198,11 @@
     <div class="stat"><div class="lbl">Paid out (this month)</div><div class="val neg" id="dOut">₹0</div></div>
     <div class="stat"><div class="lbl">Profit (this month)</div><div class="val" id="dPr">₹0</div></div>
     <div class="stat"><div class="lbl">Each partner share</div><div class="val" id="dSh">₹0</div></div>
+  </div>
+  <div class="card" id="remindCard" style="display:none;">
+    <h2>⏰ Payment collection reminders <span class="badge amber">every 15 days</span></h2>
+    <div class="hint">Each client's collection is due every <b>15 days from their duty start</b>; recording the payment in Money Entry moves the reminder to the next cycle by itself. <b>✕ Cancel reminder</b> hides that one cycle only — it returns for the next cycle automatically.</div>
+    <div id="remindList"></div>
   </div>
   <div class="card">
     <h2>Recent entries</h2>
@@ -365,7 +371,6 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
-      <button class="btn amber" onclick="saveInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="shareInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closeInvoice()">✕ Close preview</button>
     </div>
@@ -490,7 +495,6 @@
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
-      <button class="btn amber" onclick="savePayInvoiceImage()">🖼 Save as image</button>
       <button class="btn green" onclick="sharePayInvoiceWhatsApp()">📲 Send on WhatsApp</button>
       <button class="btn ghost" onclick="closePayInvoice()">✕ Close preview</button>
     </div>
@@ -2314,24 +2318,8 @@ function downloadBlob(blob,filename){
   a.href=URL.createObjectURL(blob);a.download=filename;a.click();
   setTimeout(()=>{try{URL.revokeObjectURL(a.href);}catch(e){}},5000);
 }
-/* 🖼 Save as image */
-async function saveNodeImage(nodeId,filename){
-  let blob;
-  try{blob=await renderNodeToBlob(nodeId);}
-  catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
-  downloadBlob(blob,filename);
-  toast('🖼 Image saved: '+filename);
-}
-function saveInvoiceImage(){
-  if(document.getElementById('invoiceCard').style.display==='none'){toast('Generate the invoice first (🧾 Generate invoice).');return;}
-  const no=String(document.getElementById('invNo').textContent).replace(/[^A-Za-z0-9-]/g,'');
-  saveNodeImage('invoicePrintArea','Invoice-'+no+'.png');
-}
-function savePayInvoiceImage(){
-  if(!payInvData||document.getElementById('payInvCard').style.display==='none'){toast('Generate the payment receipt first.');return;}
-  const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
-  saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
-}
+/* 🖼 The invoice / receipt image is produced only inside 📲 Send on WhatsApp
+   (there is no separate save-as-image button). */
 /* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
    WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
    the message already typed (wa.me/<number>). Without a saved number the app
@@ -3379,33 +3367,72 @@ function askEndTime(empNames){
   if(h>23||Number(mi)>59)return '';
   return String(h).padStart(2,'0')+':'+mi;
 }
-function endEmployeeDuty(){
-  const empName=val('cbEmpSel');
+/* One "End employee duty" row — shared by the ⏹ button (billing calculator),
+   the per-employee ⏹ button in the Employees table, and the End-client cascade. */
+function writeEndEmployeeDutyRow(empName,client,reason,toTime){
+  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client||'',
+    reason:reason,notes:'Employee duty ended',toTime:toTime||'',
+    savedAt:new Date().toLocaleString()};
+  DB.dutyLeave.push(rec);
+  sendRecord('DutyLeave',rec);
+  return rec;
+}
+/* End ONE employee's duty. Called from the billing-calculator button (uses the
+   employee picked there) and from the per-employee ⏹ in the Employees table. */
+function endEmployeeDuty(empName){
+  empName=empName||val('cbEmpSel');
   if(!empName){toast('Choose an employee first to end their duty.');return;}
   const emp=DB.employees.find(e=>e.name===empName);
   const client=(emp&&emp.client)||val('cbClient')||'';
-  if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime by deleting the "End employee duty" row in Duty & Leave records.'))return;
-  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,
-    reason:askEndReason('Assignment completed'),notes:'Employee duty ended',
-    toTime:askEndTime(empName),
-    savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
-  sendRecord('DutyLeave',rec);
+  if(emp&&isEmployeeEnded(emp)){toast('That employee\'s duty is already ended — use ↩ in the Employees tab to bring them back.');return;}
+  if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime with ↩ in the Employees tab, or by deleting the "End employee duty" row in Duty & Leave records.'))return;
+  writeEndEmployeeDutyRow(empName,client,askEndReason('Assignment completed'),askEndTime(empName));
+  persist();
   renderAll();toast('⏹ Employee duty ended — '+empName);
+  maybeOfferReplacement(empName,client);
 }
+/* The employee ended but their client is still running → offer to open the
+   Add-employee form with that client (phone & deal) already filled in, so the
+   replacement is "type a name and wage, ✔ Submit". */
+function maybeOfferReplacement(empName,client){
+  if(!client||isClientEnded(client))return;
+  if(!confirm(empName+'\'s duty at "'+client+'" is ended.\n\nAssign a replacement to "'+client+'" now?'))return;
+  showTab('emp');
+  clear('eName','ePhone','eWage','eJoin','eTime','eClientStart');
+  const set=(id,v)=>{const n=document.getElementById(id);if(n)n.value=v;};
+  set('eClient',client);
+  prefillClientExtras();
+  toggleDutyField();
+  const box=document.querySelector('#tab-emp .card');
+  if(box&&box.scrollIntoView)box.scrollIntoView({block:'start',behavior:'smooth'});
+  flash('eMsg','👤 Replacement for '+esc(client)+' — client, phone & deal are pre-filled. Type the new name and wage, then ✔ Submit employee.',true);
+  const nm=document.getElementById('eName');if(nm&&nm.focus)nm.focus();
+}
+function endEmployeeDutyById(id){
+  const e=DB.employees.find(x=>x.id===id);
+  if(e)endEmployeeDuty(e.name);
+}
+/* End a client's service — the client AND every still-active employee posted
+   there are ended together (one "End client duty" row + one "End employee duty"
+   row per employee — the same pairs the books already carry). */
 function endClientDuty(){
   const client=val('cbClient');
   if(!client){toast('Choose a client first to end their duty.');return;}
+  if(isClientEnded(client)){toast('That client\'s duty is already ended.');return;}
   const emps=DB.employees.filter(e=>e.client&&String(e.client).trim().toLowerCase()===client.trim().toLowerCase());
-  const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name).join('\n• ')):'';
-  if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" row in Duty & Leave records.'))return;
+  const active=emps.filter(e=>!isEmployeeEnded(e));
+  const extra=active.length?('\n\nThis also ends duty for:\n• '+active.map(e=>e.name).join('\n• ')):'\n\n(No active employees with this client.)';
+  if(!confirm('End duty for client "'+client+'" as of today? The client AND the employees listed are ended together — one reason and end time applies to all. Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" / "End employee duty" rows in Duty & Leave records.'))return;
+  const reason=askEndReason('Assignment completed');
+  const toTime=askEndTime(active.map(e=>e.name).join('|')||emps.map(e=>e.name).join('|'));
   const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,
-    reason:askEndReason('Assignment completed'),notes:'Client service ended',
-    toTime:askEndTime(emps.map(e=>e.name).join('|')),
+    reason:reason,notes:'Client service ended',toTime:toTime,
     savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
+  DB.dutyLeave.push(rec);
   sendRecord('DutyLeave',rec);
-  renderAll();toast('🛑 Client duty ended — '+client);
+  active.forEach(e=>writeEndEmployeeDutyRow(e.name,e.client||client,reason,toTime));
+  persist();
+  renderAll();toast('🛑 Client duty ended — '+client+(active.length?' (+ '+active.length+' employee'+(active.length===1?'':'s')+' ended)':''));
 }
 function reactivateEmployee(id){
   const e=DB.employees.find(x=>x.id===id);
@@ -3491,7 +3518,7 @@ function renderEmployees(){
     tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
       <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}${e.clientDeal?' <span style="color:var(--muted);">₹'+esc(String(e.clientDeal))+'</span>':''}${e.clientPhone?'<br><span style="color:var(--muted);font-size:.76rem;">📞 '+esc(e.clientPhone)+'</span>':''}</td>
-      <td style="white-space:nowrap;"><button class="del" style="color:var(--brand-dark);" onclick="editEmployee('${e.id}')" title="Edit this employee">✎</button> ${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
+      <td style="white-space:nowrap;">${ended?'':`<button class="miniBtn amber" onclick="endEmployeeDutyById('${e.id}')" title="End this employee's duty — records kept, bring back with ↩ anytime">⏹ End duty</button> `}<button class="del" style="color:var(--brand-dark);" onclick="editEmployee('${e.id}')" title="Edit this employee">✎</button> ${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }
@@ -3566,6 +3593,78 @@ function renderRecords(){
   document.querySelector('#recExpenses tbody').innerHTML=DB.expenses.filter(okM).slice().reverse().map(r=>
     `<tr><td>${esc(r.date)}</td><td>${esc(r.item)}</td><td class="right money">${r.amount?fmt(r.amount):''}</td><td><button class="del" onclick="delRec('expenses','${r.id}')">✕</button></td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">Nothing here.</td></tr>';
 }
+/* ================= 15-DAY PAYMENT COLLECTION REMINDERS ================= */
+/* The company collects from each client every 15 days, counted from the client's
+   duty start. The next collection is due 15 days after the latest of: duty start,
+   the last recorded payment, or a hidden (cancelled) due. So recording the payment
+   — or cancelling once — moves the reminder to the next cycle by itself, and a
+   cancelled cycle comes back automatically 15 days later. Dismissals are kept on
+   this device only; ended clients never remind. */
+const REMIND_CYCLE_DAYS=15, REMIND_SOON_DAYS=3;
+function addDaysNum(d,n){const dt=new Date(d+'T00:00:00');if(isNaN(dt))return '';dt.setDate(dt.getDate()+n);return dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0')+'-'+String(dt.getDate()).padStart(2,'0');}
+function daysDiff(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
+function activeClientNames(){
+  const out=new Set();
+  DB.employees.forEach(e=>{const c=String(e.client||'').trim();if(c&&!isClientEnded(c))out.add(c);});
+  DB.receipts.forEach(r=>{const c=String(r.client||'').trim();if(c&&!isClientEnded(c))out.add(c);});
+  DB.dutyLeave.forEach(r=>{const c=String(r.client||'').trim();if(c&&r.type!=='endClientDuty'&&!isClientEnded(c))out.add(c);});
+  return [...out];
+}
+function remindDismissMap(){try{return JSON.parse(localStorage.getItem('hisabRemindDismiss')||'{}');}catch(e){return {};}}
+/* What, if anything, should be shown for one client right now. */
+function paymentReminderFor(client){
+  if(isClientEnded(client))return null;
+  const start=clientDutyStartFor(client);
+  if(!start)return null;
+  const key=String(client).trim().toLowerCase();
+  let base=start;
+  DB.receipts.forEach(r=>{
+    if(String(r.client||'').trim().toLowerCase()!==key||!r.date)return;
+    if(String(r.date)>base)base=String(r.date);
+  });
+  const dismissed=remindDismissMap()[key];
+  if(Array.isArray(dismissed))dismissed.forEach(d=>{if(d&&String(d)>base)base=String(d);});
+  const due=addDaysNum(base,REMIND_CYCLE_DAYS);
+  if(!due)return null;
+  const t=todayStr();
+  if(due>t){
+    const inDays=daysDiff(t,due);
+    if(inDays<=REMIND_SOON_DAYS)return {client,start,due,state:'soon',days:inDays};
+    return null;
+  }
+  const over=daysDiff(due,t);
+  return {client,start,due,state:over>0?'overdue':'due',days:over};
+}
+let lastReminders=[];
+function renderReminders(){
+  const card=document.getElementById('remindCard'),list=document.getElementById('remindList');
+  if(!card||!list)return;
+  lastReminders=activeClientNames().map(paymentReminderFor).filter(Boolean)
+    .sort((a,b)=>(a.state==='soon'?1:0)-(b.state==='soon'?1:0)||b.days-a.days||String(a.due).localeCompare(String(b.due)));
+  if(!lastReminders.length){card.style.display='none';return;}
+  card.style.display='';
+  list.innerHTML=lastReminders.map((r,i)=>{
+    const when=r.state==='overdue'
+      ?'<span class="badge red">OVERDUE — '+r.days+' day'+(r.days===1?'':'s')+'</span>'
+      :(r.state==='due'
+        ?'<span class="badge amber">DUE TODAY</span>'
+        :'<span class="badge blue">due in '+r.days+' day'+(r.days===1?'':'s')+'</span>');
+    return '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 0;border-bottom:1px solid var(--soft);">'
+      +'<div style="flex:1;min-width:180px;"><b>'+esc(r.client)+'</b> <span style="color:var(--muted);font-size:.78rem;">duty from '+esc(r.start)+' • collection due '+esc(r.due)+'</span> '+when+'</div>'
+      +'<button class="miniBtn amber" onclick="cancelReminderIdx('+i+')" title="Hide this cycle only — it returns for the next cycle">✕ Cancel reminder</button>'
+      +'</div>';
+  }).join('');
+}
+function cancelReminderIdx(i){
+  const r=lastReminders[i];if(!r)return;
+  if(!confirm('Hide the payment reminder for "'+r.client+'" (due '+r.due+') until its next 15-day cycle?\n\nIt returns automatically for the next cycle.\n\nIf the payment was collected, record it in Money Entry instead — the reminder then moves ahead by itself.'))return;
+  const m=remindDismissMap(),k=String(r.client).trim().toLowerCase();
+  if(!Array.isArray(m[k]))m[k]=[];
+  if(!m[k].includes(r.due))m[k].push(r.due);
+  try{localStorage.setItem('hisabRemindDismiss',JSON.stringify(m));}catch(e){}
+  renderReminders();
+  toast('✕ Reminder hidden for '+r.client+' until the next cycle');
+}
 function renderDash(){
   const ym=todayStr().slice(0,7);
   const {inn,out,exp,profit}=plForMonth(ym);
@@ -3590,6 +3689,7 @@ function renderDash(){
   rows.sort((a,b)=>String(b.d).localeCompare(String(a.d)));
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
+  renderReminders();
 }
 function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();}
 
