@@ -63,15 +63,13 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
 
-### 📥 Add all data of a reference Sheet to this app's Sheet
+### The data of the reference Sheet, row for row, column for column
 
-Still have the data in **another** Google Sheet — the old / master Sheet? On the **Google Sheet** tab, open **“📥 Reference Sheet — add all its data to this app's Sheet”**, paste that Sheet's address and press the button:
-
-1. The app **reads** the reference Sheet's five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) — read-only, nothing in the reference Sheet is touched, and a tab it doesn't have counts as empty.
-2. Every row that is **not already saved** on the device is added — duplicates are skipped (employees by name, the rest by person/client + date + amount), so importing twice cannot double the books.
-3. 🔄 **Push app data to Sheet** then runs by itself, so the app's own Sheet ends up with **all** the reference-Sheet data — old rows plus the newly added ones, in the standard column order.
-
-Your Google account just needs to **open** the reference Sheet (Viewer is enough). The address is remembered on the device for next time.
+The records that ship with the app (`data/hisab-data.json`) **are the reference Sheet's data** —
+verified cell-for-cell against it: same rows, same order, same columns. On the **Google Sheet**
+tab, **🔄 Push app data to Sheet** writes exactly that into the app's own Sheet: the five tabs
+(Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) with the same column layout
+as the reference Sheet and the same rows in the same order, starting under row 1's headers.
 
 ### The Sheet layout — column for column
 

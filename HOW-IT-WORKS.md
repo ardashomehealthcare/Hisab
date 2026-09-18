@@ -295,19 +295,13 @@ replacing.
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
 
-### 📥 Reference Sheet → this app's Sheet
-On the Google Sheet tab, **“Reference Sheet — add all its data to this app's Sheet”**: paste the
-other Sheet's address (the old / master Sheet) and press the button.
-
-1. The reference Sheet's tabs are listed (`sheets.properties.title`) and the five Hisab tabs it
-   actually has are read with one `values:batchGet` — **read-only**, nothing is created or changed
-   there, and a tab it does not have counts as empty (a note says which).
-2. The rows are merged into the device with the §13 rules — duplicates skipped, rows without a
-   person/client to identify them ignored, nothing deleted.
-3. 🔄 **Push app data to Sheet** runs by itself, so the app's own Sheet ends up with **all** the
-   reference data (old + new). If that write fails, the merged rows stay safely on the device,
-   marked unsent.
-4. The reference address is remembered on the device (`hisabRefSheetId`) so it can be reused.
+### The reference Sheet's data, row for row
+`data/hisab-data.json` matches the reference Sheet cell-for-cell — same rows, same order, same
+columns (verified by a parity test against the Sheet's own CSV). 🔄 **Push app data to Sheet**
+writes exactly those rows into the app's own Sheet: headers in §2's arrangement (the reference
+Sheet's arrangement), the same rows underneath in the same order. One cell that Google Sheets
+displays as a date (Simranjeet Kaur's `clientDeal`) is really the number 30000 — the app writes
+it back as plain text `30000`, which also fixes the display.
 
 ---
 
@@ -338,7 +332,6 @@ credentials — and it is **not** a second data source: once loaded it lives in 
 | `hisabClientId` | Client ID typed on this device (overrides `config.js`) |
 | `hisabSheetId` | Sheet ID typed on this device (overrides `config.js`) |
 | `hisabSyncedSheetId` | which Sheet this device last synced with |
-| `hisabRefSheetId` | the reference Sheet address (for 📥 add-all-its-data) |
 | `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |

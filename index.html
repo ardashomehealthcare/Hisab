@@ -606,23 +606,6 @@
         </div>
       </div>
     </details>
-    <details class="setupBox" id="gRefSheetBox">
-      <summary>📥 Reference Sheet — add all its data to this app's Sheet <span class="tag" id="refTag"></span></summary>
-      <div class="boxBody">
-        <div class="hint" style="margin-bottom:10px;">Paste the <b>reference Sheet</b> — the other Sheet whose data you want (the old / master Sheet). Hisab reads its five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses), adds every row that is not already saved on this device, and then writes the combined data into <b>this app's own Sheet</b> (the one in “Google Sheet to write into” above). The reference Sheet itself is only read — nothing in it is changed.</div>
-        <div class="field" style="max-width:680px;">
-          <label>Reference Sheet ID — or paste the whole Sheet address</label>
-          <input id="refSheetId" placeholder="https://docs.google.com/spreadsheets/d/…/edit" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="refSheetTyped()">
-          <div class="hint" id="refHint"></div>
-        </div>
-        <div class="actions">
-          <button class="btn green sm" onclick="importRefSheet()">📥 Add all reference-Sheet data to my Sheet</button>
-          <button class="btn ghost sm" onclick="clearRefSheet()">↩ Clear the reference Sheet</button>
-          <span class="msg" id="refMsg"></span>
-        </div>
-        <div class="hint" style="margin-top:8px;">Your Google account must be able to <b>open</b> the reference Sheet (Viewer is enough). Rows already on this device are skipped — importing twice cannot double the books.</div>
-      </div>
-    </details>
     <div class="actions">
       <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
@@ -1061,102 +1044,6 @@ function resetSheetId(){
   const inp=document.getElementById('sheetId');if(inp)inp.value=FILE_SHEET_ID||'';
   renderSheetIdBox();updateSheetStatus();
   flash('shMsg',FILE_SHEET_ID?'✅ Back to the Sheet in config.js.':'config.js has no Sheet ID yet — paste one in the box above.',!!FILE_SHEET_ID);
-}
-
-/* ================= REFERENCE SHEET → this app's Sheet =================
-   One tap copies ALL data of another Google Sheet (the reference) into the app:
-   its five tabs are read (read-only), every row not already on this device is
-   added (duplicates skipped), and everything is then written into the app's own
-   Sheet — the one in “Google Sheet to write into”. The reference Sheet itself
-   is never changed. */
-const REF_KEY='hisabRefSheetId';
-function getRefSheetId(){return regSheetId(storeItem(REF_KEY));}
-function refSheetTyped(){
-  const inp=document.getElementById('refSheetId'),raw=inp?inp.value.trim():'',v=checkSheetRef(raw),hint=document.getElementById('refHint');
-  if(hint)hint.innerHTML=raw?esc(v.msg):esc('Paste the reference Sheet’s address (or just its ID) — its data is copied into this app’s Sheet.');
-}
-function clearRefSheet(){
-  setStoreItem(REF_KEY,'');renderRefSheetBox();
-  flash('refMsg','Reference Sheet cleared — nothing was read or written.',true);
-}
-function renderRefSheetBox(){
-  const id=getRefSheetId(),inp=document.getElementById('refSheetId'),tag=document.getElementById('refTag');
-  if(inp&&document.activeElement!==inp)inp.value=id;
-  if(tag){tag.textContent=id?'saved on this device':'not set';tag.className='tag '+(id?'ok':'');}
-}
-/* Read the reference Sheet: only the five Hisab tabs it actually has (a tab it
-   does not have counts as empty — nothing is created in the reference Sheet). */
-async function fetchRefSheetData(id){
-  const meta=await sheetJSON(GS_API+id+'?fields=sheets.properties.title');
-  const have=new Set((meta.sheets||[]).map(s=>s.properties&&s.properties.title));
-  const present=TABS.filter(t=>have.has(t)),absent=TABS.filter(t=>!have.has(t));
-  if(!present.length)throw new Error('this Sheet has none of the five Hisab tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) — is that the right Sheet?');
-  const url=GS_API+id+'/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&'+present.map(t=>'ranges='+encodeURIComponent(t)).join('&');
-  const j=await sheetJSON(url);
-  const out={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
-  const oldArrangement=[];
-  present.forEach((sheet,i)=>{
-    const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
-    const headers=(rows[0]||[]).map(v=>String(v??'').trim());
-    while(headers.length&&headers[headers.length-1]==='')headers.pop();
-    if(missingSheetCols(sheet,headers).length)oldArrangement.push(sheet);
-    out[TAB_TO_DB[sheet]]=rows.slice(1)
-      .filter(row=>row.some(v=>String(v??'').trim()!==''))
-      .map(row=>sheetRowToRec(sheet,row,headers));
-  });
-  out._notes=[];
-  if(absent.length)out._notes.push('not found in the reference Sheet (treated as empty): '+absent.join(', '));
-  if(oldArrangement.length)out._notes.push('older column arrangement, read correctly by name: '+oldArrangement.join(', '));
-  return out;
-}
-async function importRefSheet(){
-  const inp=document.getElementById('refSheetId');
-  const raw=inp?inp.value.trim():'';
-  let id=getRefSheetId();
-  if(raw){
-    const v=checkSheetRef(raw);
-    if(!v.ok){showSetupAlert(sheetProblem(v));return;}
-    id=regSheetId(raw);
-  }
-  if(!id){flash('refMsg','Paste the reference Sheet’s address first.',false);return;}
-  setStoreItem(REF_KEY,id);renderRefSheetBox();
-  if(id===String(getSheetId()||'')){flash('refMsg','That is this app’s own Sheet — paste the reference (the other) Sheet here.',false);return;}
-  if(!getClientId()){flash('refMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
-  flash('refMsg','Reading the reference Sheet…');
-  try{
-    /* the press IS the user gesture — sign-in opens first if needed */
-    await getAccessToken(true);
-    const data=await fetchRefSheetData(id);
-    const {counts,fresh}=includedCounts(data);
-    const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
-    const lines=DB_TABS.map(([k])=>DB_LABEL[k]+': '+counts[k]+' row'+(counts[k]===1?'':'s')+(fresh[k]!==counts[k]?' ('+fresh[k]+' new)':'')).join('\n');
-    const notes=(data._notes||[]).length?('\n\nNote: '+data._notes.join('\n')):'';
-    let go;
-    if(!totalNew){
-      go=confirm('Everything in the reference Sheet is already on this device:\n\n'+lines+notes
-        +'\n\nWrite everything saved on this device into your Sheet anyway?\n'+sheetLink(getSheetId()));
-    }else{
-      go=confirm('Add the reference Sheet’s records to this device?\n\n'+lines+notes
-        +'\n\nDuplicates are skipped and nothing is deleted.\n\nThen EVERYTHING on this device (old + new) is written into your own Sheet:\n'+sheetLink(getSheetId())
-        +'\n\nThe reference Sheet itself is not changed.');
-    }
-    if(!go){flash('refMsg','Cancelled — nothing was added or written.',false);return;}
-    const {added,total}=mergeIncludedData(data);
-    const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ')||'nothing new';
-    flash('refMsg','✅ Reference Sheet read ('+sum+') — now writing everything into your Sheet…');
-    const pushed=await syncAll();
-    if(pushed){
-      flash('refMsg','✅ Done — your Sheet now has all the reference-Sheet data'+(totalNew?' (+'+totalNew+' new row'+(totalNew===1?'':'s')+' added)':' (everything was already here)')+'.',true);
-      toast('✅ Reference-Sheet data is now in your Google Sheet.');
-    }else{
-      flash('refMsg','⚠ The reference data was added on this device ('+sum+'), but writing to your Sheet failed — the fix is shown above, then press 🔄 Push app data to Sheet.',false);
-    }
-  }catch(e){
-    const explained=reportProblem(e,true);
-    flash('refMsg',explained?'❌ Could not read the reference Sheet — the fix is shown above.':'❌ Could not read the reference Sheet: '+((e&&e.message)||e),false);
-    toast('❌ Reference Sheet not read — nothing was changed.');
-  }
-  renderRefSheetBox();
 }
 
 /* A phone can keep serving an OLD cached copy of config.js, and then the app
@@ -3815,7 +3702,7 @@ document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
-updateSheetStatus();renderAll();renderRefSheetBox();
+updateSheetStatus();renderAll();
 autoLoadIncludedDataOnce();
 autoLoadFromSheet();
 if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
