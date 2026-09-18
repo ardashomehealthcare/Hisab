@@ -35,6 +35,6 @@
    has to fetch the new copy.
    ============================================================ */
 
-window.HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
+window.HISAB_SPREADSHEET_ID = '1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE';
 
 window.HISAB_GOOGLE_CLIENT_ID = '663319983266-4i2dv5t5m2jli2h2lrklch4ji0319il3.apps.googleusercontent.com';

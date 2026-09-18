@@ -23,7 +23,7 @@ Host it anywhere — GitHub Pages works great (sign-in with Google needs a prope
 
 The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no shared URL to hand out, nothing to host, and no "Anyone with the link" access. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
 
-The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs.
+The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE'` — your existing sheet, existing data, existing tabs.
 
 ### One-time setup (admin, in Google Cloud Console)
 
@@ -39,6 +39,25 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
+
+### The Sheet layout — column for column
+
+The app writes each row **into the columns the Sheet already has**, in this exact order, and reads the Sheet's own header row every time it loads (so data keeps landing in the right column even if a column is inserted or moved). If the Sheet is missing a column the app needs, the app says so instead of shifting values.
+
+| Tab | Columns (A → …) |
+|---|---|
+| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` |
+| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` |
+| **EmployeePayments** | `id` • `empName` • `date` • `amount` • `payType` • `mode` • `savedAt` • `periodFrom` • `periodTo` • `invoiceNo` • `summary` • `balance` |
+| **ClientReceipts** | `id` • `client` • `clientPhone` • `date` • `amount` • `empName` • `mode` • `savedAt` • `clientAddress` • `invoiceNo` • `dealAmount` |
+| **Expenses** | `id` • `item` • `date` • `amount` • `savedAt` |
+
+Where each value comes from:
+
+* **Employees** — the last three client boxes of the *Add employee* form are the Sheet's `clientDutyStartDate`, `clientPhone` and `clientDeal` columns. Typing a client name fills the phone and the deal automatically from Money Entry (the client's last receipt); press **✎** on any row to edit it later.
+* **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries `Assignment completed` in `reason` plus `Employee duty ended` / `Client service ended` in `notes`.
+* **12-hour duty has no day/night column in the Sheet** — the ☀️ day / 🌙 night choice travels in `dutyTime` (that column only holds a start time for 24-hour duty), and comes back as day/night duty on every device.
+* Amounts and dates are written as **plain text** (`RAW`), so nothing is re-typed by Google Sheets and what you entered is what comes back.
 
 To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
 

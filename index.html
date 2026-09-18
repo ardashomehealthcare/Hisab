@@ -214,7 +214,7 @@
 <section class="tab" id="tab-emp">
   <div class="card">
     <h2>Add employee <span class="badge blue">Database</span></h2>
-    <div class="hint">Fill only what you know — no field is compulsory. You can edit later by adding again with the same name.</div>
+    <div class="hint">Fill only what you know — no field is compulsory. Press <b>✎</b> on any row to edit it, or add again with the same name. The last three boxes are the client columns of your Google Sheet (client duty start date, client phone, client deal).</div>
     <div class="grid">
       <div class="field"><label>Employee name</label><input id="eName" placeholder="e.g. Ramesh Kumar"></div>
       <div class="field"><label>Phone</label><input id="ePhone" placeholder="Mobile no."></div>
@@ -227,7 +227,10 @@
       <div class="field" id="eShiftField" style="display:none;"><label>Day or night duty?</label>
         <select id="eShift" onchange="toggleDutyField()"><option value="day">☀️ Day duty</option><option value="night">🌙 Night duty</option></select></div>
       <div class="field"><label>Joining date</label><input id="eJoin" type="date"></div>
-      <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new"></div>
+      <div class="field"><label>Client name</label><input id="eClient" list="clientList" placeholder="Choose from list or type new" oninput="prefillClientExtras()"></div>
+      <div class="field"><label>Client duty start date</label><input id="eClientStart" type="date"></div>
+      <div class="field"><label>Client WhatsApp / phone</label><input id="eClientPhone" placeholder="Client's mobile no."></div>
+      <div class="field"><label>Client deal (₹)</label><input id="eClientDeal" type="number" min="0" placeholder="e.g. 25000 / month"></div>
     </div>
     <div class="actions">
       <button class="btn primary" onclick="saveEmployee()">✔ Submit employee</button>
@@ -654,7 +657,7 @@
 <!-- Google API client (gapi) — Google Sheets API library -->
 <script src="https://apis.google.com/js/api.js" async defer onerror="window._apiFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
-<script src="config.js?v=3"></script>
+<script src="config.js?v=4"></script>
 <script>
 /* ================= STORAGE ================= */
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
@@ -714,14 +717,131 @@ document.getElementById('nav').addEventListener('click',e=>{
 /* ================= GOOGLE SHEET SYNC — Google OAuth + the Sheets API ================= */
 const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
 const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'payments',ClientReceipts:'receipts',Expenses:'expenses'};
+/* ==== SHEET LAYOUT (start) — the live Sheet, column for column ====
+   The Sheet this app writes into:
+     https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit
+   Exact header row of every tab (left → right = A, B, C …):
+
+     Employees        id | name | phone | wageType | wageAmount | dutyHours | dutyTime |
+                      joinDate | clientDutyStartDate | client | clientPhone | clientDeal | savedAt
+     DutyLeave        id | empName | type | from | fromTime | to | toTime | days | client | savedAt |
+                      forEmp | wageType | wageAmount | reason | notes
+     EmployeePayments id | empName | date | amount | payType | mode | savedAt | periodFrom |
+                      periodTo | invoiceNo | summary | balance
+     ClientReceipts   id | client | clientPhone | date | amount | empName | mode | savedAt |
+                      clientAddress | invoiceNo | dealAmount
+     Expenses         id | item | date | amount | savedAt
+
+   A row is a list of cells written left → right, so this order IS the Sheet.
+   The app also reads the Sheet's own header row on every load and follows it: if a
+   column is inserted or moved in the Sheet, values still land in the right column,
+   and a column the app needs but the Sheet lacks is reported, never guessed. */
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt','dutyShift'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts','subWage'],
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
-  ClientReceipts:['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','clientPhone'],
+  ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
   Expenses:['id','item','date','amount','savedAt']
 };
-function rowFor(sheet,rec){return SHEET_COLS[sheet].map(k=>rec[k]??'');}
+/* the two end-duty rows read exactly like this in the Sheet */
+const END_DUTY_TEXT={
+  endEmployeeDuty:{reason:'Assignment completed',notes:'Employee duty ended'},
+  endClientDuty:{reason:'Assignment completed',notes:'Client service ended'}
+};
+let SHEET_HEADERS={};          // the header row actually found in the Sheet, per tab
+let sheetLayoutWarning='';     // set by fetchSheetData when a column is missing
+/* newest value of one client column (clientPhone / dealAmount) from Money Entry —
+   so an employee saved from the app carries the client's phone and deal as well */
+function receiptFieldForClient(client,field){
+  const key=String(client||'').trim().toLowerCase();
+  if(!key||typeof DB==='undefined'||!DB||!DB.receipts)return '';
+  let best=null;
+  DB.receipts.forEach(r=>{
+    if(String(r.client||'').trim().toLowerCase()!==key)return;
+    const v=r[field];if(!v)return;
+    if(!best||String(r.date||'')>=String(best.date||''))best={date:r.date,value:v};
+  });
+  return best?best.value:'';
+}
+/* the app record → the value that belongs in each Sheet column */
+function sheetValues(sheet,rec){
+  rec=rec||{};
+  if(sheet==='Employees'){
+    const hours=String(rec.dutyHours||'');
+    return {
+      id:rec.id,name:rec.name,phone:rec.phone,wageType:rec.wageType,wageAmount:rec.wageAmount,
+      dutyHours:hours,
+      /* the Sheet has no day/night column: a 12-hour duty keeps its ☀️/🌙 choice in
+         dutyTime, which is otherwise only the start time of a 24-hour duty */
+      dutyTime:hours==='12'?(rec.dutyShift||'day'):(rec.dutyTime||''),
+      joinDate:rec.joinDate,
+      clientDutyStartDate:rec.clientDutyStartDate||'',
+      client:rec.client,
+      clientPhone:rec.clientPhone||receiptFieldForClient(rec.client,'clientPhone'),
+      clientDeal:rec.clientDeal||receiptFieldForClient(rec.client,'dealAmount'),
+      savedAt:rec.savedAt
+    };
+  }
+  if(sheet==='DutyLeave'){
+    const end=END_DUTY_TEXT[rec.type],isSub=rec.type==='substitute';
+    return {
+      id:rec.id,empName:rec.empName,type:rec.type,from:rec.from,fromTime:rec.fromTime,
+      to:rec.to,toTime:rec.toTime,days:rec.days,client:rec.client,savedAt:rec.savedAt,
+      forEmp:rec.forEmp,
+      /* a substitute is paid per day — the app's subWage is the Sheet's wageAmount */
+      wageType:rec.wageType||(isSub?'daily':''),
+      wageAmount:rec.wageAmount||rec.subWage||'',
+      reason:rec.reason||(end?end.reason:''),
+      notes:rec.notes||(end?end.notes:'')
+    };
+  }
+  const o={};
+  SHEET_COLS[sheet].forEach(k=>{o[k]=rec[k]??'';});
+  return o;
+}
+/* one Sheet row → app record; read by column NAME when the header row is known
+   (positional only as a fallback), and numeric DATE/TIME cells are turned back into
+   yyyy-MM-dd / HH:mm for rows that were typed into the Sheet by hand */
+function sheetRowToRec(sheet,row,headers){
+  row=row||[];
+  const cols=(headers&&headers.length)?headers:SHEET_COLS[sheet];
+  const at={};cols.forEach((c,i)=>{if(at[c]===undefined)at[c]=i;});
+  const dates=new Set(DATE_COLS[sheet]||[]);
+  const o={synced:true};
+  SHEET_COLS[sheet].forEach(c=>{
+    const i=at[c];
+    let v=(i===undefined?undefined:row[i]);
+    if(typeof v==='number'){
+      if(dates.has(c))v=serialToDate(v);
+      else if(TIME_COLS.has(c))v=serialToTime(v);
+    }
+    o[c]=v===undefined||v===null?'':String(v);
+  });
+  if(sheet==='Employees'){
+    /* dutyTime carries the day/night choice of a 12-hour duty */
+    if(o.dutyHours==='12'&&(o.dutyTime==='day'||o.dutyTime==='night')){o.dutyShift=o.dutyTime;o.dutyTime='';}
+    else if(!o.dutyShift)o.dutyShift='';
+  }else if(sheet==='DutyLeave'){
+    o.subWage=o.wageAmount||'';
+    o.byShifts=(o.fromTime||o.toTime)?true:'';
+  }
+  return o;
+}
+/* which columns to write into: the Sheet's own order once it has been read, else the
+   fixed layout above (a fresh device, before the first load) */
+function sheetColsFor(sheet){const h=SHEET_HEADERS[sheet];return (h&&h.length)?h:SHEET_COLS[sheet];}
+/* columns the app needs but the Sheet does not have (reported, never guessed) */
+function missingSheetCols(sheet,headers){
+  if(!headers||!headers.length)return [];
+  return SHEET_COLS[sheet].filter(c=>headers.indexOf(c)===-1);
+}
+/* the row to append / write — in the Sheet's own column order */
+function toSheetRow(sheet,rec){
+  const vals=sheetValues(sheet,rec);
+  return sheetColsFor(sheet).map(c=>vals[c]??'');
+}
+function rowFor(sheet,rec){return toSheetRow(sheet,rec);}
+/* ==== SHEET LAYOUT (end) ==== */
 
 /* ---------- Google Identity Services (sign in with Google) ----------
    The app asks the browser for an access token limited to
@@ -869,7 +989,7 @@ function checkSheetRef(raw){
     msg:'A Sheet ID is only letters, numbers, - and _. This has something else in it, so the paste picked up part of the address.',
     title:'That is not a Sheet ID',steps:[
       'Paste the <b>whole</b> Sheet address from the browser bar instead of selecting part of it — Hisab takes the ID out of it.',
-      'The ID is the string between <code>/d/</code> and <code>/edit</code>, e.g. <code>1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY</code>.'
+      'The ID is the string between <code>/d/</code> and <code>/edit</code>, e.g. <code>1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE</code>.'
     ]};
   if(id.length<15)return {ok:false,what:'sheet_short',
     msg:'That is too short to be a Sheet ID (they are about 44 characters) — the paste was cut short.',
@@ -1291,9 +1411,10 @@ async function syncAll(){
     for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
     await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
       valueInputOption:'RAW',
-      data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t],...(DB[TAB_TO_DB[t]]||[]).map(r=>rowFor(t,r))]}))
+      data:TABS.map(t=>({range:t+'!A1',values:[sheetColsFor(t),...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r))]}))
     }});
     [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
+    rememberSheet();
     closeSetupAlert();
     flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
   }catch(e){
@@ -1308,7 +1429,7 @@ async function syncAll(){
    from the API as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
    by this app go in as plain text (valueInputOption=RAW) and round-trip
    exactly as typed — which also kills the old "1899-12-30" time bug. */
-const DATE_COLS={Employees:['joinDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};
+const DATE_COLS={Employees:['joinDate','clientDutyStartDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};
 const TIME_COLS=new Set(['dutyTime','fromTime','toTime']);
 const SHEET_EPOCH=Date.UTC(1899,11,30); // Google Sheets serial 0
 const serialToDate=v=>new Date(SHEET_EPOCH+Math.round(v*86400000)).toISOString().slice(0,10);
@@ -1322,29 +1443,28 @@ async function fetchSheetData(){
     await ensureTabs();
     j=await sheetJSON(url);
   }
+  const warn=[];
   const map=(sheet,i)=>{
-    const cols=SHEET_COLS[sheet],dates=new Set(DATE_COLS[sheet]||[]);
     const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
-    return rows.slice(1).map(row=>{      // skip the header row
-      const o={synced:true};
-      cols.forEach((c,idx)=>{
-        let v=row[idx]??'';
-        if(typeof v==='number'){
-          if(dates.has(c))v=serialToDate(v);
-          else if(TIME_COLS.has(c))v=serialToTime(v);
-        }
-        o[c]=String(v);
-      });
-      return o;
-    });
+    /* row 1 is the header — remember it, so every write follows the Sheet's own order */
+    const headers=(rows[0]||[]).map(v=>String(v??'').trim());
+    while(headers.length&&headers[headers.length-1]==='')headers.pop();
+    if(headers.length)SHEET_HEADERS[sheet]=headers;
+    const missing=missingSheetCols(sheet,headers);
+    if(missing.length)warn.push(sheet+': '+missing.join(', '));
+    return rows.slice(1)
+      .filter(row=>row.some(v=>String(v??'').trim()!==''))   // ignore trailing blank rows
+      .map(row=>sheetRowToRec(sheet,row,headers));
   };
-  return {
+  const data={
     employees:map('Employees',0),
     dutyLeave:map('DutyLeave',1),
     payments:map('EmployeePayments',2),
     receipts:map('ClientReceipts',3),
     expenses:map('Expenses',4)
   };
+  sheetLayoutWarning=warn.length?('⚠ The Sheet is missing column(s) — '+warn.join(' • ')+'. Everything else still goes to the right column.'):'';
+  return data;
 }
 function applySheetData(fresh,keepUnsynced){
   ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>{
@@ -1359,27 +1479,50 @@ function applySheetData(fresh,keepUnsynced){
 }
 async function loadFromSheet(){
   if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
-  if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'))return;
+  const lastSheet=String(storeItem(SYNCED_SHEET_KEY)||'');
+  const otherSheet=lastSheet&&lastSheet!==String(getSheetId()||'');
+  if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'
+    +(otherSheet?'\n\n⚠ This device was synced with a DIFFERENT Sheet until now — what is saved here will be replaced by the new Sheet\'s data. Press ⬇ Download backup (JSON) in All Records first if you are not sure.':'')))return;
   flash('shMsg','Loading from Sheet…');
   try{
     await getAccessToken(true);
-    applySheetData(await fetchSheetData(),false);
+    const data=await fetchSheetData();
+    applySheetData(data,false);
+    rememberSheet();
     closeSetupAlert();
-    flash('shMsg','✅ Data loaded from Google Sheet.');toast('✅ Data loaded from Google Sheet.');
+    flash('shMsg',sheetLayoutWarning||'✅ Data loaded from Google Sheet.');
+    toast(sheetLayoutWarning?'⚠ Check the Sheet columns — details above':'✅ Data loaded from Google Sheet.');
   }catch(e){
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Could not load — the fix is shown above.':'❌ Could not load from the Sheet: '+((e&&e.message)||e),false);
     toast('❌ Could not load from Google Sheet.');
   }
 }
+/* The device remembers which Sheet it last synced with. If the app is pointed at a
+   DIFFERENT spreadsheet (config.js changed, or a new address typed in the box), the
+   entries already on this device are kept and marked "not yet sent" instead of
+   silently disappearing when the new Sheet is loaded. */
+const SYNCED_SHEET_KEY='hisabSyncedSheetId';
+function noteSheetSwitch(){
+  const cur=String(getSheetId()||''),prev=String(storeItem(SYNCED_SHEET_KEY)||'');
+  if(!cur||!prev||prev===cur)return false;
+  ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>(DB[k]||[]).forEach(r=>{r.synced=false;}));
+  persist();
+  return true;
+}
+function rememberSheet(){const cur=String(getSheetId()||'');if(cur)setStoreItem(SYNCED_SHEET_KEY,cur);}
 /* On every app start, silently pull the latest data from the Google Sheet
    so the interface always shows what is in the Sheet — on any device.
    Local entries that were never synced are kept and merged in. */
 async function autoLoadFromSheet(){
   if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
-    applySheetData(await fetchSheetData(),true);
-    toast('✅ Data refreshed from Google Sheet');
+    const data=await fetchSheetData();
+    const switched=noteSheetSwitch();
+    applySheetData(data,true);
+    rememberSheet();
+    if(switched)toast('⚠ Different Google Sheet — entries saved on this device were kept, not sent yet');
+    else toast(sheetLayoutWarning?sheetLayoutWarning:'✅ Data refreshed from Google Sheet');
     closeSetupAlert();
   }catch(e){
     const explained=reportProblem(e);
@@ -1533,12 +1676,15 @@ function saveEmployee(){
     wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),
     dutyTime:(val('eWageType')!=='daily'&&val('eDuty')==='24')?val('eTime'):'',
     dutyShift:(val('eWageType')!=='daily'&&val('eDuty')==='12')?val('eShift'):'',
-    joinDate:val('eJoin'),client:val('eClient'),savedAt:new Date().toLocaleString()};
+    joinDate:val('eJoin'),client:val('eClient'),
+    /* these three are the Sheet's own client columns for this employee */
+    clientDutyStartDate:val('eClientStart'),clientPhone:val('eClientPhone'),clientDeal:val('eClientDeal'),
+    savedAt:new Date().toLocaleString()};
   if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.dutyShift,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
   // If same name exists, update it instead of duplicating
   const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
   if(existing){
-    ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
+    ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client','clientDutyStartDate','clientPhone','clientDeal'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
     if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';existing.dutyShift='';}
     existing.savedAt=rec.savedAt;existing.synced=false;persist();
     flash('eMsg','Updated existing employee "'+existing.name+'".');
@@ -1548,9 +1694,36 @@ function saveEmployee(){
     flash('eMsg','Employee saved.');
     sendRecord('Employees',rec);
   }
-  clear('eName','ePhone','eWageType','eWage','eDuty','eTime','eJoin','eClient');
+  clear('eName','ePhone','eWageType','eWage','eDuty','eTime','eJoin','eClient','eClientStart','eClientPhone','eClientDeal');
   toggleDutyField();
   renderAll();
+}
+/* The Sheet keeps the client's phone and the agreed deal on the employee's row —
+   pull them out of Money Entry the moment the client name is typed, so the
+   client columns are never left blank by mistake. */
+function prefillClientExtras(){
+  const client=val('eClient');
+  if(!client)return;
+  const ph=document.getElementById('eClientPhone'),dl=document.getElementById('eClientDeal');
+  if(ph&&!ph.value){const p=receiptFieldForClient(client,'clientPhone');if(p)ph.value=p;}
+  if(dl&&!dl.value){const d=receiptFieldForClient(client,'dealAmount');if(d)dl.value=d;}
+}
+/* ✎ on an employee row → load the whole record (client columns included) into the
+   form; submitting the same name updates that employee instead of adding a new one. */
+function editEmployee(id){
+  const e=DB.employees.find(x=>x.id===id);if(!e)return;
+  const set=(el,v)=>{const n=document.getElementById(el);if(n)n.value=v||'';};
+  set('eName',e.name);set('ePhone',e.phone);set('eWageType',e.wageType);set('eWage',e.wageAmount);
+  set('eDuty',e.dutyHours);
+  set('eTime',(e.dutyHours==='24'&&/^\d{1,2}:\d{2}$/.test(String(e.dutyTime||'')))?e.dutyTime:'');
+  const sh=document.getElementById('eShift');if(sh)sh.value=(e.dutyShift==='night')?'night':'day';
+  set('eJoin',e.joinDate);set('eClient',e.client);
+  set('eClientStart',e.clientDutyStartDate);set('eClientPhone',e.clientPhone);set('eClientDeal',e.clientDeal);
+  toggleDutyField();
+  showTab('emp');
+  const box=document.querySelector('#tab-emp .card');
+  if(box&&box.scrollIntoView)box.scrollIntoView({block:'start',behavior:'smooth'});
+  flash('eMsg','✎ Editing '+e.name+' — press ✔ Submit employee to save the changes.',true);
 }
 function toggleDutyField(){
   const daily=val('eWageType')==='daily';
@@ -2923,8 +3096,8 @@ function renderEmployees(){
     const ended=isEmployeeEnded(e);
     tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
-      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}</td>
-      <td style="white-space:nowrap;">${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
+      <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}${e.clientDeal?' <span style="color:var(--muted);">₹'+esc(String(e.clientDeal))+'</span>':''}${e.clientPhone?'<br><span style="color:var(--muted);font-size:.76rem;">📞 '+esc(e.clientPhone)+'</span>':''}</td>
+      <td style="white-space:nowrap;"><button class="del" style="color:var(--brand-dark);" onclick="editEmployee('${e.id}')" title="Edit this employee">✎</button> ${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }

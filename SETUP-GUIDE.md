@@ -49,7 +49,7 @@ So one of these is true:
 
 1. **You expected a new file in your own Drive.** It will never appear. The tabs are
    created in the shared Sheet that `config.js` names — open it here:
-   <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit>
+   <https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit>
 2. **That Sheet is not shared with the account you signed in with.** Whoever owns it
    must press **Share** → add your address → role **Editor** → Send. Then sign in
    again.
@@ -82,7 +82,7 @@ find it). If you only have one project, the links work as they are.
 | 4 | **Audience** — user type and test users. See section A. | <https://console.cloud.google.com/auth/audience?project=PROJECT_ID> |
 | 5 | **Clients** — check the client `663319983266-4i2d…9il3.apps.googleusercontent.com` is type **Web application** and that **Authorised JavaScript origins** contains exactly `https://ardashomehealthcare.github.io` (no slash, no path). Save. | <https://console.cloud.google.com/auth/clients?project=PROJECT_ID> |
 | 6 | The **Client ID** (ends `.apps.googleusercontent.com`) goes in `config.js` as `HISAB_GOOGLE_CLIENT_ID`; the Sheet's long ID goes in as `HISAB_SPREADSHEET_ID`. Both can also be pasted into the app's **Google Sheet** tab to fix one phone at once. | — |
-| 7 | On the Sheet: **Share** → add every partner → **Editor**. Then each partner opens the app → **🔐 Sign in with Google** → **Allow**. | <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit> |
+| 7 | On the Sheet: **Share** → add every partner → **Editor**. Then each partner opens the app → **🔐 Sign in with Google** → **Allow**. | <https://docs.google.com/spreadsheets/d/1odWkXCMRuCn1H6ibUdJ7MaZL5B7WEIn7e7I6ibQKtLE/edit> |
 
 Scopes (optional — the app asks for `https://www.googleapis.com/auth/spreadsheets` by
 itself): <https://console.cloud.google.com/auth/scopes?project=PROJECT_ID>
