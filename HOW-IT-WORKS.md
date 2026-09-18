@@ -59,6 +59,8 @@ also written into the Sheet **while that column exists there**, so an older Shee
 |---|---|---|
 | Days in a range | `dayCount(from,to)` | Inclusive: 1 Aug → 3 Aug = **3** days |
 | 24-hour shifts | `shiftCount(from,fromTime,to,toTime)` | Whole 24-hour blocks: 8 AM → next day 8 AM = **1** day. Falls back to calendar days when no time is given |
+| Read a time | `normTime(t)` | Any text the Sheet holds → `HH:MM`: `8:00`, `0800`, `7.00`, `2 pm`, `14:00:00` all read the same. Unreadable → no time → the row counts by dates |
+| Which clock a row counts on | `rowTimes(r)` | `{st,et}` — the row's own times, else **the times of the leave a substitute is covering**, else the duty time of the employee covered (or of the row's own employee). That is what makes a leave and its substitute equal |
 | Hours → days (24-hr duty) | `hoursToDays(h)` | `h ÷ 24`, rounded to 2 decimals, never below `0.04` (= about one hour). 18 hrs = **0.75 day**, 12 hrs = **0.5 day** |
 | Hours between two datetimes | `hoursBetween(from,fromTime,to,toTime)` | `hoursToDays(0)` = 0 hours if the range is empty or reversed |
 | Days a row covers inside a period | `rowDaysInRange(r,from,to,empTime)` | Row clipped to the period; **if the row (or the employee) carries a time, the hours decide** the fraction, otherwise calendar days |
@@ -108,9 +110,17 @@ On-leave card / join box:
 🤝 Join duty (asks date + time for 24-hr):
   leave row      : to = join date      days = dutyDayCount(r)          (24-hr: hours ÷ 24)
   every open substitute for that person:
-                 : to = join date      days = hours it covered / 24     (only whole if whole)
+                 : to = join date      days = the SAME value as the leave when the
+                                               substitute has no time of its own,
+                                               else the hours they actually covered
   then the “substitute salary” dialog opens →  💸 Record payment
 ```
+
+The clock of a row is decided in **one** place, `rowTimes(row)`: the row's own times, else the
+times of the leave a substitute is covering, else the duty time of the employee covered / of the
+row's own employee (`normTime` reads `8:00`, `2 pm`, `0800` …). So an employee's leave and the
+substitute standing in for them always show and pay the **same days** — and a substitute who
+started later is paid only the hours they covered.
 
 * A substitute's pay is computed by `substitutePay(row)` **from the row's own columns**:
   `wageType` `daily` → rate × days; `monthly` → pro-rated month by month. If the row carries
@@ -176,9 +186,10 @@ follows the hours instead of being rounded up to a whole day:
 
 | Situation | Days counted | Why |
 |---|---|---|
+| **Employee on leave + a substitute covering it** | the **same** days for both | the substitute row with no times of its own inherits the leave's clock (`fromTime`/`toTime`), so the leave days the employee loses are exactly the days the substitute is paid for |
 | Employee joins mid-shift (save leave time / join-duty time on the form) | `hours ÷ 24` | The leave starts at the real hour, so the part already worked is paid |
 | Duty ends part-way (the end-duty dialog asks **what time it ended** for 24-hr employees) | `hours ÷ 24` | The last shift's hours are paid, e.g. ending 2 PM after an 8 AM start = **0.25 day** |
-| Substitute covers only part of a shift (their own row's times) | `hours ÷ 24` | `substitutePay()` uses the row's `fromTime`/`toTime`; a saved `days` value still wins |
+| Substitute covers only part of a shift (their own row's times) | `hours ÷ 24` | `substitutePay()` uses the row's own times first, then the covered leave's (its `days` column is only used when no readable time exists anywhere) |
 | Leave taken part-way (e.g. 8 AM → 8 PM = 12 hrs) | **0.5 day** removed from duty | Duty days go down by exactly the leave hours |
 | No time anywhere (duty time not saved, or a whole period with only dates) | Calendar days, exactly as before | “According to hours **if required**” — nothing changes until real hours are known |
 
@@ -189,7 +200,14 @@ follows the hours instead of being rounded up to a whole day:
 * If a 24-hr employee has **no duty time** on the Employees row, the calculator shows a hint:
   add the duty time (or type the From/To times in the calculator) and the hours rule turns on
   for that person.
-* Join duty (`jTime`), leave start (`lFromT`) and the end-duty question all feed the same rule.
+* Join duty (`jTime`), leave start (`lFromT`) and the end-duty question all feed the same rule, and
+  closing a leave writes the **same** days on the leave row and on every substitute row covering it
+  (a substitute who started later gets only the hours they covered).
+* A row saved twice (a duplicated import) counts once, exactly like the date-set counting.
+* A period counts **its own hours**: a full calendar month of 24-hr duty = that month's days, and two
+  touching months (16–31 Aug, then 1–15 Sep) add up to the whole duty — no hour is lost or repeated.
+* A row on a clock shows the days its hours give, in the table, the calculator, the messages and the
+  receipts — so a hand-typed `3 days and 6 hours` is shown as *3.25 days (78 hrs)* everywhere.
 * If a leave or duty row is still open, it is clipped to the period and counted up to *today*,
   so a running leave shows a fraction that grows while you look at it.
 

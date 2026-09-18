@@ -1794,7 +1794,7 @@ function onLeaveEmpChange(){
     joinBox.style.display='';leaveArea.style.display='none';
     const subs=DB.dutyLeave.filter(x=>x.type==='substitute'&&x.forEmp===lv.empName);
     joinBox.innerHTML=`<div class="dlgInfo">
-      <b>${esc(lv.empName)}</b> is <span class="badge red">ON LEAVE</span> since <b>${esc(lv.from)}</b>${lv.fromTime?' at <b>'+esc(lv.fromTime)+'</b>':''} — <b>${liveLeaveDays(lv)}</b> day(s) so far, counted automatically.
+      <b>${esc(lv.empName)}</b> is <span class="badge red">ON LEAVE</span> since <b>${esc(lv.from)}</b>${lv.fromTime?' at <b>'+esc(lv.fromTime)+'</b>':''} — <b>${dayWord(liveLeaveDays(lv,todayStr(),rowTimeFor(lv)))}</b> so far, counted automatically.
       ${subs.length?'<br>'+subs.map(x=>`<span class="subLine" style="display:block;margin-top:4px;">🤝 <b>${esc(x.empName)}</b> since ${esc(x.from)}${x.fromTime?' '+esc(x.fromTime):''} <button class="del" onclick="delRec('dutyLeave','${x.id}')" title="Remove substitute">✕</button></span>`).join(''):''}
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:10px;">
         <div class="field" style="flex:1;min-width:200px;margin:0;"><label>Add substitute (type name)</label>
@@ -1831,7 +1831,7 @@ function updLvSub(){
   const from=val('lFrom'),ftRaw=val('lFromT');
   if(!from){prev.innerHTML='';return;}
   const empName=e?e.name:typed;
-  const ft=(val('lvSubTime')||ftRaw||'');
+  const ft=(val('lvSubTime')||ftRaw||((e&&String(e.dutyHours)==='24'&&e.dutyTime)||''));
   const end=todayStr();
   if(end<from){prev.innerHTML='';return;}
   /* a 24-hr duty with a time is estimated by its hours (8 AM → 2 PM = 0.25 day) */
@@ -1864,7 +1864,7 @@ function addCardSub(p,leaveId){
   const e=findEmpByName(typed);
   const name=e?e.name:typed;
   if(name===lv.empName){toast('Substitute and the employee on leave cannot be the same person.');return;}
-  const ft=lv.fromTime||'';
+  const ft=rowTimeFor(lv);
   const typedWage=Number(val(p+'Wage'))>0?val(p+'Wage'):'';
   const rec={id:uid(),empName:name,type:'substitute',forEmp:lv.empName,from:lv.from,to:'',fromTime:ft,toTime:'',
     days:'',byShifts:ft?true:'',subWage:typedWage,
@@ -1887,18 +1887,20 @@ const isOnLeaveRec=r=>r.type==='leave'&&!r.to&&r.from;
 function ongoingLeaveOf(name){return DB.dutyLeave.find(r=>isOnLeaveRec(r)&&r.empName===name);}
 function nowTimeStr(){const d=new Date();return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');}
 /* Days of an OPEN leave up to a date (default today) — live counter, ceil so day 1 shows as 1 */
-function liveLeaveDays(r,upto){
+function liveLeaveDays(r,upto,empTime){
   const end=upto||todayStr();
   if(!r||!r.from||end<r.from)return 0;
-  if(r.fromTime){
-    const h=hoursBetween(r.from,r.fromTime,end,r.fromTime);
+  const t=rowTimes(r,empTime);
+  if(t.st){
+    const h=hoursBetween(r.from,t.st,end,t.et||t.st);
     return h>0?hoursToDays(h):1;           /* 24-hr duty: part days show as fractions */
   }
   return dayCount(r.from,end);
 }
 /* Closed copy of an open leave, extended to `end` (range end) so salary counting works while still on leave */
-function effLeaveRec(r,end){
-  return {...r,to:end,ongoing:true,days:r.fromTime?hoursToDays(hoursBetween(r.from,r.fromTime,end,r.fromTime)):dayCount(r.from,end)};
+function effLeaveRec(r,end,empTime){
+  const t=rowTimes(r,empTime);
+  return {...r,to:end,ongoing:true,days:t.st?hoursToDays(hoursBetween(r.from,t.st,end,t.et||t.st)):dayCount(r.from,end)};
 }
 /* Closed copy of an open substitution, extended to `end` — days counted like the
    covered duty (24-hr shifts, using the substitute's own start time when saved,
@@ -1906,7 +1908,7 @@ function effLeaveRec(r,end){
 function effSubRec(r,end){
   if(r.to)return r;
   const lv=DB.dutyLeave.find(x=>x.type==='leave'&&x.empName===r.forEmp&&!x.to);
-  const ft=r.fromTime||(lv&&lv.fromTime)||'';
+  const ft=rowTimeFor(r,(lv&&lv.fromTime)||'');
   const days=ft?hoursToDays(hoursBetween(r.from,ft,end,ft)):dayCount(r.from,end);
   return {...r,to:end,days:r.days||days,ongoing:true,byShifts:r.byShifts||!!ft};
 }
@@ -1924,11 +1926,13 @@ function substitutePay(sub){
   /* a row with a time is 24-hr duty → days come from the hours actually covered
      (18 h = 0.75 day); a saved days value wins, else calendar days */
   const empTime=(emp&&emp.dutyHours==='24')?(emp.dutyTime||''):'';
-  const st=sub.fromTime||empTime||'',et=sub.toTime||sub.fromTime||empTime||'';
+  const t=rowTimes(sub,empTime),st=t.st,et=t.et;
   const hoursCovered=(sub.from&&st)?hoursBetween(sub.from,st,sub.to||sub.from,et):0;
-  const days=Number(sub.days)>0
-    ? round2(Number(sub.days))
-    : (hoursCovered>0?hoursToDays(hoursCovered):dayCount(sub.from,sub.to||sub.from));
+  /* hours win when the row is on a clock (that is the "count it by hours" rule);
+     a saved days value is used only for rows with no readable time */
+  const days=hoursCovered>0
+    ? hoursToDays(hoursCovered)
+    : (Number(sub.days)>0?round2(Number(sub.days)):dayCount(sub.from,sub.to||sub.from));
   const rowAmount=Number(sub.wageAmount||sub.subWage||0);
   const rowType=String(sub.wageType||'').trim();
   const empAmount=Number((emp&&emp.wageAmount)||0);
@@ -1969,7 +1973,7 @@ function saveLeaveStart(){
   if(subName&&subName===name){
     flash('lMsg',name+' is ON LEAVE from '+from+(fromTime?' '+fromTime:'')+'. Substitute skipped — same person.');
   }else if(subName){
-    const ft=fromTime?(val('lvSubTime')||fromTime):'';
+    const ft=(fromTime?val('lvSubTime'):'')||rowTimeFor(rec);
     const typedWage=Number(val('lvSubWage'))>0?val('lvSubWage'):'';
     const srec={id:uid(),empName:subName,type:'substitute',forEmp:name,from,to:'',fromTime:ft,toTime:'',
       days:'',byShifts:ft?true:'',subWage:typedWage,
@@ -2000,7 +2004,7 @@ function openJoinDuty(id){
   document.getElementById('dlgTitle').innerHTML='🤝 Join duty — '+esc(r.empName);
   document.getElementById('dlgHint').innerHTML='When did <b>'+esc(r.empName)+'</b> rejoin duty? Leave days are counted from the leave start to this date'+(is24?' &amp; time (24-hr shifts)':'')+'. Any substitute\u2019s duty ends automatically at this date and their salary is calculated.';
   document.getElementById('dlgBody').innerHTML=`
-    <div class="dlgInfo">On leave since <b>${esc(r.from)}</b>${r.fromTime?' at <b>'+esc(r.fromTime)+'</b>':''} — <b>${liveLeaveDays(r)}</b> day(s) so far.</div>
+    <div class="dlgInfo">On leave since <b>${esc(r.from)}</b>${r.fromTime?' at <b>'+esc(r.fromTime)+'</b>':''} — <b>${dayWord(liveLeaveDays(r,todayStr(),rowTimeFor(r)))}</b> so far.</div>
     <div class="grid">
       <div class="field"><label>Join duty date</label><input id="jDate" type="date" value="${todayStr()}" onchange="updJoinPreview()"></div>
       ${is24?`<div class="field"><label>Join time (24-hr duty)</label><input id="jTime" type="time" value="${nowTimeStr()}" onchange="updJoinPreview()"></div>`:''}
@@ -2030,20 +2034,22 @@ function confirmJoinDuty(){
   /* the duty time saved on the employee's row (24-hr duty) — used for both the
      employee's own leave days and the substitute covering them */
   const lvEmp=DB.employees.find(e=>e.name===r.empName);
-  const et=(lvEmp&&lvEmp.dutyTime)||r.fromTime||'';
+  const et=rowTimeFor(r,lvEmp&&lvEmp.dutyTime);
   r.to=d;r.toTime=t;
-  r.days=dlgCtx.is24
-    ? hoursToDays(hoursBetween(r.from,et||r.fromTime,d,t||et||r.fromTime))
+  r.days=et
+    ? hoursToDays(hoursBetween(r.from,et,d,t||et))
     : (dutyDayCount(r)||1);
-  /* end substitute duty automatically at the join date — days counted the same way
-     (the substitute's own start time when saved, else the employee on leave's), so
-     a part shift is paid by its hours */
+  /* end substitute duty automatically at the join date, on the SAME clock as the
+     leave: a substitute with no time of their own gets exactly the leave's days
+     (hour for hour), and one who started later is paid the hours they covered */
   const closedSubs=[];
   DB.dutyLeave.forEach(s=>{
     if(s.type==='substitute'&&s.forEmp===r.empName&&!s.to){
-      const ft=s.fromTime||r.fromTime||et||'';
+      const ft=rowTimeFor(s,et);
       s.to=d;
-      s.days=ft?hoursToDays(hoursBetween(s.from,ft,d,t||ft)):dayCount(s.from,d);
+      s.days=ft
+        ? (s.from===r.from&&ft===et ? r.days : hoursToDays(hoursBetween(s.from,ft,d,t||ft)))
+        : dayCount(s.from,d);
       if(ft)s.byShifts=true;
       s.toTime=ft?(t||ft):'';
       closedSubs.push(s);
@@ -2053,7 +2059,7 @@ function confirmJoinDuty(){
   if(isGoogleConnected()){toast('Updating Google Sheet…');syncAll();}
   renderAll();
   if(closedSubs.length)openJoinSummary(r,closedSubs);   /* substitute salary is calculated automatically */
-  else toast('🤝 '+r.empName+' joined duty — '+r.days+' day(s) leave recorded.');
+  else toast('🤝 '+r.empName+' joined duty — '+dayWord(r.days)+' of leave recorded.');
 }
 /* ---------- Join-duty summary: substitute duty ended + salary calculated automatically ---------- */
 function openJoinSummary(leaveRec,subs){
@@ -2061,11 +2067,11 @@ function openJoinSummary(leaveRec,subs){
   const total=items.reduce((t,x)=>t+(x.c.pay||0),0);
   dlgCtx={kind:'summary',items};
   document.getElementById('dlgTitle').innerHTML='🤝 '+esc(leaveRec.empName)+' joined duty';
-  document.getElementById('dlgHint').innerHTML='Leave closed: <b>'+esc(leaveRec.from)+(leaveRec.fromTime?' '+esc(leaveRec.fromTime):'')+'</b> → <b>'+esc(leaveRec.to)+(leaveRec.toTime?' '+esc(leaveRec.toTime):'')+'</b> = <b>'+leaveRec.days+'</b> day'+(leaveRec.days===1?'':'s')+' of leave. Substitute duty ended automatically — salary calculated below:';
+  document.getElementById('dlgHint').innerHTML='Leave closed: <b>'+esc(leaveRec.from)+(leaveRec.fromTime?' '+esc(leaveRec.fromTime):'')+'</b> → <b>'+esc(leaveRec.to)+(leaveRec.toTime?' '+esc(leaveRec.toTime):'')+'</b> = <b>'+dayWord(leaveRec.days)+'</b> of leave. Substitute duty ended automatically on the same days — salary calculated below:';
   document.getElementById('dlgBody').innerHTML=items.map(x=>{
     const s=x.s,c=x.c;
     return `<div class="dlgInfo">
-      🤝 <b>${esc(s.empName)}</b> — substitute duty <b>${esc(s.from)}</b> → <b>${esc(s.to)}</b> = <b>${c.days}</b> day${c.days===1?'':'s'}${s.client?' at '+esc(s.client):''}<br>
+      🤝 <b>${esc(s.empName)}</b> — substitute duty <b>${esc(s.from)}</b> → <b>${esc(s.to)}</b> = <b>${dayWord(c.days)}</b>${s.client?' at '+esc(s.client):''}<br>
       ${c.pay!=null
         ?`Substitute salary: <b style="font-size:1.08rem;">${fmt(c.pay)}</b> <span style="color:var(--muted);font-size:.76rem;">(${c.rule})</span>`
         :`<span style="color:var(--amber);font-weight:600;">⚠ Wage not saved for ${esc(s.empName)} — add them in the Employees tab, or delete and re-add the substitute with a Wage per day.</span>`}
@@ -2104,8 +2110,9 @@ function closeDlg(){document.getElementById('dlgOverlay').classList.remove('show
 function dutyDayCount(rec){
   if(!rec.from)return '';
   if(!rec.to)return '';   /* open leave — days are counted when the employee joins duty */
-  if(rec.fromTime&&rec.to){
-    const hrs=hoursBetween(rec.from,rec.fromTime,rec.to,rec.toTime||rec.fromTime);
+  const t=rowTimes(rec);   /* own times, else the duty time of the employee / covered duty */
+  if(t.st){
+    const hrs=hoursBetween(rec.from,t.st,rec.to,t.et||t.st);
     if(hrs>0)return hoursToDays(hrs);      /* 8 AM → 8 AM = 1 day • 8 AM → 2 PM = 0.25 */
   }
   return dayCount(rec.from,rec.to);
@@ -2493,9 +2500,32 @@ function shiftCount(fromStr,fromTime,toStr,toTime){
         per-day  : rate ÷ 24 × hours
         monthly  : wage ÷ days-in-month ÷ 24 × hours
    Both come out of the same number: hours ÷ 24 = days (e.g. 18 h = 0.75 day). */
+/* Any time text → "HH:MM" on the 24-hour clock. The Sheet keeps times as text, so
+   8:00, 08:00, 0800, 8.00, 2 pm and 14:00:00 all read the same. '' means "cannot be
+   read" — the row is then counted by dates alone. */
+function normTime(t){
+  t=String(t==null?'':t).trim().toLowerCase().replace(/\./g,':');
+  if(!t)return '';
+  const ap=(t.match(/(am|pm)/)||[])[1]||'';
+  const core=t.replace(/(am|pm)/g,'').replace(/\s+/g,'');
+  let h,m;
+  const c=core.match(/^(\d{1,2}):(\d{1,2})(?::\d{1,2})?$/);
+  if(c){h=Number(c[1]);m=Number(c[2]);}
+  else if(ap&&/^\d{1,2}$/.test(core)){h=Number(core);m=0;}   /* “2 pm” */
+  else{
+    const d=core.match(/^(\d{3,4})$/);
+    if(!d)return '';
+    h=Number(d[1].slice(0,-2));m=Number(d[1].slice(-2));
+  }
+  if(ap==='pm'&&h<12)h+=12;
+  if(ap==='am'&&h===12)h=0;
+  if(h>23||m>59)return '';
+  return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0');
+}
 function hoursBetween(from,fromTime,to,toTime){
   if(!from||!to)return 0;
-  const a=new Date(from+'T'+(fromTime||'00:00')),b=new Date(to+'T'+(toTime||fromTime||'00:00'));
+  const ft=normTime(fromTime)||'00:00',tt=normTime(toTime)||ft;
+  const a=new Date(from+'T'+ft),b=new Date(to+'T'+tt);
   const h=(b-a)/36e5;
   return h>0?h:0;
 }
@@ -2509,17 +2539,65 @@ function daysHrsTxt(days,hours){
   if(Math.abs(d-Math.round(d))<0.01)return d+' day'+(Math.round(d)===1?'':'s');
   return d+' day'+(d===1?'':'s')+' ('+hrsTxt(hours||d*24)+')';
 }
-/* Days one duty/leave row covers inside [from,to]. Rows that carry a time (24-hr
-   duty) are counted in hours, so a part-shift counts as its fraction. */
+function dutyTimeOf(name){
+  const e=DB.employees.find(x=>x.name===name);
+  return (e&&String(e.dutyHours)==='24')?normTime(e.dutyTime||''):'';
+}
+/* The leave row a substitute is covering: the one that covers the substitute's
+   start date, else the nearest leave at or before it. */
+function coveringLeaveFor(sub){
+  const rows=DB.dutyLeave.filter(x=>x.type==='leave'&&x.empName===sub.forEmp&&x.from)
+    .sort((a,b)=>String(a.from).localeCompare(String(b.from)));
+  if(!rows.length)return null;
+  const inside=rows.filter(x=>x.from<=sub.from&&(x.to||'9999-12-31')>=sub.from);
+  if(inside.length)return inside[inside.length-1];
+  const before=rows.filter(x=>x.from<=sub.from);
+  return before.length?before[before.length-1]:rows[0];
+}
+/* The exact clock a row is counted on — start and end. Own times first; a
+   substitute with no time of its own inherits the times of the leave it covers,
+   which is what makes the leave and the substitute come out with the same days.
+   Nothing readable → both '' → the row is counted by dates alone. */
+function rowTimes(r,empTime){
+  if(!r)return {st:'',et:''};
+  let st=normTime(r.fromTime),et=normTime(r.toTime);
+  if(r.type==='substitute'&&r.forEmp&&(!st||!et)){
+    const lv=coveringLeaveFor(r);
+    if(lv){st=st||normTime(lv.fromTime);et=et||normTime(lv.toTime);}
+  }
+  if(!st){
+    const cover=(r.type==='substitute'&&r.forEmp)?dutyTimeOf(r.forEmp):'';
+    st=cover||normTime(empTime)||dutyTimeOf(r.empName);
+  }
+  if(!et)et=st;
+  return {st:st||'',et:et||''};
+}
+/* Start clock of a row — the one place the app asks "which time does this count on?" */
+function rowTimeFor(r,empTime){return rowTimes(r,empTime).st;}
+/* The days a finished row shows: what its hours give, else its saved days value */
+function shownDays(r){
+  const t=rowTimes(r);
+  if(!t.st||!r.from)return r.days||'';
+  return hoursToDays(hoursBetween(r.from,t.st,r.to||r.from,t.et||t.st));
+}
+/* Days one duty/leave row covers inside [from,to]. A row on a clock (24-hr duty,
+   or a leave/substitute with a time) is counted in HOURS: from the row's own start
+   to its end — or to the far edge of the period at the same clock when the duty is
+   still running (so a full month of 24-hr duty = that month's days, and two
+   touching months never lose or repeat an hour). */
 function rowDaysInRange(r,from,to,empTime){
   const rs=r.from,re=r.to||r.from;
   if(!rs||!re)return 0;
   const s=rs<from?from:rs,e=re>to?to:re;
   if(s>e)return 0;
-  const st=r.fromTime||empTime||'',et=r.toTime||r.fromTime||empTime||'';
-  if(st){
-    const h=hoursBetween(s,st,e,et);
-    if(h>0)return hoursToDays(h);
+  const t=rowTimes(r,empTime);
+  if(t.st){
+    const a=new Date(s+'T'+t.st);
+    const far=new Date(addDaysStr(e,1)+'T'+t.st);      /* period's far edge, same clock */
+    const rowEnd=new Date(re+'T'+(t.et||t.st));
+    const b=r.ongoing?far:(rowEnd<far?rowEnd:far);
+    const h=(b-a)/36e5;
+    return h>0?hoursToDays(h):0;
   }
   return dayCount(s,e);
 }
@@ -2673,26 +2751,42 @@ function duty24For(name,emp,from,to,opts){
   opts=opts||{};
   /* base time = the employee's saved duty time, or the times typed in the calculator */
   const base=(emp&&String(emp.dutyHours)==='24')?((emp.dutyTime)||opts.time||''):(opts.time||'');
-  if(!base)return null;
-  const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute')&&overlaps(r,from,to))
+  /* an identical row saved twice (a duplicated import) counts once, exactly like
+     the date-set counting does */
+  const sameRow=rows=>{
+    const seen=new Set();
+    return rows.filter(r=>{
+      const k=[r.type,r.empName,r.forEmp,r.from,normTime(r.fromTime),r.to,normTime(r.toTime)].join('|');
+      if(seen.has(k))return false;
+      seen.add(k);return true;
+    });
+  };
+  const dutyRecs=sameRow(DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute')&&overlaps(r,from,to)))
     .map(r=>effSubRec(r,to));
-  const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to))
+  const leaveRecs=sameRow(DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to)))
     .map(r=>r.to?r:effLeaveRec(r,to));
+  /* every row counts on its own clock — an employee's leave and the substitute
+     covering it therefore count exactly the same days */
+  const timeOf=r=>rowTimeFor(r,base);
+  if(!base&&!dutyRecs.some(r=>timeOf(r))&&!leaveRecs.some(r=>timeOf(r)))return null;
   const ws=(opts.force?from:dutyWindowStart(name,emp,from,to))||from,we=dutyWindowEnd(name,emp,to);
-  const endTime=opts.time||dutyWindowEndTime(name,emp)||base;
+  const dispT=base||(dutyRecs.length?timeOf(dutyRecs[0]):'')||(leaveRecs.length?timeOf(leaveRecs[0]):'');
+  const endedInPeriod=!!(we&&we<to);   /* an end-duty row stopped the duty inside the period */
+  const endTime=opts.time||dutyWindowEndTime(name,emp)||base||dispT;
   let dd=0;
   if(dutyRecs.length){
-    dutyRecs.forEach(r=>{dd+=rowDaysInRange(r,from,to,base);});
+    dutyRecs.forEach(r=>{dd+=rowDaysInRange(r,from,to,timeOf(r));});
   }else if(ws&&ws<=we){
-    dd=rowDaysInRange({from:ws,to:we,fromTime:base,toTime:endTime},from,to,base);
+    dd=rowDaysInRange({from:ws,to:we,fromTime:base||dispT,
+      toTime:endedInPeriod?endTime:'',ongoing:!endedInPeriod},from,to,base||dispT);
   }
-  let lv=0;leaveRecs.forEach(r=>{lv+=rowDaysInRange(r,from,to,base);});
+  let lv=0;leaveRecs.forEach(r=>{lv+=rowDaysInRange(r,from,to,timeOf(r));});
   const dutyDays=Math.max(0,round2(dd-lv)),leaveDays=round2(lv);
   const sTxt=(dutyRecs.length?from:ws||from),eTxt=(dutyRecs.length?to:we||to);
   return {dutyDays,leaveDays,
     perMonth:splitAcrossMonths(from,to,dutyDays),leavePerMonth:splitAcrossMonths(from,to,leaveDays),
     assumed:!dutyRecs.length&&dutyDays>0,
-    txt:'⏱ 24-hr duty counted in hours: '+sTxt+' '+base+' → '+eTxt+' '+endTime+' = '+hrsTxt(dutyDays*24)+' duty'
+    txt:'⏱ 24-hr duty counted in hours: '+sTxt+' '+dispT+' → '+eTxt+' '+endTime+' = '+hrsTxt(dutyDays*24)+' duty'
       +(leaveDays>0?' − '+hrsTxt(leaveDays*24)+' leave':'')
       +' = '+dayWord(dutyDays)+' — paid according to hours.'};
 }
@@ -3267,15 +3361,7 @@ function askEndTime(empNames){
   if(!is24)return '';
   let t='';
   try{t=prompt('24-hour duty — what time did it end?\nExample 14:00 or 2 pm. Leave blank for the normal duty time.\n\n(If it ended part-way, that shift is paid by its hours.)','')||'';}catch(e){t='';}
-  t=String(t).trim();
-  if(!t)return '';
-  const m=t.match(/^(\d{1,2})[:.](\d{2})\s*(am|pm)?$/i);
-  if(!m)return '';
-  let h=Number(m[1]);const mi=m[2],ap=(m[3]||'').toLowerCase();
-  if(ap==='pm'&&h<12)h+=12;
-  if(ap==='am'&&h===12)h=0;
-  if(h>23||Number(mi)>59)return '';
-  return String(h).padStart(2,'0')+':'+mi;
+  return normTime(t);
 }
 function endEmployeeDuty(){
   const empName=val('cbEmpSel');
@@ -3387,10 +3473,13 @@ function renderEmployees(){
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }
 function dutyRow(r,list,withActions){
-  const open=isOnLeaveRec(r),subOpen=(r.type==='substitute'&&!r.to);
-  const rawDays=(open||subOpen)?liveLeaveDays(r):(r.days||'');
+  const open=isOnLeaveRec(r),subOpen=(r.type==='substitute'&&!r.to),live=(open||subOpen);
+  const endD=todayStr(),t=rowTimes(r);
+  /* a row on a clock shows the days the hours give (the same number the salary
+     uses); a row with no readable time keeps its saved days */
+  const rawDays=live?liveLeaveDays(r,endD,rowTimeFor(r)):shownDays(r);
   const days=(Number(rawDays)>0&&Math.abs(Number(rawDays)-Math.round(Number(rawDays)))>0.01)
-    ?daysHrsTxt(rawDays,(r.fromTime?hoursBetween(r.from,r.fromTime,r.to||todayStr(),r.toTime||r.fromTime):Number(rawDays)*24))
+    ?daysHrsTxt(rawDays,(t.st?hoursBetween(r.from,t.st,r.to||endD,t.et||t.st):Number(rawDays)*24))
     :rawDays;
   const toTxt=open?'<span style="color:var(--red);font-weight:700;">on leave…</span>'
     :(subOpen?'<i style="color:var(--muted);">till join</i>':esc(r.to)||'');
@@ -3414,14 +3503,15 @@ function renderOnLeave(){
   card.style.display=open.length?'':'none';
   listEl.innerHTML=open.map(r=>{
     const subs=DB.dutyLeave.filter(s=>s.type==='substitute'&&s.forEmp===r.empName);
-    const days=liveLeaveDays(r);
+    const days=liveLeaveDays(r,todayStr(),rowTimeFor(r));
     /* running salary for each substitute — counted like the covered duty and
        updated live until Join duty closes it (final total from the saved wage) */
     const subHtml=subs.map(s=>{
       const es=s.to?s:effSubRec(s,todayStr());
       const c=substitutePay(es);
       const payTxt=c.pay!=null?' • salary '+(s.to?'':'≈ ')+'<b>'+fmt(c.pay)+'</b>'+(s.to?'':' so far'):'';
-      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${s.days?' = <b>'+s.days+'</b> day'+(Number(s.days)===1?'':'s'):''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
+      const sd=s.to?shownDays(s):'';
+      return `<div class="subLine">🤝 <b>${esc(s.empName)}</b> in place of ${esc(r.empName)}${s.client?' at '+esc(s.client):''} — ${esc(s.from)}${s.fromTime?' '+esc(s.fromTime):''} → ${s.to?esc(s.to)+(s.toTime?' '+esc(s.toTime):''):'<i>till join duty</i>'}${sd?' = <b>'+dayWord(sd)+'</b>':''}${payTxt} <button class="del" onclick="delRec('dutyLeave','${s.id}')" title="Remove substitute">✕</button></div>`;
     }).join('');
     return `<div class="onLeaveItem">
       <div class="onLeaveHead"><b>${esc(r.empName)}</b> <span class="badge red">ON LEAVE</span>${r.client?` <span class="badge blue">📍 ${esc(r.client)}</span>`:''}</div>
