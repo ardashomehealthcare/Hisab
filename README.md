@@ -26,7 +26,7 @@ Hisab ships with the records in **`data/hisab-data.json`** — the employees, du
 * **On a device with no data at all** (a new phone, a cleared browser) they load by themselves the first time the app opens — so the app starts with the full history instead of empty.
 * **On a device that already has data:** *All Records* → **📥 Add the data included in the app**. It shows what is new, asks first, merges, and never deletes anything.
 * **Duplicates are skipped** — an employee is matched by name, everything else by person/client + date + amount — so importing twice cannot double the books.
-* Added records are marked *not sent yet*, so **🔄 Send all saved data to Sheet** writes them into your own Sheet when you are ready.
+* Added records are marked *not sent yet*, so **🔄 Push app data to Sheet** writes them into your own Sheet when you are ready.
 * The file is a plain Hisab backup (the same shape as *⬇ Download backup (JSON)*), so you can also edit it, or import it on a phone with *⬆ Import backup (JSON)*.
 
 > ⚠️ This file contains real business data (names, wages, client numbers/addresses). On a **public** GitHub repo it is readable by anyone — keep the repo private (or delete `data/hisab-data.json`) if the app is public.
@@ -61,7 +61,7 @@ The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeeP
 This is the **arrangement the app writes into** — the column order of every tab:
 
 * **Reading is by column name.** The app reads the Sheet's own header row every time it loads, so a Sheet that is still in an older arrangement (or that has an extra column of your own) is read correctly, and a single new entry is still appended under the right headings.
-* **Writing it once.** Press **🔄 Send all saved data to Sheet** one time to rewrite all five tabs in the arrangement below (it writes the same rows in the new order — nothing is lost, because everything was read by name first). The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement.
+* **Writing it once.** Press **🔄 Push app data to Sheet** (it sits on the *Google Sheet* tab and in *All Records*) one time to rewrite all five tabs in the arrangement below (it writes the same rows in the new order — nothing is lost, because everything was read by name first). The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement.
 * If the Sheet does not have a column the app needs at all, the app says which one — it never guesses and never shifts values into the wrong column.
 
 | Tab | Columns (A → …) |

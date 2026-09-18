@@ -554,11 +554,11 @@
       <button class="btn ghost" onclick="document.getElementById('fEmp').value='';document.getElementById('fMonth').value='';renderRecords();">Clear filters</button>
       <button class="btn ghost" onclick="loadIncludedData()">📥 Add the data included in the app</button>
       <button class="btn ghost" onclick="exportBackup()">⬇ Download backup (JSON)</button>
-      <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Update Google Sheet</button>
+      <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Push app data to Sheet</button>
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
       <span class="msg" id="bkMsg"></span>
-      <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Send all saved data to Sheet</b>.</div>
+      <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Push app data to Sheet</b>.</div>
       <button class="btn red" onclick="clearAllData()">🗑 Clear all data</button>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
     </div>
@@ -613,11 +613,12 @@
     <div class="actions">
       <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
-      <button class="btn green" id="btnSyncAll3" style="display:none;" onclick="syncAll()">🔄 Send all saved data to Sheet</button>
+      <button class="btn green" id="btnSyncAll3" onclick="syncAll()">🔄 Push app data to Sheet</button>
       <button class="btn ghost" id="btnLoad3" style="display:none;" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
       <button class="btn ghost" onclick="checkGoogleSetup()">🩺 Check my Google setup</button>
       <span class="msg" id="shMsg"></span>
     </div>
+    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) in their column order. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
   </div>
   <div class="card" id="diagCard" style="display:none;">
     <h2>Setup check <span class="badge" style="background:var(--soft);color:var(--brand-dark);">for the admin</span></h2>
@@ -1181,7 +1182,7 @@ function googleAdvice(raw){
   if(has('silent_timeout'))
     return {title:'Google did not answer the quiet sign-in check',steps:[
       'Press <b>🔐 Sign in with Google</b> once and finish in the Google window — that gives this device a fresh permission (they last about an hour).',
-      'Nothing is lost meanwhile: every entry is already saved on this device and goes to the Sheet on the next submit, or with <b>🔄 Send all saved data to Sheet</b>.'
+      'Nothing is lost meanwhile: every entry is already saved on this device and goes to the Sheet on the next submit, or with <b>🔄 Push app data to Sheet</b>.'
     ]};
   if(has('gsi_not_loaded','no_access_token','could not be loaded','check internet'))
     return {title:'Google sign-in did not load on this device',steps:[
@@ -1214,7 +1215,7 @@ function googleAdvice(raw){
   if(has('failed to fetch','networkerror','net::','err_','offline','load failed'))
     return {title:'No connection to Google right now',steps:[
       'Check the internet (mobile data / WiFi) — turning airplane mode on and off usually clears it.',
-      'Nothing is lost: every entry is already saved on this device. Once online, press <b>🔄 Send all saved data to Sheet</b> to push whatever did not go through.'
+      'Nothing is lost: every entry is already saved on this device. Once online, press <b>🔄 Push app data to Sheet</b> to push whatever did not go through.'
     ]};
   return null;
 }
@@ -1434,7 +1435,7 @@ async function sendRecord(sheet,rec){
     /* always safe first: the entry is already on this device */
     if(reportProblem(e)||alertKey)toast('💾 Saved on device — the fix is shown on the Google Sheet tab');
     else if(isAuthError(e))toast('💾 Saved on device — sign in on the Google Sheet tab to sync');
-    else toast('💾 Saved on device — not sent to the Sheet, retry with 🔄 Send all saved data to Sheet');
+    else toast('💾 Saved on device — not sent to the Sheet, retry with 🔄 Push app data to Sheet');
   }
   updateSheetStatus();
 }
@@ -1442,6 +1443,10 @@ async function syncAll(){
   if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
   flash('shMsg','Sending everything…');
   try{
+    /* pressing the button IS the user gesture — if this device is not signed in
+       (or the hour is up), Google's sign-in opens first and the push continues
+       from where it left off. Nothing is written before the sign-in succeeds. */
+    await getAccessToken(true);
     await ensureTabs();
     for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
     await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
@@ -1499,7 +1504,7 @@ async function fetchSheetData(){
     receipts:map('ClientReceipts',3),
     expenses:map('Expenses',4)
   };
-  sheetLayoutWarning=warn.length?('⚠ This Sheet is still in the old arrangement on: '+warn.join(', ')+' — everything is read correctly; press 🔄 Send all saved data to Sheet once to write it in the new column layout.'):'';
+  sheetLayoutWarning=warn.length?('⚠ This Sheet is still in the old arrangement on: '+warn.join(', ')+' — everything is read correctly; press 🔄 Push app data to Sheet once to write it in the new column layout.'):'';
   return data;
 }
 function applySheetData(fresh,keepUnsynced){
@@ -1638,8 +1643,10 @@ function updateSheetStatus(){
   renderClientIdBox();
   renderSheetIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
-  show('btnSyncAll3',connected);show('btnLoad3',connected);
+  show('btnSyncAll3',true);                 // pushing can sign in first, so it is always available
+  show('btnLoad3',connected);               // loading replaces device data → only while signed in
   show('btnSyncAll2',connected);show('btnLoad2',connected);
+  updatePushButtons();
   function show(id,on){const el=document.getElementById(id);if(el)el.style.display=on?'':'none';}
 }
 /* ---------- 🩺 setup check: one plain report the admin can fix from ---------- */
@@ -3356,7 +3363,7 @@ function renderDash(){
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
 }
-function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();}
+function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();}
 
 /* ================= DATA THAT SHIPS WITH THE APP ================= */
 /* Hisab carries a plain records file — data/hisab-data.json — with the employees,
@@ -3442,11 +3449,11 @@ async function loadIncludedData(){
     if(!totalNew){toast('ℹ️ Everything in the app\'s data file is already on this device.');return;}
     if(!confirm('Add the records that come with Hisab to this device?\n\n'+lines
       +'\n\nDuplicates are skipped and nothing on this device is deleted.'
-      +' The added records go to your Google Sheet on the next 🔄 Send all saved data to Sheet.'))return;
+      +' The added records go to your Google Sheet on the next 🔄 Push app data to Sheet.'))return;
     const {added,total}=mergeIncludedData(data);
     const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ');
     flash('bkMsg','✅ Added: '+sum+'. Now on this device: '+DB_TABS.map(([k])=>DB_LABEL[k]+' '+total[k]).join(' • ')+'.',true);
-    toast('✅ '+totalNew+' record'+(totalNew===1?'':'s')+' added — press 🔄 Send all saved data to Sheet to put them in your Sheet');
+    toast('✅ '+totalNew+' record'+(totalNew===1?'':'s')+' added — press 🔄 Push app data to Sheet to put them in your Sheet');
   }catch(e){
     toast('⚠️ Could not read '+DATA_FILE+' — '+(e&&e.message?e.message:'not available on this device')+'. You can still import a JSON backup.');
   }
@@ -3466,8 +3473,19 @@ async function autoLoadIncludedDataOnce(){
     const total=DB_TABS.reduce((n,[k])=>n+((data[k]||[]).length),0);
     if(!total)return;
     mergeIncludedData(data);
-    toast('📥 Loaded the '+total+' records that come with Hisab — press 🔄 Send all saved data to Sheet to put them in your Google Sheet');
+    toast('📥 Loaded the '+total+' records that come with Hisab — press 🔄 Push app data to Sheet to put them in your Google Sheet');
   }catch(e){}
+}
+/* Records that exist on this device but have not reached the Sheet yet — shown on
+   the push buttons so it is obvious how much is waiting. */
+function unsentCount(){
+  return ['employees','dutyLeave','payments','receipts','expenses']
+    .reduce((n,k)=>n+(DB[k]||[]).filter(r=>r&&!r.synced).length,0);
+}
+function updatePushButtons(){
+  const n=unsentCount();
+  const label='🔄 Push app data to Sheet'+(n?' ('+n+' not sent yet)':'');
+  ['btnSyncAll2','btnSyncAll3'].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=label;});
 }
 function exportBackup(){
   const a=document.createElement('a');
