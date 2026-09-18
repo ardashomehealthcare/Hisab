@@ -66,6 +66,7 @@
   .miniBtn{border:none; border-radius:7px; padding:4px 10px; font-size:.72rem; font-weight:700; cursor:pointer; white-space:nowrap;}
   .miniBtn.green{background:var(--green); color:#fff;}
   .miniBtn.blue{background:var(--brand); color:#fff;}
+  .miniBtn.amber{background:var(--amber); color:#fff;}
 
   .grid{display:grid; gap:10px 12px; grid-template-columns:repeat(auto-fit,minmax(160px,1fr));}
   .field label{display:block; font-size:.74rem; font-weight:700; color:var(--muted); margin-bottom:4px; text-transform:uppercase; letter-spacing:.4px;}
@@ -3494,7 +3495,7 @@ function renderEmployees(){
     tb.insertAdjacentHTML('beforeend',`<tr${ended?' style="opacity:.55;"':''}><td><b>${esc(e.name)||'—'}</b>${ended?' <span class="badge amber">ENDED</span>':''}</td><td>${esc(e.phone)||''}</td>
       <td>${e.wageAmount?fmt(e.wageAmount):''} ${e.wageType==='monthly'?'/ month':e.wageType==='daily'?'/ day':''}</td>
       <td>${e.dutyHours?esc(e.dutyHours)+' hr'+(e.dutyTime?' from '+esc(e.dutyTime):(e.dutyShift==='day'?' • ☀️ day':e.dutyShift==='night'?' • 🌙 night':'')):''}</td><td>${esc(e.joinDate)||''}</td><td>${esc(e.client||e.note)||''}${e.clientDeal?' <span style="color:var(--muted);">₹'+esc(String(e.clientDeal))+'</span>':''}${e.clientPhone?'<br><span style="color:var(--muted);font-size:.76rem;">📞 '+esc(e.clientPhone)+'</span>':''}</td>
-      <td style="white-space:nowrap;">${ended?'':`<button class="del" style="color:var(--amber);" onclick="endEmployeeDutyById('${e.id}')" title="End this employee's duty — records kept, bring back with ↩ anytime">⏹</button> `}<button class="del" style="color:var(--brand-dark);" onclick="editEmployee('${e.id}')" title="Edit this employee">✎</button> ${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
+      <td style="white-space:nowrap;">${ended?'':`<button class="miniBtn amber" onclick="endEmployeeDutyById('${e.id}')" title="End this employee's duty — records kept, bring back with ↩ anytime">⏹ End duty</button> `}<button class="del" style="color:var(--brand-dark);" onclick="editEmployee('${e.id}')" title="Edit this employee">✎</button> ${ended?`<button class="del" style="color:var(--green);" onclick="reactivateEmployee('${e.id}')" title="Re-activate">↩</button> `:''}<button class="del" onclick="delRec('employees','${e.id}')">✕</button></td></tr>`);
   });
   if(!rows.length)tb.innerHTML='<tr><td colspan="7" style="color:var(--muted);">No employees yet — add one above.</td></tr>';
 }
