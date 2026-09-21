@@ -304,25 +304,27 @@ replacing.
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
 
-### The bundled records, row for row
-`data/hisab-data.json` holds the app's own books and matches the intended books cell-for-cell —
-same rows, same order, same columns (verified by a parity test against their source). The app
+### The bundled records
+`data/hisab-data.json` holds the app's own books in the Sheet's column layout — and it ships
+**empty**: all app data has been cleared, and the records are added **from the Google Sheet**
+after sign-in (the automatic pull on start, or *Load data FROM Sheet*). The app
 stores **no link to any other spreadsheet** — no "reference sheet", no URL, no id; it reads and
-writes only its own Sheet. 🔄 **Push app data to Sheet** writes exactly those rows into the
-app's own Sheet: headers in §2's arrangement, the same rows underneath in the same order. One
-cell that Google Sheets displays as a date (Simranjeet Kaur's `clientDeal`) is really the
-number 30000 — the app writes it back as plain text `30000`, which also fixes the display.
+writes only its own Sheet. 🔄 **Push app data to Sheet** writes the device's rows into the
+app's own Sheet: headers in §2's arrangement, the rows underneath in the same order.
 
 ---
 
 ## 13. The data that ships with the app
 
-`data/hisab-data.json` holds the rows of all five tables (11 employees · 19 duty/leave · 13 employee
-payments · 10 client receipts · 10 expenses). It is only records — no spreadsheet id, no URL, no
-credentials — and it is **not** a second data source: once loaded it lives in the same five tables.
+`data/hisab-data.json` holds the five tables and ships **empty** — all app data has been
+cleared, and the records are added **from your Google Sheet** (sign in → the rows are pulled in;
+*Load data FROM Sheet* takes the Sheet as-is). It is only records — no spreadsheet id, no URL,
+no credentials — and it is **not** a second data source: once loaded it lives in the same five
+tables.
 
-* On a device with **no data at all**, it loads once automatically (`hisabIncludedDataAuto`), so a
-  new phone starts with the full history.
+* On a device with **no data at all**, it loads once automatically (`hisabIncludedDataAuto`) —
+  nothing to add while the file is empty; rows put into the file reach a new phone on its first
+  open.
 * On a device that already has data: **📥 Add the data included in the app** shows what is new per
   tab, asks, then merges.
 * **Duplicates are skipped** against a snapshot taken *before* the merge: employees by name,

@@ -24,19 +24,19 @@ calculator step by step, Money Entry, client billing, Profit/Loss, the Google Sh
 
 ## Data included in the app
 
-Hisab ships with the records in **`data/hisab-data.json`** — the employees, duty & leave rows, employee payments, client receipts and expenses. It is only the **rows**: the app is not connected to any other spreadsheet, and nothing points at one — `config.js` still names the single Sheet Hisab writes into (`HISAB_SPREADSHEET_ID`).
+Hisab carries **`data/hisab-data.json`** — the employees, duty & leave rows, employee payments, client receipts and expenses. All app data has been cleared: the file **ships with the five tables empty** — the records are added **from your Google Sheet** (sign in and they are pulled in, or press **⬇ Load from Google Sheet**). It is only the **rows**: the app is not connected to any other spreadsheet, and nothing points at one — `config.js` still names the single Sheet Hisab writes into (`HISAB_SPREADSHEET_ID`).
 
 | File | What it holds |
 |---|---|
-| `data/hisab-data.json` | 11 employees • 19 duty/leave rows • 13 employee payments • 10 client receipts • 10 expenses — the same columns as the Sheet tabs |
+| `data/hisab-data.json` | The five tables — same columns as the Sheet tabs, **empty**; the Sheet's rows are added after sign-in |
 
-* **On a device with no data at all** (a new phone, a cleared browser) they load by themselves the first time the app opens — so the app starts with the full history instead of empty.
+* **The data comes from the Sheet.** Sign in with Google and the Sheet's rows are added on the device (pulled automatically on every start; **⬇ Load from Google Sheet** takes the Sheet as-is). While the file is empty there is nothing bundled to load — a new phone starts clean and fills from the Sheet.
 * **On a device that already has data:** *All Records* → **📥 Add the data included in the app**. It shows what is new, asks first, merges, and never deletes anything.
 * **Duplicates are skipped** — an employee is matched by name, everything else by person/client + date + amount — so importing twice cannot double the books.
 * Added records are marked *not sent yet*, so **🔄 Push app data to Sheet** writes them into your own Sheet when you are ready.
 * The file is a plain Hisab backup (the same shape as *⬇ Download backup (JSON)*), so you can also edit it, or import it on a phone with *⬆ Import backup (JSON)*.
 
-> ⚠️ This file contains real business data (names, wages, client numbers/addresses). On a **public** GitHub repo it is readable by anyone — keep the repo private (or delete `data/hisab-data.json`) if the app is public.
+> ⚠️ If rows are put back into this file (names, wages, client numbers/addresses): on a **public** GitHub repo they are readable by anyone — keep the repo private or the file empty if the app is public.
 
 ## How to run
 
@@ -63,14 +63,15 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
 
-### The records included in the app — row for row, column for column
+### The records included in the app — column for column
 
-The records that ship with the app (`data/hisab-data.json`) are simply **the app's own books** —
-11 employees · 19 duty/leave rows · 13 payments · 10 client receipts · 10 expenses — in the
-standard column layout. Nothing else is kept: **no other spreadsheet, no reference sheet, no
-link to any outside Sheet is stored in the app** — it writes only to its own Sheet
+The records file (`data/hisab-data.json`) is simply **the app's own books** — the five tables in
+the standard column layout — and it ships **empty**: all app data has been cleared, and the
+records are added **from your Google Sheet** after sign-in (the automatic pull on start, or
+**⬇ Load from Google Sheet**). Nothing else is kept: **no other spreadsheet, no reference sheet,
+no link to any outside Sheet is stored in the app** — it writes only to its own Sheet
 (`HISAB_SPREADSHEET_ID` in `config.js`). On the **Google Sheet** tab, **🔄 Push app data to
-Sheet** writes exactly these rows into the app's own Sheet: same tabs, same columns, same rows
+Sheet** writes the device's rows into the app's own Sheet: same tabs, same columns, same rows
 in the same order, starting under row 1's headers.
 
 ### The Sheet layout — column for column
