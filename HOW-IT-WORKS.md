@@ -285,6 +285,10 @@ enforced by Google: each partner needs Editor rights on the Sheet.
   `values:clear` each tab → `values:batchUpdate` with the header row + every row, in the
   arrangement of §2. It is also how an older Sheet is upgraded to the new column order, and how
   the records added from `data/hisab-data.json` reach the Sheet.
+  **The header row and the rows always come from the same arrangement** (`SHEET_COLS`) — building
+  the rows from `SHEET_HEADERS` instead, i.e. the order read from the Sheet before the clear, wrote
+  today's headings over rows in the older order and shifted every column from `date` on (money
+  received under “Date”, the saved-at date under “Mode”).
 * Missing tabs are created on sign-in (`ensureTabs`), with their header row.
 
 ### Reading (pull)
@@ -295,7 +299,16 @@ enforced by Google: each partner needs Editor rights on the Sheet.
   serials to `yyyy-mm-dd` / `HH:mm`;
 * trailing blank rows are ignored;
 * a column the app needs but the Sheet lacks is reported on screen instead of guessed;
-* legacy columns (`dutyShift`, `byShifts`, `subWage`) are read while they exist.
+* legacy columns (`dutyShift`, `byShifts`, `subWage`) are read while they exist;
+* **rows written in an older arrangement are read with the arrangement they really hold**
+  (`LEGACY_LAYOUTS` — Employees before the client columns, DutyLeave before
+  `wageType`/`wageAmount`, ClientReceipts before `clientPhone` moved to position 3). A row gives
+  itself away by what its cells are (a saved-at stamp where a payment mode belongs, a date where a
+  name belongs), so a tab whose headings were already rewritten while its rows were not — the state
+  that shows money under “Date” and the date under “Mode” — is read correctly anyway, and the
+  *Google Sheet* tab names those tabs. The same test is applied to the records already on the
+  device (`repairShiftedRecords()`), so they are put back in their right columns at start-up and
+  marked unsent instead of being pushed back out wrong.
 
 **Auto-load on start:** if the device is signed in, the Sheet is pulled and merged — entries that
 were never sent are kept and marked unsent. The device remembers which Sheet it last synced with
