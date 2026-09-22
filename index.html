@@ -749,6 +749,7 @@ const END_DUTY_TEXT={
 let SHEET_HEADERS={};          // the header row actually found in the Sheet, per tab
 let sheetLayoutWarning='';     // set by fetchSheetData when the arrangement is older
 let layoutNotified=false;      // the arrangement notice is worth showing once per start
+let sheetPulled=false;         // has this device read the Sheet at least once in this session?
 /* ==== the arrangements this app wrote BEFORE the one above ====
    ClientReceipts moved `clientPhone` from the LAST column to position 3, Employees
    gained clientDutyStartDate / clientPhone / clientDeal in the middle, DutyLeave
@@ -1540,6 +1541,20 @@ async function syncAll(){
        (or the hour is up), Google's sign-in opens first and the push continues
        from where it left off. Nothing is written before the sign-in succeeds. */
     await getAccessToken(true);
+    /* A device that has NOT read the Sheet yet in this session — a brand-new phone, or
+       one whose automatic pull could not run because nobody was signed in on it — holds
+       only part of the books. Pushing from it would delete every row it has never seen
+       (on another phone, that is the whole history). So the Sheet is read once first and
+       merged the safe way — rows typed on this device win, rows only the Sheet has are
+       kept — and only then is anything cleared or written. A device the user deliberately
+       CLEARED is left alone: that push really is meant to replace the Sheet. */
+    if(!sheetPulled&&!isDeviceCleared()){
+      const fresh=await fetchSheetData();
+      sheetPulled=true;
+      applySheetData(fresh,true);
+      rememberSheet();
+      toast('📥 Read the Sheet first — nothing another phone entered is lost');
+    }
     await ensureTabs();
     for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
     /* The header row AND the rows must be written in the SAME arrangement. This is
@@ -1643,6 +1658,7 @@ async function loadFromSheet(){
     await getAccessToken(true);
     const data=await fetchSheetData();
     applySheetData(data,false);
+    sheetPulled=true;
     rememberSheet();
     setDeviceCleared(false);            // a deliberate load ends the "cleared" state — pulling resumes
     closeSetupAlert();
@@ -1675,6 +1691,7 @@ async function autoLoadFromSheet(){
   if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
     const data=await fetchSheetData();
+    sheetPulled=true;                       // this device now has the Sheet's rows
     if(isDeviceCleared())return;           // cleared while the Sheet was being read → keep it cleared
     const switched=noteSheetSwitch();
     applySheetData(data,true);

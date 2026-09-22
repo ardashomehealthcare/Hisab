@@ -281,6 +281,12 @@ enforced by Google: each partner needs Editor rights on the Sheet.
 * **Every submit** appends one row to its tab: `values/<Tab>!A1:append` with `RAW` values.
   Before the first append on a device, the tab's **own header row** is fetched, so values go
   under the right headings even if the Sheet is in an older arrangement or has extra columns.
+* **A push from a device that has not read the Sheet yet** reads it once first (`sheetPulled`
+  flag) and merges it the safe way — rows typed on the device win, rows only the Sheet has are
+  kept — before anything is cleared. Without that, a phone that was never signed in (so the
+  automatic pull never ran) would **delete every row it had never seen** — on the other partner's
+  phone, that is the whole history. A device the user deliberately **cleared** is exempt: that
+  push is meant to replace the Sheet.
 * **🔄 Push app data to Sheet** rewrites the whole picture:
   `values:clear` each tab → `values:batchUpdate` with the header row + every row, in the
   arrangement of §2. It is also how an older Sheet is upgraded to the new column order, and how
