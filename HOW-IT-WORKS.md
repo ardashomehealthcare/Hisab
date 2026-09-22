@@ -392,12 +392,25 @@ tables.
 ## 15. Startup sequence
 
 1. Read settings from `config.js` (and any device overrides), load the tables from `localStorage`.
+1b. `repairShiftedRecords()` — records that were read while a Sheet's columns were out of step are
+   put back in their right columns (§13) and marked unsent, so the wrong values can never be
+   pushed back out.
 2. Draw everything (`renderAll`), which also labels the push buttons with the number of unsent rows.
 3. If the device is empty, pull in `data/hisab-data.json` once.
 4. If signed in, pull the Sheet in the background and merge; if the settings look wrong, re-read
    `config.js` uncached (a phone can be serving a stale copy) and adopt the server values.
 5. Steps 3 and 4 are **skipped while the device carries the cleared note** (§12.1) — a cleared app
    stays empty until *Load data FROM Sheet* is pressed.
+
+### 15.1 Which copy of the app a phone is running (`APP_BUILD`)
+
+`APP_BUILD` (top of the script, `index.html`) is bumped with every release that changes the app.
+The **Google Sheet** tab shows it under the push hint, and the 🩺 setup check prints it, so the two
+partner phones can be compared: a phone showing an **older** version is still serving a cached
+`index.html` and must reload (or be closed and reopened) **before** it presses anything that
+writes — an old copy still writes the heading/row mismatch of §13 back into the Sheet. A phone
+that has the new copy reads such a Sheet correctly and the next push from it repairs the Sheet
+again, so nothing is ever lost either way.
 
 ---
 

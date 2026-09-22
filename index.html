@@ -621,6 +621,7 @@
     </div>
     <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
     <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses), each tab's <b>headings and rows in the same column order</b>. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. It is also the one press that puts a Sheet whose columns got out of step right again — money showing under <b>Date</b> and the saved date under <b>Mode</b> is that, and the rows are rewritten in their right columns. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
+    <div class="hint" id="appBuildLine" style="margin-top:6px;"></div>
   </div>
   <div class="card" id="diagCard" style="display:none;">
     <h2>Setup check <span class="badge" style="background:var(--soft);color:var(--brand-dark);">for the admin</span></h2>
@@ -656,6 +657,11 @@
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
 let GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
 let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
+/* Which copy of the app a phone is running. Bump this on every release that changes the
+   app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
+   phones can be compared: a phone showing an older version is still serving a cached
+   copy of index.html and has to reload before it presses anything that writes. */
+const APP_BUILD='2026-09-22 (column-order fix)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -1751,6 +1757,9 @@ function updateSheetStatus(){
   const connected=isGoogleConnected();
   t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(!getSheetId()?'Google: no Sheet to write into — see the box below':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in')))));
   if(s)s.classList.toggle('ok',connected&&v.ok);
+  /* which copy of the app this phone is running — compare it with the other phone */
+  const buildLine=document.getElementById('appBuildLine');
+  if(buildLine)buildLine.innerHTML='📱 App version <b>'+esc(APP_BUILD)+'</b> on this phone. Both phones should show the <b>same</b> version — a phone showing an older one is still running a cached copy: reload the page (or close the app and open it again) <b>before</b> pressing 🔄 Push app data to Sheet.';
   renderClientIdBox();
   renderSheetIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
@@ -1767,6 +1776,9 @@ async function checkGoogleSetup(){
   L.push('HISAB — Google Sheet setup check');
   L.push(new Date().toLocaleString());
   L.push('');
+  L.push('• App version on this phone: '+APP_BUILD);
+  L.push('   The other phone must show the same version. An older one is a cached copy of');
+  L.push('   index.html — reload the page (or close and reopen the app) before it writes to the Sheet.');
   L.push('• App address: '+location.origin);
   L.push('   This exact address must be listed in Cloud Console → Credentials →');
   L.push('   your “Web application” client → Authorised JavaScript origins.');
