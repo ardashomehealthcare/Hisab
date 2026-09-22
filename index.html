@@ -56,6 +56,9 @@
   .onLeaveBtns .btn{padding:8px 14px; font-size:.84rem;}
   .subLine{font-size:.8rem; color:#5b3fa8; background:#f6f1ff; border:1px solid #e5d8fd; border-radius:8px; padding:6px 10px; margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
   .subLine .del{font-size:.78rem;}
+  /* amber note that stays on screen while this device is in the "cleared" state */
+  .clearNotice{font-size:.82rem; line-height:1.8; color:#7a4b06; background:#fff8e9; border:1px solid #f0d9a8; border-radius:9px; padding:9px 12px; margin-top:10px;}
+  .clearNotice .miniBtn{margin-left:4px;}
   #dlgOverlay{position:fixed; inset:0; background:rgba(18,28,48,.48); display:none; align-items:center; justify-content:center; z-index:100; padding:16px;}
   #dlgOverlay.show{display:flex;}
   .dlg{background:#fff; border-radius:14px; max-width:440px; width:100%; padding:18px; box-shadow:0 12px 44px rgba(10,30,60,.28); max-height:92vh; overflow-y:auto;}
@@ -557,7 +560,9 @@
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
       <span class="msg" id="bkMsg"></span>
       <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Push app data to Sheet</b>.</div>
-      <button class="btn red" onclick="clearAllData()">🗑 Clear all data</button>
+      <button class="btn red" onclick="openClearDialog()">🗑 Clear app data</button>
+      <span class="msg" id="clearMsg"></span>
+      <div class="clearNotice" id="clearNotice2" style="display:none;"></div>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
     </div>
   </div>
@@ -614,6 +619,7 @@
       <button class="btn ghost" onclick="checkGoogleSetup()">🩺 Check my Google setup</button>
       <span class="msg" id="shMsg"></span>
     </div>
+    <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
     <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) in their column order. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
   </div>
   <div class="card" id="diagCard" style="display:none;">
@@ -1421,6 +1427,10 @@ async function sendRecord(sheet,rec){
 }
 async function syncAll(){
   if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
+  /* A push REPLACES the Sheet with this device's rows (the tabs are cleared first).
+     Right after a clear the device holds little or nothing, so say so plainly
+     before the Sheet's books are overwritten by it. */
+  if(isDeviceCleared()&&!confirm('This device was cleared on '+String(clearedOn()).slice(0,10)+' and the automatic pull from the Sheet is off.\n\n🔄 Push app data to Sheet DELETES everything in the Sheet first and writes only what this device holds right now ('+totalRecords()+' record'+(totalRecords()===1?'':'s')+').\n\nTo keep the books: press ⬇ Load data FROM Sheet first, then push. Continue and overwrite the Sheet?'))return;
   flash('shMsg','Sending everything…');
   try{
     /* pressing the button IS the user gesture — if this device is not signed in
@@ -1512,6 +1522,7 @@ async function loadFromSheet(){
     const data=await fetchSheetData();
     applySheetData(data,false);
     rememberSheet();
+    setDeviceCleared(false);            // a deliberate load ends the "cleared" state — pulling resumes
     closeSetupAlert();
     flash('shMsg',sheetLayoutWarning||'✅ Data loaded from Google Sheet.');
     toast(sheetLayoutWarning?'⚠ Check the Sheet columns — details above':'✅ Data loaded from Google Sheet.');
@@ -1538,9 +1549,11 @@ function rememberSheet(){const cur=String(getSheetId()||'');if(cur)setStoreItem(
    so the interface always shows what is in the Sheet — on any device.
    Local entries that were never synced are kept and merged in. */
 async function autoLoadFromSheet(){
+  if(isDeviceCleared())return;             // the user cleared this device on purpose — do not pull the books back
   if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
     const data=await fetchSheetData();
+    if(isDeviceCleared())return;           // cleared while the Sheet was being read → keep it cleared
     const switched=noteSheetSwitch();
     applySheetData(data,true);
     rememberSheet();
@@ -3591,7 +3604,7 @@ function renderDash(){
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
 }
-function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();}
+function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();renderClearNotice();}
 
 /* ================= DATA THAT SHIPS WITH THE APP ================= */
 /* Hisab carries a plain records file — data/hisab-data.json — with the employees,
@@ -3691,6 +3704,7 @@ async function loadIncludedData(){
 /* On a device that has nothing at all, the included records load by themselves —
    so a new phone starts with the full history instead of an empty app. */
 async function autoLoadIncludedDataOnce(){
+  if(isDeviceCleared())return;             // a cleared device stays empty
   const empty=DB_TABS.every(([k])=>!(DB[k]||[]).length);
   if(!empty)return;
   if(storeItem('hisabIncludedDataAuto')==='done')return;
@@ -3702,6 +3716,7 @@ async function autoLoadIncludedDataOnce(){
     if(!data||!Array.isArray(data.employees))return;
     const total=DB_TABS.reduce((n,[k])=>n+((data[k]||[]).length),0);
     if(!total)return;
+    if(isDeviceCleared())return;
     mergeIncludedData(data);
     toast('📥 Loaded the '+total+' records that come with Hisab — press 🔄 Push app data to Sheet to put them in your Google Sheet');
   }catch(e){}
@@ -3723,13 +3738,125 @@ function exportBackup(){
   a.download='hisab-backup-'+todayStr()+'.json';a.click();
 }
 
-function clearAllData(){
-  if(!confirm('Clear ALL data on this device?\n\nThis will permanently delete every employee, leave, payment, receipt and expense record.\n\nDownload a backup first if you want to keep anything.'))return;
-  if(!confirm('Are you sure? This cannot be undone.'))return;
-  DB={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
-  persist();
+/* ================= CLEARING THE APP DATA =================
+   "Clear" has to mean clear, and Hisab keeps the books in TWO places: this device
+   (localStorage) and the Google Sheet the app writes into. The old button emptied
+   the device only, so on the next open the automatic pull brought every row back
+   from the Sheet and the data looked like it had never been cleared. Now the
+   dialog names both places and lets the user choose, and a wiped device is left
+   with a dated note (hisabDeviceCleared) that switches the automatic pull off, so
+   the books cannot come back by themselves. Deliberate "give me the books back"
+   actions — ⬇ Load data FROM Sheet, and the note's own button — switch it on
+   again; an imported backup never does, so nothing overwrites it behind the user's
+   back. */
+const CLEARED_KEY='hisabDeviceCleared';
+const INCLUDED_FLAG='hisabIncludedDataAuto';
+const clearedOn=()=>storeItem(CLEARED_KEY);
+const isDeviceCleared=()=>!!clearedOn();
+function setDeviceCleared(on){
+  setStoreItem(CLEARED_KEY,on?new Date().toISOString():'');
+  renderClearNotice();
+}
+function totalRecords(){return DB_TABS.reduce((n,[k])=>n+(DB[k]||[]).length,0);}
+function perTabCounts(){return DB_TABS.map(([k])=>DB_LABEL[k]+' '+((DB[k]||[]).length)).join(' • ');}
+function clearNoticeHtml(){
+  const on=clearedOn();
+  if(!on)return '';
+  const when=(String(on).slice(0,10)||'').split('-').reverse().join('-');   // dd-mm-yyyy
+  return '🧹 <b>App data was cleared on this device</b> on <b>'+esc(when)+'</b> — '
+    +'pulling the books back from your Google Sheet is <b>off</b>, so nothing comes back by itself. '
+    +'The Sheet itself is untouched and still holds every row.'
+    +'<br><button class="miniBtn blue" onclick="loadFromSheet()">⬇ Load data FROM Sheet</button>'
+    +'<button class="miniBtn green" onclick="turnSyncBackOn()">↩ Turn the automatic pull back on</button>';
+}
+function renderClearNotice(){
+  const html=clearNoticeHtml();
+  ['clearNotice2','clearNotice3'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.innerHTML=html;el.style.display=html?'':'none';
+  });
+}
+function turnSyncBackOn(){
+  setDeviceCleared(false);
+  toast('↩ Done — the Sheet is read again the next time the app opens.');
   renderAll();
-  toast('🗑 All data cleared.');
+}
+/* Everything Hisab keeps on this device, gone: the five tables, the saved receipt
+   images, the WhatsApp numbers remembered per person, and the "bundled records
+   already loaded" mark so they cannot be pulled in again either. The Google
+   account, the Sheet/Client ID settings and the note of which Sheet this device
+   belongs to are settings, not books, and stay. */
+function clearDeviceOnly(){
+  const n=totalRecords();
+  DB={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
+  try{
+    localStorage.removeItem(KEY);
+    localStorage.removeItem(PAY_IMG_KEY);
+    Object.keys(localStorage).filter(k=>k.indexOf(WA_NUM_KEY)===0).forEach(k=>localStorage.removeItem(k));
+  }catch(e){}
+  setStoreItem(INCLUDED_FLAG,'done');
+  setDeviceCleared(true);
+  renderAll();
+  return n;
+}
+function openClearDialog(){
+  const n=totalRecords();
+  dlgCtx={kind:'clear'};
+  document.getElementById('dlgTitle').innerHTML='🗑 Clear app data';
+  document.getElementById('dlgHint').innerHTML='Hisab keeps the books in two places — <b>this device</b> and your <b>Google Sheet</b>. Choose what to empty. Nothing is deleted until you press the red button.';
+  document.getElementById('dlgBody').innerHTML=`
+    <div class="dlgInfo">On this device right now: <b>${n}</b> record${n===1?'':'s'}
+      <div style="font-size:.8rem;color:var(--muted);">${esc(perTabCounts())}</div></div>
+    <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;">
+      <input type="radio" name="clearWhat" id="clDev" checked style="margin-top:3px;">
+      <span><b>This device only</b>
+        <span style="display:block;font-size:.8rem;color:var(--muted);">Every record, saved receipt image and remembered WhatsApp number on this device. Your Google Sheet keeps all its rows — <b>⬇ Load data FROM Sheet</b> brings the books back any time.</span></span>
+    </label>
+    <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #f0c2c2;border-radius:10px;background:#fffafa;cursor:pointer;">
+      <input type="radio" name="clearWhat" id="clBoth" style="margin-top:3px;">
+      <span><b>This device <u>and</u> the Google Sheet</b>
+        <span style="display:block;font-size:.8rem;color:var(--muted);">Also deletes every row inside the five tabs of the Sheet (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses). The tabs keep only their headings. Recoverable only from Google Sheets → File → Version history.</span></span>
+    </label>
+    <div class="actions">
+      <button class="btn red sm" onclick="doClearAppData()">🗑 Clear app data</button>
+      <button class="btn ghost sm" onclick="closeDlg()">✕ Cancel</button>
+      <button class="btn ghost sm" onclick="exportBackup()">⬇ Download backup first</button>
+    </div>`;
+  showDlg();
+}
+async function doClearAppData(){
+  const both=!!(document.getElementById('clBoth')&&document.getElementById('clBoth').checked);
+  const n=totalRecords();
+  if(!confirm(both
+    ?'Delete the '+n+' record'+(n===1?'':'s')+' on this device AND every row inside the five tabs of your Google Sheet?\n\nThe Sheet tabs keep only their headings. Nothing else in the Sheet is touched.'
+    :'Delete the '+n+' record'+(n===1?'':'s')+' saved on this device (with the saved receipt images and remembered WhatsApp numbers)?\n\nYour Google Sheet is NOT touched — press ⬇ Load data FROM Sheet whenever you want the books back.'))return;
+  if(both&&!confirm('Last check — this also empties the Google Sheet now.\n\nSheet: '+(getSheetId()||'the one in config.js')+'\n\nContinue?'))return;
+  closeDlg();
+  /* the Sheet is emptied first: if Google refuses, nothing is deleted anywhere */
+  if(both){
+    if(!getClientId()){flash('clearMsg','❌ Add your Google OAuth Client ID first — see the Google Sheet tab.',false);return;}
+    flash('clearMsg','🗑 Emptying the Google Sheet…');
+    try{
+      await getAccessToken(true);
+      await ensureTabs();
+      for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
+      await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{valueInputOption:'RAW',
+        data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))}});   // headings back, no rows
+      TABS.forEach(t=>{SHEET_HEADERS[t]=SHEET_COLS[t].slice();});
+      rememberSheet();
+    }catch(e){
+      const explained=reportProblem(e,true);
+      flash('clearMsg',explained?'❌ Google refused the clear — the fix is shown above. Nothing was deleted.':'❌ Could not empty the Sheet: '+((e&&e.message)||e)+' — nothing was deleted.',false);
+      toast('⚠ The Sheet could not be emptied — nothing was deleted, here or in the Sheet.');
+      updateSheetStatus();
+      return;
+    }
+  }
+  clearDeviceOnly();
+  const tail=both?' on this device and in the Google Sheet':'(this device only — the Sheet keeps the books until you push)';
+  flash('clearMsg','✅ Cleared '+n+' record'+(n===1?'':'s')+tail+'.',true);
+  toast('🗑 App data cleared'+(both?' everywhere':' on this device'));
 }
 
 /* init */
