@@ -620,7 +620,8 @@
       <span class="msg" id="shMsg"></span>
     </div>
     <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
-    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses) in their column order. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
+    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses), each tab's <b>headings and rows in the same column order</b>. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. It is also the one press that puts a Sheet whose columns got out of step right again — money showing under <b>Date</b> and the saved date under <b>Mode</b> is that, and the rows are rewritten in their right columns. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
+    <div class="hint" id="appBuildLine" style="margin-top:6px;"></div>
   </div>
   <div class="card" id="diagCard" style="display:none;">
     <h2>Setup check <span class="badge" style="background:var(--soft);color:var(--brand-dark);">for the admin</span></h2>
@@ -656,6 +657,11 @@
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
 let GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
 let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
+/* Which copy of the app a phone is running. Bump this on every release that changes the
+   app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
+   phones can be compared: a phone showing an older version is still serving a cached
+   copy of index.html and has to reload before it presses anything that writes. */
+const APP_BUILD='2026-09-22 (column-order fix)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -743,6 +749,52 @@ const END_DUTY_TEXT={
 let SHEET_HEADERS={};          // the header row actually found in the Sheet, per tab
 let sheetLayoutWarning='';     // set by fetchSheetData when the arrangement is older
 let layoutNotified=false;      // the arrangement notice is worth showing once per start
+let sheetPulled=false;         // has this device read the Sheet at least once in this session?
+/* ==== the arrangements this app wrote BEFORE the one above ====
+   ClientReceipts moved `clientPhone` from the LAST column to position 3, Employees
+   gained clientDutyStartDate / clientPhone / clientDeal in the middle, DutyLeave
+   gained wageType / wageAmount / reason / notes at the end. A row written in one of
+   those older orders is one place out when it is read with today's headings — which
+   is exactly how money received ends up under “Date” and the saved-at date under
+   “Mode”. Such a row is recognised by what its cells ARE (a saved-at stamp where a
+   payment mode belongs, a name where a date belongs) and read with the arrangement
+   it was really written in, so nothing has to be corrected by hand. */
+const LEGACY_LAYOUTS={
+  Employees:[['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','client','savedAt','dutyShift']],
+  DutyLeave:[['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','byShifts','subWage']],
+  ClientReceipts:[['id','client','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','clientPhone']]
+};
+const cellText=v=>String(v??'').trim();
+/* “22-09-2026, 10:47:35 am” — a date AND a time together (what `savedAt` holds) */
+const looksSavedAt=v=>{const s=cellText(v);return s.length>5&&/\d{1,2}[:.]\d{2}/.test(s)&&/[-/]/.test(s);};
+const looksDate=v=>/^\d{4}-\d{1,2}-\d{1,2}/.test(cellText(v));
+/* which arrangement was THIS row written in? null = the one its headings describe */
+function legacyLayoutFor(sheet,row,cols){
+  const lists=LEGACY_LAYOUTS[sheet];
+  if(!lists||!lists.length)return null;
+  const at={};cols.forEach((c,i)=>{if(at[c]===undefined)at[c]=i;});
+  const cell=n=>(at[n]===undefined?undefined:row[at[n]]);
+  if(sheet==='ClientReceipts'){
+    /* the mode cell holds the saved-at stamp and the date cell does not hold a date */
+    if(looksSavedAt(cell('mode'))&&!looksSavedAt(cell('date'))&&!looksDate(cell('date')))return lists[0];
+    return null;
+  }
+  if(sheet==='Employees'){
+    /* the client cell holds the row's saved-at stamp (a name belongs there) */
+    if(looksSavedAt(cell('client')))return lists[0];
+    /* …or the dutyShift choice landed in the clientPhone cell */
+    const ph=cellText(cell('clientPhone')).toLowerCase();
+    if((ph==='day'||ph==='night')&&!cellText(cell('clientDeal')))return lists[0];
+    return null;
+  }
+  if(sheet==='DutyLeave'){
+    /* wageType holds the old byShifts flag (true/false) instead of daily/monthly */
+    const w=cellText(cell('wageType')).toLowerCase();
+    if(w&&w!=='daily'&&w!=='monthly'&&/^(true|false|yes|no|1|0)$/.test(w))return lists[0];
+    return null;
+  }
+  return null;
+}
 /* newest value of one client column (clientPhone / dealAmount) from Money Entry —
    so an employee saved from the app carries the client's phone and deal as well */
 function receiptFieldForClient(client,field){
@@ -756,12 +808,15 @@ function receiptFieldForClient(client,field){
   });
   return best?best.value:'';
 }
-/* the app record → the value that belongs in each Sheet column */
-function sheetValues(sheet,rec){
+/* the app record → the value that belongs in each Sheet column.
+   `cols` = the arrangement being written into (defaults to the Sheet's own, else the
+   current one) — it decides whether an older Sheet still gets its own columns filled. */
+function sheetValues(sheet,rec,cols){
   rec=rec||{};
+  const target=(cols&&cols.length)?cols:sheetColsFor(sheet);
   if(sheet==='Employees'){
     const hours=String(rec.dutyHours||'');
-    const hasShiftCol=sheetColsFor('Employees').indexOf('dutyShift')!==-1;
+    const hasShiftCol=target.indexOf('dutyShift')!==-1;
     return {
       id:rec.id,name:rec.name,phone:rec.phone,wageType:rec.wageType,wageAmount:rec.wageAmount,
       dutyHours:hours,
@@ -800,10 +855,17 @@ function sheetValues(sheet,rec){
 }
 /* one Sheet row → app record; read by column NAME when the header row is known
    (positional only as a fallback), and numeric DATE/TIME cells are turned back into
-   yyyy-MM-dd / HH:mm for rows that were typed into the Sheet by hand */
-function sheetRowToRec(sheet,row,headers){
+   yyyy-MM-dd / HH:mm for rows that were typed into the Sheet by hand.
+   `info.legacy` is set when the row had to be read with an older arrangement
+   (see LEGACY_LAYOUTS) — the Sheet's own cells are still one column out. */
+function sheetRowToRec(sheet,row,headers,info){
   row=row||[];
-  const cols=(headers&&headers.length)?headers:SHEET_COLS[sheet];
+  let cols=(headers&&headers.length)?headers:SHEET_COLS[sheet];
+  /* a row that does not fit the arrangement it is being read with is read with the
+     one it was really written in — a Sheet in an older layout, or a tab whose
+     headings were already rewritten while its rows were not */
+  const legacy=legacyLayoutFor(sheet,row,cols);
+  if(legacy){cols=legacy;if(info)info.legacy=true;}
   const at={};cols.forEach((c,i)=>{if(at[c]===undefined)at[c]=i;});
   const dates=new Set(DATE_COLS[sheet]||[]);
   const o={synced:true};
@@ -816,10 +878,10 @@ function sheetRowToRec(sheet,row,headers){
     }
     o[c]=v===undefined||v===null?'':String(v);
   });
-  /* columns a Sheet may still carry from the older arrangement — read them too, so
-     nothing is lost while a tab has not been rewritten yet */
-  const LEGACY={Employees:['dutyShift'],DutyLeave:['byShifts','subWage']};
-  (LEGACY[sheet]||[]).forEach(c=>{
+  /* app-only columns a Sheet may still carry from the older arrangement — read them
+     too, so nothing is lost while a tab has not been rewritten yet */
+  const LEGACY_EXTRA={Employees:['dutyShift'],DutyLeave:['byShifts','subWage']};
+  (LEGACY_EXTRA[sheet]||[]).forEach(c=>{
     const i=at[c];
     if(i===undefined)return;
     let v=row[i];
@@ -844,12 +906,40 @@ function missingSheetCols(sheet,headers){
   if(!headers||!headers.length)return [];
   return SHEET_COLS[sheet].filter(c=>headers.indexOf(c)===-1);
 }
-/* the row to append / write — in the Sheet's own column order */
-function toSheetRow(sheet,rec){
-  const vals=sheetValues(sheet,rec);
-  return sheetColsFor(sheet).map(c=>vals[c]??'');
+/* the row to append / write — in the Sheet's own column order, or in `cols` when a
+   caller knows the arrangement it is writing into (the push writes its own) */
+function toSheetRow(sheet,rec,cols){
+  const target=(cols&&cols.length)?cols:sheetColsFor(sheet);
+  const vals=sheetValues(sheet,rec,target);
+  return target.map(c=>vals[c]??'');
 }
 function rowFor(sheet,rec){return toSheetRow(sheet,rec);}
+/* A record that was READ while a Sheet's columns were out of step sits on this
+   device one column out as well (money in `date`, the saved-at stamp in `mode`, …).
+   The same test that recognises such a Sheet row is applied to the record itself,
+   so the books repair themselves instead of being pushed back out wrong. */
+function repairShiftedRecord(sheet,rec){
+  if(!rec)return false;
+  const cols=SHEET_COLS[sheet];
+  const row=cols.map(c=>rec[c]);
+  const legacy=legacyLayoutFor(sheet,row,cols);
+  if(!legacy)return false;
+  const fixed=sheetRowToRec(sheet,row,legacy,{});   // read the values with the arrangement they really hold
+  delete fixed.synced;
+  Object.keys(rec).forEach(k=>{if(!Object.prototype.hasOwnProperty.call(fixed,k))delete rec[k];});
+  Object.assign(rec,fixed);
+  rec.synced=false;                                // the corrected row must reach the Sheet
+  return true;
+}
+function repairShiftedRecords(){
+  const per={};
+  [['Employees','employees'],['DutyLeave','dutyLeave'],['ClientReceipts','receipts']].forEach(([sheet,key])=>{
+    (DB[key]||[]).forEach(r=>{if(repairShiftedRecord(sheet,r))per[sheet]=(per[sheet]||0)+1;});
+  });
+  const total=Object.keys(per).reduce((n,k)=>n+per[k],0);
+  if(total){persist();renderAll();}
+  return {total,per};
+}
 /* ==== SHEET LAYOUT (end) ==== */
 
 /* ---------- Google Identity Services (sign in with Google) ----------
@@ -1388,14 +1478,28 @@ function ensureTabs(){
   return ensureTabsPromise;
 }
 /* the header row of one tab, fetched on demand (before the first append on a fresh
-   device, or when a tab is created while the app is running) */
+   device, or when a tab is created while the app is running). A tab whose first row
+   holds no headings has nothing to follow: the arrangement is then taken from the
+   rows that are already there (never guessed), and a tab that is completely empty
+   simply gets the current headings written before its first row — so an entry can
+   never land one column out. */
 async function ensureHeaders(sheet){
   if(SHEET_HEADERS[sheet])return SHEET_HEADERS[sheet];
   try{
     const j=await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!1:1?valueRenderOption=UNFORMATTED_VALUE');
     const h=((j.values&&j.values[0])||[]).map(v=>String(v??'').trim());
     while(h.length&&h[h.length-1]==='')h.pop();
-    if(h.length)SHEET_HEADERS[sheet]=h;
+    if(h.length){SHEET_HEADERS[sheet]=h;return h;}
+    /* row 1 is empty — look at what is actually in the tab */
+    const k=await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1:Z5?valueRenderOption=UNFORMATTED_VALUE');
+    const rows=((k&&k.values)||[]).filter(r=>r.some(v=>String(v??'').trim()!==''));
+    if(!rows.length){
+      SHEET_HEADERS[sheet]=SHEET_COLS[sheet].slice();          // empty tab → current headings first
+      await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1?valueInputOption=RAW',{method:'PUT',body:{values:[SHEET_COLS[sheet]]}});
+      return SHEET_HEADERS[sheet];
+    }
+    /* follow the arrangement those rows are really written in */
+    SHEET_HEADERS[sheet]=(legacyLayoutFor(sheet,rows[0],SHEET_COLS[sheet])||SHEET_COLS[sheet]).slice();
   }catch(e){}
   return SHEET_HEADERS[sheet];
 }
@@ -1437,11 +1541,34 @@ async function syncAll(){
        (or the hour is up), Google's sign-in opens first and the push continues
        from where it left off. Nothing is written before the sign-in succeeds. */
     await getAccessToken(true);
+    /* A device that has NOT read the Sheet yet in this session — a brand-new phone, or
+       one whose automatic pull could not run because nobody was signed in on it — holds
+       only part of the books. Pushing from it would delete every row it has never seen
+       (on another phone, that is the whole history). So the Sheet is read once first and
+       merged the safe way — rows typed on this device win, rows only the Sheet has are
+       kept — and only then is anything cleared or written. A device the user deliberately
+       CLEARED is left alone: that push really is meant to replace the Sheet. */
+    if(!sheetPulled&&!isDeviceCleared()){
+      const fresh=await fetchSheetData();
+      sheetPulled=true;
+      applySheetData(fresh,true);
+      rememberSheet();
+      toast('📥 Read the Sheet first — nothing another phone entered is lost');
+    }
     await ensureTabs();
     for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
+    /* The header row AND the rows must be written in the SAME arrangement. This is
+       the current one (SHEET_COLS): building the rows from SHEET_HEADERS instead —
+       the arrangement read from the Sheet before it was cleared — wrote today's
+       headings over rows still in the older order, and every column from `date`
+       on shifted one place (money received under “Date”, the saved-at date under
+       “Mode”, and so on). */
     await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
       valueInputOption:'RAW',
-      data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t],...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r))]}))
+      data:TABS.map(t=>{
+        const cols=SHEET_COLS[t];
+        return {range:t+'!A1',values:[cols,...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r,cols))]};
+      })
     }});
     [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
     TABS.forEach(t=>{SHEET_HEADERS[t]=SHEET_COLS[t].slice();});   // the Sheet now has this arrangement
@@ -1476,7 +1603,7 @@ async function fetchSheetData(){
     await ensureTabs();
     j=await sheetJSON(url);
   }
-  const warn=[];
+  const warn=[],shifted=[];
   const map=(sheet,i)=>{
     const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
     /* row 1 is the header — remember it, so every write follows the Sheet's own order */
@@ -1487,7 +1614,12 @@ async function fetchSheetData(){
     if(missing.length)warn.push(sheet);
     return rows.slice(1)
       .filter(row=>row.some(v=>String(v??'').trim()!==''))   // ignore trailing blank rows
-      .map(row=>sheetRowToRec(sheet,row,headers));
+      .map(row=>{
+        const info={};
+        const rec=sheetRowToRec(sheet,row,headers,info);
+        if(info.legacy)shifted.push(sheet);                  // row was written in the older order
+        return rec;
+      });
   };
   const data={
     employees:map('Employees',0),
@@ -1496,7 +1628,12 @@ async function fetchSheetData(){
     receipts:map('ClientReceipts',3),
     expenses:map('Expenses',4)
   };
-  sheetLayoutWarning=warn.length?('⚠ This Sheet is still in the old arrangement on: '+warn.join(', ')+' — everything is read correctly; press 🔄 Push app data to Sheet once to write it in the new column layout.'):'';
+  const shiftedTabs=[...new Set(shifted)];
+  const sentences=[];
+  if(warn.length)sentences.push('This Sheet is still in the old arrangement on: '+warn.join(', ')+'.');
+  if(shiftedTabs.length)sentences.push(shiftedTabs.join(', ')+' has rows written in the older column order'
+    +' — that is why money can show under Date and the saved-at date under Mode; they are read correctly here.');
+  sheetLayoutWarning=sentences.length?('⚠ '+sentences.join(' ')+' Press 🔄 Push app data to Sheet once to rewrite the whole Sheet in the current column layout.'):'';
   return data;
 }
 function applySheetData(fresh,keepUnsynced){
@@ -1521,6 +1658,7 @@ async function loadFromSheet(){
     await getAccessToken(true);
     const data=await fetchSheetData();
     applySheetData(data,false);
+    sheetPulled=true;
     rememberSheet();
     setDeviceCleared(false);            // a deliberate load ends the "cleared" state — pulling resumes
     closeSetupAlert();
@@ -1553,6 +1691,7 @@ async function autoLoadFromSheet(){
   if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
     const data=await fetchSheetData();
+    sheetPulled=true;                       // this device now has the Sheet's rows
     if(isDeviceCleared())return;           // cleared while the Sheet was being read → keep it cleared
     const switched=noteSheetSwitch();
     applySheetData(data,true);
@@ -1635,6 +1774,9 @@ function updateSheetStatus(){
   const connected=isGoogleConnected();
   t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(!getSheetId()?'Google: no Sheet to write into — see the box below':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in')))));
   if(s)s.classList.toggle('ok',connected&&v.ok);
+  /* which copy of the app this phone is running — compare it with the other phone */
+  const buildLine=document.getElementById('appBuildLine');
+  if(buildLine)buildLine.innerHTML='📱 App version <b>'+esc(APP_BUILD)+'</b> on this phone. Both phones should show the <b>same</b> version — a phone showing an older one is still running a cached copy: reload the page (or close the app and open it again) <b>before</b> pressing 🔄 Push app data to Sheet.';
   renderClientIdBox();
   renderSheetIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
@@ -1651,6 +1793,9 @@ async function checkGoogleSetup(){
   L.push('HISAB — Google Sheet setup check');
   L.push(new Date().toLocaleString());
   L.push('');
+  L.push('• App version on this phone: '+APP_BUILD);
+  L.push('   The other phone must show the same version. An older one is a cached copy of');
+  L.push('   index.html — reload the page (or close and reopen the app) before it writes to the Sheet.');
   L.push('• App address: '+location.origin);
   L.push('   This exact address must be listed in Cloud Console → Credentials →');
   L.push('   your “Web application” client → Authorised JavaScript origins.');
@@ -3871,6 +4016,16 @@ document.getElementById('lFrom').value=todayStr();
 document.getElementById('plMonth').value=todayStr().slice(0,7);
 document.getElementById('cbFrom').value=todayStr().slice(0,8)+'01';
 document.getElementById('cbTo').value=todayStr();
+/* Books that were read from a Sheet while its columns were out of step are put back
+   in their right columns here — otherwise the wrong values would be pushed back into
+   the Sheet. They are marked “not sent yet”, so one 🔄 Push repairs the Sheet too. */
+(function(){
+  const r=repairShiftedRecords();
+  if(!r.total)return;
+  const list=Object.keys(r.per).map(s=>s+' '+r.per[s]).join(', ');
+  flash('shMsg','🛠 Corrected '+r.total+' record'+(r.total===1?'':'s')+' that were saved one column out ('+list+'). Press 🔄 Push app data to Sheet to write the corrected rows.');
+  setTimeout(()=>toast('🛠 '+r.total+' row'+(r.total===1?'':'s')+' were one column out — corrected. See the Google Sheet tab'),1000);
+})();
 updateSheetStatus();renderAll();
 autoLoadIncludedDataOnce();
 autoLoadFromSheet();

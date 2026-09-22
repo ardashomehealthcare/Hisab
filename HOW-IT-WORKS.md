@@ -281,10 +281,20 @@ enforced by Google: each partner needs Editor rights on the Sheet.
 * **Every submit** appends one row to its tab: `values/<Tab>!A1:append` with `RAW` values.
   Before the first append on a device, the tab's **own header row** is fetched, so values go
   under the right headings even if the Sheet is in an older arrangement or has extra columns.
+* **A push from a device that has not read the Sheet yet** reads it once first (`sheetPulled`
+  flag) and merges it the safe way — rows typed on the device win, rows only the Sheet has are
+  kept — before anything is cleared. Without that, a phone that was never signed in (so the
+  automatic pull never ran) would **delete every row it had never seen** — on the other partner's
+  phone, that is the whole history. A device the user deliberately **cleared** is exempt: that
+  push is meant to replace the Sheet.
 * **🔄 Push app data to Sheet** rewrites the whole picture:
   `values:clear` each tab → `values:batchUpdate` with the header row + every row, in the
   arrangement of §2. It is also how an older Sheet is upgraded to the new column order, and how
   the records added from `data/hisab-data.json` reach the Sheet.
+  **The header row and the rows always come from the same arrangement** (`SHEET_COLS`) — building
+  the rows from `SHEET_HEADERS` instead, i.e. the order read from the Sheet before the clear, wrote
+  today's headings over rows in the older order and shifted every column from `date` on (money
+  received under “Date”, the saved-at date under “Mode”).
 * Missing tabs are created on sign-in (`ensureTabs`), with their header row.
 
 ### Reading (pull)
@@ -295,7 +305,16 @@ enforced by Google: each partner needs Editor rights on the Sheet.
   serials to `yyyy-mm-dd` / `HH:mm`;
 * trailing blank rows are ignored;
 * a column the app needs but the Sheet lacks is reported on screen instead of guessed;
-* legacy columns (`dutyShift`, `byShifts`, `subWage`) are read while they exist.
+* legacy columns (`dutyShift`, `byShifts`, `subWage`) are read while they exist;
+* **rows written in an older arrangement are read with the arrangement they really hold**
+  (`LEGACY_LAYOUTS` — Employees before the client columns, DutyLeave before
+  `wageType`/`wageAmount`, ClientReceipts before `clientPhone` moved to position 3). A row gives
+  itself away by what its cells are (a saved-at stamp where a payment mode belongs, a date where a
+  name belongs), so a tab whose headings were already rewritten while its rows were not — the state
+  that shows money under “Date” and the date under “Mode” — is read correctly anyway, and the
+  *Google Sheet* tab names those tabs. The same test is applied to the records already on the
+  device (`repairShiftedRecords()`), so they are put back in their right columns at start-up and
+  marked unsent instead of being pushed back out wrong.
 
 **Auto-load on start:** if the device is signed in, the Sheet is pulled and merged — entries that
 were never sent are kept and marked unsent. The device remembers which Sheet it last synced with
@@ -379,12 +398,25 @@ tables.
 ## 15. Startup sequence
 
 1. Read settings from `config.js` (and any device overrides), load the tables from `localStorage`.
+1b. `repairShiftedRecords()` — records that were read while a Sheet's columns were out of step are
+   put back in their right columns (§13) and marked unsent, so the wrong values can never be
+   pushed back out.
 2. Draw everything (`renderAll`), which also labels the push buttons with the number of unsent rows.
 3. If the device is empty, pull in `data/hisab-data.json` once.
 4. If signed in, pull the Sheet in the background and merge; if the settings look wrong, re-read
    `config.js` uncached (a phone can be serving a stale copy) and adopt the server values.
 5. Steps 3 and 4 are **skipped while the device carries the cleared note** (§12.1) — a cleared app
    stays empty until *Load data FROM Sheet* is pressed.
+
+### 15.1 Which copy of the app a phone is running (`APP_BUILD`)
+
+`APP_BUILD` (top of the script, `index.html`) is bumped with every release that changes the app.
+The **Google Sheet** tab shows it under the push hint, and the 🩺 setup check prints it, so the two
+partner phones can be compared: a phone showing an **older** version is still serving a cached
+`index.html` and must reload (or be closed and reopened) **before** it presses anything that
+writes — an old copy still writes the heading/row mismatch of §13 back into the Sheet. A phone
+that has the new copy reads such a Sheet correctly and the next push from it repairs the Sheet
+again, so nothing is ever lost either way.
 
 ---
 
