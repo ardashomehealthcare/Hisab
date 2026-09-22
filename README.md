@@ -38,6 +38,20 @@ Hisab carries **`data/hisab-data.json`** — the employees, duty & leave rows, e
 
 > ⚠️ If rows are put back into this file (names, wages, client numbers/addresses): on a **public** GitHub repo they are readable by anyone — keep the repo private or the file empty if the app is public.
 
+## Clearing the app data
+
+The books live in **two** places — **this device** and **your Google Sheet** — so *All Records* → **🗑 Clear app data** opens a dialog that shows how many records are on the device and asks which of the two to empty:
+
+| Choice | What is deleted | What is kept |
+|---|---|---|
+| **This device only** | Every record, the saved receipt images and the remembered WhatsApp numbers on this device | The whole Google Sheet — **⬇ Load data FROM Sheet** (or **⬆ Import backup**) brings the books back any time |
+| **This device *and* the Google Sheet** | The same, **plus** every row inside the five tabs of the Sheet (the tabs keep only their column headings) | Nothing — recoverable only from Google Sheets → **File → Version history** |
+
+* **The Sheet is emptied first.** If Google refuses (not signed in, wrong Sheet, no permission) **nothing is deleted anywhere** and the reason is shown on screen.
+* **A cleared device stays cleared.** The wipe leaves a dated note in the browser (`hisabDeviceCleared`) that switches the automatic pull **off**, so the next time the app opens the rows do **not** come back from the Sheet — this is what made the old *Clear all data* look like it had not worked. An amber note on *All Records* and on the *Google Sheet* tab shows the cleared state with two buttons: **⬇ Load data FROM Sheet** (brings the books back and resumes the pull) and **↩ Turn the automatic pull back on** (resumes without loading). An imported backup never switches the pull back on, so nothing overwrites it behind your back.
+* **Download a backup first** — the dialog has a **⬇ Download backup first** button that saves all five tables as one JSON file.
+* **🔄 Push app data to Sheet** asks before overwriting right after a clear: a push *replaces* the Sheet with the rows this device holds (which, just after a clear, is nothing).
+
 ## How to run
 
 Host it anywhere — GitHub Pages works great (sign-in with Google needs a proper `https://` address, so hosting is required for the Sheet sync; opening the file directly still works for on-device saving only).

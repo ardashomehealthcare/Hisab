@@ -260,8 +260,12 @@ money actually moved).
   import replaces the device's data after a confirmation.
 * **📥 Add the data included in the app** — merges `data/hisab-data.json` (see §13).
 * **🔄 Push app data to Sheet** — see §12.
-* **🗑 Clear all data** — wipes the device copy (double confirmation); the Sheet is untouched
-  until you push again.
+* **🗑 Clear app data** — opens a dialog that names both places the books live and lets you
+  choose: *this device only* (the Sheet keeps every row) or *this device **and** the five tabs in
+  the Google Sheet* (headings are kept, rows deleted; recoverable from Sheets → File → Version
+  history). The Sheet is emptied **first**, so if Google refuses, nothing is deleted anywhere.
+  A wiped device is left with a dated note that switches the automatic pull off — see §12.1 — so
+  the rows cannot come back by themselves.
 
 ---
 
@@ -303,6 +307,27 @@ replacing.
 → add the origin; 403 access_denied → test users / Internal screen; 404 → wrong Sheet ID; API not
 enabled → enable it). 🩺 *Check my Google setup* prints the origin Google needs, the Client ID in
 use and where it came from, and the last error.
+
+### 12.1 Clearing does not undo itself
+The old *Clear all data* emptied the device copy only, so the next open pulled every row back
+from the Sheet and the data looked like it had never been cleared. **🗑 Clear app data** now
+writes a dated note (`hisabDeviceCleared`) that stays until you say otherwise:
+
+* the automatic pull on start stops, and the one-time load of `data/hisab-data.json` is skipped —
+  the app opens **empty** and stays empty across restarts, even while signed in;
+* an amber note appears on *All Records* and on the *Google Sheet* tab with two ways out —
+  **⬇ Load data FROM Sheet** (bring the books back and resume the pull, `setDeviceCleared(false)`)
+  or **↩ Turn the automatic pull back on** (resume without loading);
+* **🔄 Push app data to Sheet** asks before it runs: a push *replaces* the Sheet with the rows this
+  device holds, which right after a clear would be none of them;
+* an **imported backup never** switches the pull back on, so an import cannot be overwritten by
+  the Sheet behind the user's back.
+
+The device-only wipe removes everything Hisab keeps on the device: the five tables
+(`hisabData_v1`), the receipt images (`hisabPayImages_v1`), the remembered WhatsApp numbers
+(`hisabWaNum:*`) and the "bundled data already loaded" mark. Settings — the Google account, the
+Client ID / Sheet ID, which Sheet this device belongs to — are left alone, because they are not
+books.
 
 ### The bundled records
 `data/hisab-data.json` holds the app's own books in the Sheet's column layout — and it ships
@@ -346,6 +371,7 @@ tables.
 | `hisabSyncedSheetId` | which Sheet this device last synced with |
 | `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
+| `hisabDeviceCleared` | the day this device was cleared — while set, the automatic pull from the Sheet stays off (§12.1) |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
 
 ---
@@ -357,6 +383,8 @@ tables.
 3. If the device is empty, pull in `data/hisab-data.json` once.
 4. If signed in, pull the Sheet in the background and merge; if the settings look wrong, re-read
    `config.js` uncached (a phone can be serving a stale copy) and adopt the server values.
+5. Steps 3 and 4 are **skipped while the device carries the cleared note** (§12.1) — a cleared app
+   stays empty until *Load data FROM Sheet* is pressed.
 
 ---
 
