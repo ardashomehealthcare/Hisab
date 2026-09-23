@@ -23,7 +23,27 @@
   header .logo{height:40px; width:40px; border-radius:10px; background:#fff; padding:3px; object-fit:contain; box-shadow:0 1px 4px rgba(0,0,0,.18);}
   header .titleWrap{display:flex; flex-direction:column; line-height:1.2;}
   header .sub{font-size:.8rem; opacity:.85;}
-  #sheetStatus{margin-left:auto; font-size:.78rem; background:rgba(255,255,255,.15); padding:5px 12px; border-radius:999px; display:flex; align-items:center; gap:6px;}
+  #sheetStatus{font-size:.78rem; background:rgba(255,255,255,.15); padding:5px 12px; border-radius:999px; display:flex; align-items:center; gap:6px;}
+  /* ---- 15-day payment collection reminder (header button + popup list) ---- */
+  #remindBtn{margin-left:auto; position:relative; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.15); color:#fff;
+             font-size:.78rem; font-weight:700; padding:6px 13px; border-radius:999px; cursor:pointer; display:flex; align-items:center; gap:6px;}
+  #remindBtn:hover{background:rgba(255,255,255,.28);}
+  #remindBtn .cnt{background:var(--red); color:#fff; border-radius:999px; min-width:18px; height:18px; padding:0 5px;
+                  font-size:.7rem; line-height:18px; text-align:center; display:none;}
+  #remindBtn.has .cnt{display:inline-block;}
+  .remRow{border:1px solid var(--line); border-left-width:4px; border-radius:10px; padding:9px 11px; margin-bottom:8px; font-size:.84rem; line-height:1.6;}
+  .remRow.due{border-left-color:var(--red); background:#fff6f6;}
+  .remRow.soon{border-left-color:#e08a1e; background:#fffaf0;}
+  .remRow.ok{border-left-color:var(--green); background:#f4fbf6;}
+  .remRow .nm{font-weight:800; font-size:.92rem;}
+  .remRow .when{float:right; font-size:.74rem; font-weight:700;}
+  .remRow.due .when{color:var(--red);} .remRow.soon .when{color:#b5700d;} .remRow.ok .when{color:var(--green);}
+  .remRow .sub{font-size:.75rem; color:var(--muted);}
+  .remRow .amt{font-weight:800;}
+  .remRow .amt.neg{color:var(--red);}
+  .remCancel{float:right; border:1px solid var(--line); background:#fff; color:var(--muted); border-radius:7px;
+             padding:3px 9px; font-size:.7rem; font-weight:700; cursor:pointer; margin-top:4px;}
+  .remCancel:hover{border-color:var(--red); color:var(--red);}
   #sheetStatus .dot{width:9px; height:9px; border-radius:50%; background:#ffb020;}
   #sheetStatus.ok .dot{background:#3ddc84;}
 
@@ -175,6 +195,7 @@
     <h1>Ardas Caretaker Manager</h1>
     <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
   </div>
+  <button id="remindBtn" onclick="openCollectionReminder()" title="15-day payment collection reminder">⏰ Reminders <span class="cnt" id="remindCnt">0</span></button>
   <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
 </header>
 
@@ -661,7 +682,7 @@ let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-22 (column-order fix)';
+const APP_BUILD='2026-09-23 (15-day collection reminder)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -3451,6 +3472,164 @@ function fillMoneyFromClientBill(){
   document.getElementById('invoiceCard').scrollIntoView({behavior:'smooth'});
 }
 
+/* ================= 15-DAY PAYMENT COLLECTION REMINDER =================
+   A plain reminder list — it never writes a payment, never touches the Google
+   Sheet and adds no column anywhere. It only reads what is already in the books
+   (client duty start date, the agreed monthly deal, and the receipts already
+   entered) and says: "this client's 15-day collection point has arrived".
+
+   The cycle is FIXED from the client's duty start date: day 15, 30, 45, 60 …
+   whatever has or has not been paid in between. So a client whose duty started
+   on the 3rd is always a 18th / 3rd client.
+
+   Cancelling a client only hides them from this list. It is stored on the phone
+   in localStorage (same place the WhatsApp numbers are remembered) — deleting it
+   changes no record, and the client can be brought back any time. */
+const REM_OFF_KEY='hisabRemOff:';          // client cancelled out of the reminder
+const REM_SEEN_KEY='hisabRemSeen';         // last date the popup auto-opened
+const REM_CYCLE=15;                        // days in one collection cycle
+
+function remIsCancelled(client){const k=keyOf(client);return k?storeItem(REM_OFF_KEY+k)==='1':false;}
+function remSetCancelled(client,off){const k=keyOf(client);if(k)setStoreItem(REM_OFF_KEY+k,off?'1':'');}
+/* Whole days between two YYYY-MM-DD days, counted on the calendar (not UTC hours). */
+function daysBetweenStr(a,b){
+  if(!a||!b)return 0;
+  const [y1,m1,d1]=String(a).split('-').map(Number),[y2,m2,d2]=String(b).split('-').map(Number);
+  if(!y1||!y2)return 0;
+  return Math.round((Date.UTC(y2,m2-1,d2)-Date.UTC(y1,m1-1,d1))/86400000);
+}
+/* Every active client that has a duty start date, with their current collection
+   point and the balance standing against them today. */
+function collectionReminders(){
+  const today=todayStr(),out=[];
+  const names=new Set();
+  DB.employees.forEach(e=>{if(e.client&&e.client.trim()&&!isClientEnded(e.client))names.add(e.client.trim());});
+  DB.receipts.forEach(r=>{if(r.client&&r.client.trim()&&!isClientEnded(r.client))names.add(r.client.trim());});
+  DB.dutyLeave.forEach(r=>{if(r.client&&r.client.trim()&&r.type!=='endClientDuty'&&!isClientEnded(r.client))names.add(r.client.trim());});
+
+  [...names].forEach(client=>{
+    const start=clientDutyStartFor(client);
+    if(!start||start>today)return;                       // duty has not begun yet
+    const elapsed=daysBetweenStr(start,today);
+    const key=keyOf(client);
+    const pays=DB.receipts.filter(r=>keyOf(r.client)===key).sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+    const lastPay=pays.length?pays[pays.length-1]:null;
+    const lastPayDate=lastPay?String(lastPay.date||''):'';
+    /* Walk the fixed 15-day points from the duty start (day 15, 30, 45 …) and find
+       the FIRST one that has come and gone with no money collected since. That point
+       stays on the list, counting up, until a payment is entered — a missed 15th is
+       never quietly rolled forward to the 30th. */
+    const pastPoints=Math.floor(elapsed/REM_CYCLE);      // collection points already reached
+    let cycleNo=0,dueDate='',missed=0;
+    for(let n=1;n<=pastPoints;n++){
+      const p=addDaysStr(start,n*REM_CYCLE);
+      if(!lastPayDate||lastPayDate<p){                   // nothing received on/after this point
+        if(!cycleNo){cycleNo=n;dueDate=p;}
+        missed++;
+      }
+    }
+    const paidThisCycle=!cycleNo;                        // every point so far is settled
+    if(!cycleNo){                                        // all clear → show the next point ahead
+      cycleNo=pastPoints+1;
+      dueDate=addDaysStr(start,cycleNo*REM_CYCLE);
+    }
+    const prevDue=cycleNo>1?addDaysStr(start,(cycleNo-1)*REM_CYCLE):start;
+    const daysLeft=daysBetweenStr(today,dueDate);
+    /* Balance today = pro-rata bill from duty start to today − everything received.
+       Same rule as the Salary Calculator, so the two never disagree. */
+    const deal=Number(lastDealForClient(client))||0;
+    const billed=deal>0?proRateDeal(deal,start,today).total:0;
+    const paidAll=pays.reduce((s,p)=>s+Number(p.amount||0),0);
+    const balance=billed-paidAll;
+    /* due = collection point reached and this cycle not collected yet */
+    const state=(daysLeft<=0&&!paidThisCycle)?'due':(daysLeft<=3&&!paidThisCycle?'soon':'ok');
+    out.push({client,start,deal,dueDate,prevDue,daysLeft,cycleNo,balance,billed,paidAll,missed,pastPoints,
+              lastPayDate,paidThisCycle,state,cancelled:remIsCancelled(client)});
+  });
+  const rank={due:0,soon:1,ok:2};
+  out.sort((a,b)=>(rank[a.state]-rank[b.state])||a.daysLeft-b.daysLeft||a.client.localeCompare(b.client));
+  return out;
+}
+/* Red count on the header button = clients whose collection point has arrived. */
+function remDueList(){return collectionReminders().filter(r=>!r.cancelled&&r.state==='due');}
+function updateRemindBadge(){
+  const btn=document.getElementById('remindBtn'),cnt=document.getElementById('remindCnt');
+  if(!btn||!cnt)return;
+  const n=remDueList().length;
+  cnt.textContent=n;btn.classList.toggle('has',n>0);
+  btn.title=n?(n+' client'+(n===1?'':'s')+' due for payment collection'):'15-day payment collection reminder — nothing due';
+}
+function remWhenText(r){
+  if(r.cancelled)return 'reminder off';
+  if(r.state==='due'){
+    const over=-r.daysLeft;
+    return over===0?'due today':(over+' day'+(over===1?'':'s')+' overdue');
+  }
+  if(r.daysLeft===0)return 'due today';
+  return 'in '+r.daysLeft+' day'+(r.daysLeft===1?'':'s');
+}
+function openCollectionReminder(){
+  dlgCtx={kind:'remind'};
+  const all=collectionReminders();
+  const live=all.filter(r=>!r.cancelled),off=all.filter(r=>r.cancelled);
+  const dueN=live.filter(r=>r.state==='due').length;
+  document.getElementById('dlgTitle').innerHTML='⏰ Payment collection — every 15 days';
+  document.getElementById('dlgHint').innerHTML=
+    'Counted from each client\'s <b>duty start date</b> — day 15, 30, 45 and so on. '
+    +'This is only a reminder: nothing here records a payment or changes the Google Sheet.';
+  const row=r=>{
+    const paidLine=r.lastPayDate?('Last payment received: '+esc(r.lastPayDate)):'No payment received yet';
+    const balTxt=r.deal>0
+      ? '<span class="amt '+(r.balance>0?'neg':'')+'">'+(r.balance>0?fmt(r.balance)+' to collect':(r.balance<0?fmt(Math.abs(r.balance))+' advance':'nothing pending'))+'</span>'
+      : '<span class="sub">monthly deal not set — add it in Money Entry to see the amount</span>';
+    return '<div class="remRow '+r.state+'">'
+      +'<span class="when">'+esc(remWhenText(r))+'</span>'
+      +'<div class="nm">'+(r.state==='due'?'🔴 ':r.state==='soon'?'🟠 ':'🟢 ')+esc(r.client)+'</div>'
+      +'<div class="sub">Collection point '+r.cycleNo+' (day '+(r.cycleNo*REM_CYCLE)+') • '+esc(r.dueDate)+' • duty started '+esc(r.start)
+        +(r.missed>1?' • <b>'+r.missed+' points not collected</b>':'')+'</div>'
+      +'<div class="sub">'+paidLine+(r.paidThisCycle&&r.pastPoints>0&&r.lastPayDate?' — points so far are collected':'')+'</div>'
+      +'<div>'+balTxt+'</div>'
+      +'<button class="remCancel" onclick="remCancelClient(\''+esc(r.client).replace(/'/g,"\\'")+'\')">✕ Cancel reminder</button>'
+      +'<div style="clear:both;"></div>'
+      +'</div>';
+  };
+  let body='';
+  if(!live.length){
+    body+='<div class="dlgInfo">No active client has a duty start date yet, or every reminder is cancelled. '
+        +'Set <b>Client duty start date</b> on the employee to switch the 15-day count on.</div>';
+  }else{
+    body+='<div class="dlgInfo">'+(dueN?('<b>'+dueN+' client'+(dueN===1?'':'s')+'</b> ready for collection today.'):'Nothing due right now — the next collection points are below.')+'</div>'
+        +live.map(row).join('');
+  }
+  if(off.length){
+    body+='<div class="sub" style="font-size:.76rem;color:var(--muted);margin:10px 0 6px;"><b>Cancelled reminders</b></div>'
+      +off.map(r=>'<div class="remRow ok" style="opacity:.7;">'
+        +'<div class="nm">🔕 '+esc(r.client)+'</div>'
+        +'<div class="sub">Reminder off — next point would be '+esc(r.dueDate)+'</div>'
+        +'<button class="remCancel" onclick="remRestoreClient(\''+esc(r.client).replace(/'/g,"\\'")+'\')">↩︎ Turn back on</button>'
+        +'<div style="clear:both;"></div></div>').join('');
+  }
+  body+='<div class="actions"><button class="btn ghost sm" onclick="closeDlg()">✕ Close</button></div>';
+  document.getElementById('dlgBody').innerHTML=body;
+  showDlg();
+}
+function remCancelClient(client){
+  remSetCancelled(client,true);updateRemindBadge();openCollectionReminder();
+  toast('🔕 Reminder cancelled for '+client+' — no record was changed.');
+}
+function remRestoreClient(client){
+  remSetCancelled(client,false);updateRemindBadge();openCollectionReminder();
+  toast('⏰ Reminder switched back on for '+client+'.');
+}
+/* Open by itself on the first visit of the day when something is due. */
+function maybeAutoOpenReminder(){
+  const today=todayStr();
+  if(storeItem(REM_SEEN_KEY)===today)return;
+  if(!remDueList().length)return;
+  setStoreItem(REM_SEEN_KEY,today);
+  setTimeout(openCollectionReminder,900);
+}
+
 /* ================= PROFIT / LOSS ================= */
 function plForMonth(ym){
   const inn=DB.receipts.filter(r=>monthOf(r.date)===ym).reduce((s,r)=>s+Number(r.amount||0),0);
@@ -3749,7 +3928,7 @@ function renderDash(){
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
 }
-function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();renderClearNotice();}
+function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();renderClearNotice();updateRemindBadge();}
 
 /* ================= DATA THAT SHIPS WITH THE APP ================= */
 /* Hisab carries a plain records file — data/hisab-data.json — with the employees,
@@ -4027,6 +4206,7 @@ document.getElementById('cbTo').value=todayStr();
   setTimeout(()=>toast('🛠 '+r.total+' row'+(r.total===1?'':'s')+' were one column out — corrected. See the Google Sheet tab'),1000);
 })();
 updateSheetStatus();renderAll();
+maybeAutoOpenReminder();
 autoLoadIncludedDataOnce();
 autoLoadFromSheet();
 if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
