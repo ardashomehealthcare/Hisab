@@ -64,7 +64,7 @@ Host it anywhere — GitHub Pages works great (sign-in with Google needs a prope
 
 The app talks to your Google Sheet **directly from the browser with Google's official OAuth sign-in** — there is no shared URL to hand out, nothing to host, and no "Anyone with the link" access. Each partner signs in with their own Google account, and Google itself checks that the account may edit the spreadsheet.
 
-The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs.
+The main spreadsheet is set in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY'` — your existing sheet, existing data, existing tabs. An optional second Sheet can be set as `HISAB_BACKUP_SPREADSHEET_ID` (leave it empty until you make and share a backup Sheet).
 
 ### One-time setup (admin, in Google Cloud Console)
 
@@ -77,7 +77,14 @@ The spreadsheet is locked in `config.js`: `HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS
 4. <https://console.cloud.google.com/auth/clients> → **Create client** → **Web application**.
 5. **Authorised JavaScript origins** → add the exact origin where the app is served, e.g. `https://ardashomehealthcare.github.io` (add `http://localhost:8000` as well for local testing). Sign-in only works from a listed origin.
 6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`) → paste it into **`config.js`** as `HISAB_GOOGLE_CLIENT_ID` (or into the box in the app's **Google Sheet** tab).
-7. Share the Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
+7. Share the main Google Sheet with your partner as **Editor**, then in the app → **Google Sheet** tab → **🔐 Sign in with Google** → **Allow**. Done.
+
+### Optional second Google Sheet backup
+
+1. Make a second empty Google Sheet with **🆕 New empty Sheet** in the app's **Optional backup Google Sheet** box (or open <https://sheet.new>).
+2. Share that Sheet with the Google account used by Hisab as **Editor**.
+3. Paste its address in **Optional backup Google Sheet** → **💾 Use this backup Sheet**.
+4. Press **💾 Backup app data to second Sheet** whenever you want a complete copy. Hisab creates the same five tabs and updates/removes rows by `id`, without touching the main Sheet. If you want the copy after each main-Sheet write or push, tick **Also update this backup after every successful main-Sheet write or push**. The backup is separate, so a failed backup does not stop or undo the main write.
 
 The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeePayments`, `ClientReceipts`, `Expenses` — every submit lands in its respective tab. (DutyLeave also stores open leaves, join-duty dates and substitutes — substitute rows have the covering employee in `empName` and the employee on leave in the `forEmp` column.) Anything already in those tabs is read as-is — no migration needed.
 
@@ -85,13 +92,14 @@ The app auto-creates tabs on first sign-in: `Employees`, `DutyLeave`, `EmployeeP
 
 The records file (`data/hisab-data.json`) is simply **the app's own books** — the five tables in
 the standard column layout — and it ships **empty**: all app data has been cleared, and the
-records are added **from your Google Sheet** after sign-in (the automatic pull on start, or
-**⬇ Load from Google Sheet**). Nothing else is kept: **no other spreadsheet, no reference sheet,
-no link to any outside Sheet is stored in the app** — it writes only to its own Sheet
-(`HISAB_SPREADSHEET_ID` in `config.js`). On the **Google Sheet** tab, **🔄 Push app data to
-Sheet** brings the two copies together: it reads the Sheet, merges it with this device row by row
-(by `id`), and then writes **only the rows that differ** — a new entry as one appended row, an edit
-onto its own row, a delete as the removal of its own row. Tabs are never cleared.
+records are added **from your main Google Sheet** after sign-in (the automatic pull on start, or
+**⬇ Load from Google Sheet**). The main Sheet (`HISAB_SPREADSHEET_ID` in `config.js`) remains the
+collaborative source of truth. An optional second Sheet (`HISAB_BACKUP_SPREADSHEET_ID`) is a
+separate safety copy: configure it on the **Google Sheet** tab, then press **💾 Backup app data to
+second Sheet** whenever required. You can turn on automatic backup after every successful push.
+Backup failure never rolls back a successful main-Sheet write. On the main Sheet, **🔄 Push app
+data to Sheet** brings the two copies together row by row (by `id`) and writes only what differs;
+tabs are never cleared.
 
 ### The Sheet layout — column for column
 

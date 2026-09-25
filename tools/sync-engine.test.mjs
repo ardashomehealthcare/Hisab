@@ -687,5 +687,20 @@ console.log('\n19. 📥 twice adds nothing twice; a Sheet that cannot be read, o
   eq(await t2.$(`addRecordsFromFile({files:[{name:'photo.jpg'}],value:''})`), false, 'a file that is not a Hisab file is refused');
 }
 
+console.log('\n20. An optional second Sheet receives a complete backup snapshot without changing the primary sync state');
+{
+  const t = boot({
+    sheetSpec: { ClientReceipts: [rowFor('ClientReceipts', 'OLD', { client: 'Old client', amount: '50' })] },
+    device: { receipts: [{ id: 'NEW', client: 'New client', date: '2026-09-20', amount: '700', synced: false }] }
+  });
+  await sleep(40);
+  // The mock uses one book for both URLs, but the backup endpoint still exercises
+  // the real second-Sheet code path, including tabs, headers, append and update.
+  t.$(`setBackupSheetId('22222222222222222222222222222222222222222222')`);
+  await t.$(`backupToSheet({interactive:false})`);
+  ok(idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').includes('NEW'), 'the backup snapshot writes a local row to the second Sheet');
+  ok(t.$('DB.receipts.some(r=>r.id==="NEW" && r.synced===false)'), 'making a backup does not mark a primary row as synced');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

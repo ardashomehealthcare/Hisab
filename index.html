@@ -634,6 +634,33 @@
         </div>
       </div>
     </details>
+    <details class="setupBox" id="gBackupSheetIdBox">
+      <summary>Optional backup Google Sheet <span class="tag" id="bsidTag"></span></summary>
+      <div class="boxBody">
+        <div class="hint" style="margin-bottom:10px;">Keep a second Google Sheet as a separate safety copy. Hisab creates the same 5 tabs in it and never changes the main Sheet while making a backup. Backup is manual by default; you can also turn on automatic backup after every successful push.</div>
+        <div class="field" style="max-width:680px;">
+          <label>Backup Sheet ID — or paste the whole Sheet address</label>
+          <input id="backupSheetId" placeholder="https://docs.google.com/spreadsheets/d/backup-sheet-id…/edit" autocomplete="off" autocapitalize="none" spellcheck="false" oninput="backupSheetIdTyped()">
+          <div class="hint" id="bsidHint"></div>
+          <div class="actions">
+            <button class="btn primary sm" onclick="saveBackupSheetId()">💾 Use this backup Sheet</button>
+            <button class="btn ghost sm" onclick="resetBackupSheetId()">↩ Use the one in config.js</button>
+            <button class="btn ghost sm" onclick="copyText(getBackupSheetId()||'')">📋 Copy</button>
+            <button class="btn ghost sm" onclick="openBackupSheetNow()">🔗 Open it</button>
+            <button class="btn ghost sm" onclick="newBackupSheetTab()">🆕 New empty Sheet</button>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:12px;font-weight:500;">
+            <input type="checkbox" id="autoBackup" onchange="setAutoBackup(this.checked)">
+            Also update this backup after every successful main-Sheet write or push
+          </label>
+          <div class="hint">The button below is the safest choice for an occasional backup. Automatic backup never blocks or rolls back a successful primary write.</div>
+        </div>
+      </div>
+    </details>
+    <div class="actions">
+      <button class="btn ghost" id="btnBackupNow" onclick="backupNow()">💾 Backup app data to second Sheet</button>
+      <span class="msg" id="backupMsg"></span>
+    </div>
     <div class="actions">
       <button class="btn primary" id="btnSignIn" onclick="googleSignIn()">🔐 Sign in with Google</button>
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
@@ -676,18 +703,19 @@
 <!-- Google API client (gapi) — Google Sheets API library -->
 <script src="https://apis.google.com/js/api.js" async defer onerror="window._apiFailed=true"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
-<script src="config.js?v=5"></script>
+<script src="config.js?v=6"></script>
 <script>
 
 /* ================= STORAGE ================= */
-/* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
+/* Google OAuth client ID + main/backup spreadsheet IDs live in config.js - easy to edit. */
 let GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
 let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
+let BACKUP_SPREADSHEET_ID=String(window.HISAB_BACKUP_SPREADSHEET_ID||'').trim();
 /* Which copy of the app a phone is running. Bump this on every release that changes the
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-25 (safe sync • a wipe cannot take a phone’s rows with it • recovery buttons removed • 📥 adds only missing records from a file)';
+const APP_BUILD='2026-09-25 (safe sync • optional second Google Sheet backup • a wipe cannot take a phone’s rows with it • 📥 adds only missing records from a file)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -1027,6 +1055,7 @@ const SID_KEY='hisabSheetId';
 const ACC_KEY='hisabAccountEmail';      // the Google account last signed in on this device
 let AUTH={token:'',expiresAt:0};
 let tokenClient=null,tokenClientId='',ensureTabsPromise=null;
+let backupSetupId='',backupHeaders={};
 let pendingAuth=null,lastGsError=null,alertKey='';
 function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY));if(a&&a.token)AUTH={token:a.token,expiresAt:a.expiresAt||0};}catch(e){}}
 function saveAuth(){try{localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH));}catch(e){}}
@@ -1214,20 +1243,102 @@ function resetSheetId(){
   flash('shMsg',FILE_SHEET_ID?'✅ Back to the Sheet in config.js.':'config.js has no Sheet ID yet — paste one in the box above.',!!FILE_SHEET_ID);
 }
 
+/* ---------- optional second Sheet used for a backup copy ---------- */
+const BID_KEY='hisabBackupSheetId';
+const AUTO_BACKUP_KEY='hisabAutoBackup_v1';
+let FILE_BACKUP_SHEET_ID=BACKUP_SPREADSHEET_ID;
+function setBackupSheetId(id){BACKUP_SPREADSHEET_ID=String(id||'').trim();}
+function backupSheetIdSource(){
+  const ov=regSheetId(storeItem(BID_KEY));
+  if(ov)return {id:ov,from:'device'};
+  return FILE_BACKUP_SHEET_ID?{id:FILE_BACKUP_SHEET_ID,from:'config.js'}:{id:'',from:'none'};
+}
+function getBackupSheetId(){return BACKUP_SPREADSHEET_ID||backupSheetIdSource().id;}
+function backupSheetLink(id){return 'https://docs.google.com/spreadsheets/d/'+(id||getBackupSheetId()||'(missing)')+'/edit';}
+function checkBackupSheetRef(raw){
+  const t=String(raw==null?'':raw).trim(),id=cleanSheetRef(t);
+  if(!t)return {ok:true,what:'empty',msg:'No backup Sheet is configured. The main Sheet continues to work normally.'};
+  if(!id||!/^[A-Za-z0-9_-]{15,}$/.test(id))return {ok:false,what:'backup_sheet',msg:'Paste a Google Sheet address or its long Sheet ID. This backup setting was not saved.'};
+  if(id===getSheetId())return {ok:false,what:'same_sheet',msg:'The backup Sheet must be a different Google Sheet from the main Sheet.'};
+  return {ok:true,what:'ok',msg:'Backup Sheet looks ready. It must be shared with the Google account used by Hisab as Editor.'};
+}
+function renderBackupSheetIdBox(){
+  const src=backupSheetIdSource(),v=checkBackupSheetRef(src.id);
+  const tag=document.getElementById('bsidTag'),inp=document.getElementById('backupSheetId'),hint=document.getElementById('bsidHint'),box=document.getElementById('gBackupSheetIdBox'),auto=document.getElementById('autoBackup');
+  if(tag){tag.textContent=src.id?(src.from==='device'?'typed on this device':'from config.js'):'not configured';tag.className='tag '+(v.ok?'ok':'bad');}
+  if(inp&&document.activeElement!==inp)inp.value=src.id;
+  if(hint)hint.innerHTML=esc(v.msg);
+  if(auto)auto.checked=autoBackupEnabled();
+  if(box&&src.id&&!v.ok)box.open=true;
+}
+function backupSheetIdTyped(){
+  const inp=document.getElementById('backupSheetId'),raw=inp?inp.value.trim():'',hint=document.getElementById('bsidHint');
+  if(hint)hint.innerHTML=esc(checkBackupSheetRef(raw).msg);
+}
+function applyBackupSheetIdFromBox(quiet){
+  const inp=document.getElementById('backupSheetId'),raw=inp?inp.value.trim():'';
+  const cur=regSheetId(storeItem(BID_KEY));
+  if(!raw){
+    if(cur){setStoreItem(BID_KEY,'');setBackupSheetId(FILE_BACKUP_SHEET_ID);renderBackupSheetIdBox();updateSheetStatus();if(!quiet)flash('backupMsg','Backup box emptied — backup is off until a Sheet is configured.',false);}
+    return {ok:true,changed:cur?'cleared':'none'};
+  }
+  const v=checkBackupSheetRef(raw);
+  if(!v.ok){flash('backupMsg',v.msg,false);return {ok:false,msg:v.msg};}
+  const id=regSheetId(raw);
+  if(id===FILE_BACKUP_SHEET_ID){
+    if(cur)setStoreItem(BID_KEY,'');
+    setBackupSheetId(FILE_BACKUP_SHEET_ID);renderBackupSheetIdBox();updateSheetStatus();
+    if(!quiet)flash('backupMsg','✅ Using the backup Sheet from config.js.',true);
+    return {ok:true,changed:'config'};
+  }
+  if(id===cur){renderBackupSheetIdBox();return {ok:true,changed:'same'};}
+  setStoreItem(BID_KEY,id);setBackupSheetId(id);renderBackupSheetIdBox();updateSheetStatus();
+  if(!quiet)flash('backupMsg','✅ Backup Sheet saved on this device. Press 💾 Backup app data to second Sheet.',true);
+  return {ok:true,changed:'override'};
+}
+function saveBackupSheetId(){applyBackupSheetIdFromBox(false);}
+function resetBackupSheetId(){
+  setStoreItem(BID_KEY,'');setBackupSheetId(FILE_BACKUP_SHEET_ID);
+  const inp=document.getElementById('backupSheetId');if(inp)inp.value=FILE_BACKUP_SHEET_ID||'';
+  renderBackupSheetIdBox();updateSheetStatus();
+  flash('backupMsg',FILE_BACKUP_SHEET_ID?'✅ Back to the backup Sheet in config.js.':'Backup is off — add a second Sheet address first.',!!FILE_BACKUP_SHEET_ID);
+}
+function openBackupSheetNow(){
+  const id=getBackupSheetId();
+  if(!id){flash('backupMsg','No backup Sheet is set yet — paste its address above.',false);return;}
+  window.open(backupSheetLink(id),'_blank','noopener');
+}
+function newBackupSheetTab(){
+  window.open('https://sheet.new','_blank','noopener');
+  flash('backupMsg','A new empty Sheet is opening — copy its address, paste it above, then press 💾 Use this backup Sheet.',false);
+}
+function autoBackupEnabled(){return storeItem(AUTO_BACKUP_KEY)==='1';}
+function setAutoBackup(on){
+  setStoreItem(AUTO_BACKUP_KEY,on?'1':'');
+  if(on&&!getBackupSheetId()){
+    setStoreItem(AUTO_BACKUP_KEY,'');
+    const cb=document.getElementById('autoBackup');if(cb)cb.checked=false;
+    flash('backupMsg','Set a backup Sheet first — automatic backup is still off.',false);
+    return;
+  }
+  flash('backupMsg',on?'✅ Automatic backup is on after successful main-Sheet writes and pushes.':'Automatic backup is off; use the backup button whenever you need a copy.',true);
+}
+
 /* A phone can keep serving an OLD cached copy of config.js, and then the app
    signs in with a Client ID that the server no longer has — which Google answers
    with 401 invalid_client. config.js is therefore re-read uncached whenever the
    settings look off, and can always be re-read by hand. */
 const CFG_KEY='hisabConfig_v1';
 function readStoredConfig(){try{const c=JSON.parse(storeItem(CFG_KEY));return c&&typeof c==='object'?c:null;}catch(e){return null;}}
-function applySettings(cid,sid){
-  const ch=[],nc=regClientId(cid),ns=regSheetId(sid);
+function applySettings(cid,sid,bid){
+  const ch=[],nc=regClientId(cid),ns=regSheetId(sid),nb=bid===undefined?FILE_BACKUP_SHEET_ID:regSheetId(bid);
   if(nc&&nc!==GOOGLE_CLIENT_ID){GOOGLE_CLIENT_ID=nc;tokenClient=null;ch.push('Client ID');}
   /* sid is the value from the FILE — remember it, then let a device override win */
   if(ns&&ns!==FILE_SHEET_ID){FILE_SHEET_ID=ns;ch.push('Google Sheet');}
   const want=regSheetId(storeItem(SID_KEY))||FILE_SHEET_ID;
   if(want&&want!==SPREADSHEET_ID){setSheetId(want);if(!ch.includes('Google Sheet'))ch.push('Google Sheet');}
-  if(ch.length)setStoreItem(CFG_KEY,JSON.stringify({cid:GOOGLE_CLIENT_ID,sid:FILE_SHEET_ID}));
+  if(bid!==undefined&&nb!==FILE_BACKUP_SHEET_ID){FILE_BACKUP_SHEET_ID=nb; if(!regSheetId(storeItem(BID_KEY)))setBackupSheetId(nb); ch.push('backup Sheet');}
+  if(ch.length)setStoreItem(CFG_KEY,JSON.stringify({cid:GOOGLE_CLIENT_ID,sid:FILE_SHEET_ID,bid:FILE_BACKUP_SHEET_ID}));
   return ch;
 }
 function configLooksOff(){const src=idSource();return !src.id||!regClientId(GOOGLE_CLIENT_ID)||src.from==='device'||!SPREADSHEET_ID;}
@@ -1239,7 +1350,8 @@ async function refetchConfigFile(){
   if(!/HISAB_GOOGLE_CLIENT_ID/.test(txt))throw authErr('config_parse','config.js did not come back in a readable form.');
   const cid=(txt.match(/HISAB_GOOGLE_CLIENT_ID\s*=\s*'([^']*)'/)||[])[1]||'';
   const sid=(txt.match(/HISAB_SPREADSHEET_ID\s*=\s*'([^']*)'/)||[])[1]||'';
-  return applySettings(cid,sid);
+  const bid=(txt.match(/HISAB_BACKUP_SPREADSHEET_ID\s*=\s*'([^']*)'/)||[])[1]||'';
+  return applySettings(cid,sid,bid);
 }
 async function recheckConfigFile(){
   try{
@@ -1618,6 +1730,167 @@ async function appendRow(sheet,row){
     await sheetJSON(url,{method:'POST',body});
   }
 }
+/* ==================================================================
+   OPTIONAL SECOND SHEET BACKUP
+   ==================================================================
+   The main Sheet remains the collaborative, row-safe source of truth. A backup is
+   a separately configured Sheet that receives a complete snapshot when the user
+   presses the backup button (or after a primary push when automatic backup is on).
+   It uses the same Google sign-in and never changes the main Sheet. Existing rows
+   in the backup are matched by id, stale rows are removed one at a time, and the
+   five tabs are created automatically. */
+function backupBase(){const id=getBackupSheetId();return id?GS_API+id:'';}
+async function backupEnsureTabs(base){
+  const meta=await sheetJSON(base+'?fields=sheets.properties(title,sheetId)');
+  const have=new Set();
+  (meta.sheets||[]).forEach(s=>{
+    const p=s.properties||{};
+    if(!p.title)return;
+    have.add(p.title);
+    if(p.sheetId!==undefined&&p.sheetId!==null)SHEET_IDS['backup:'+p.title]=p.sheetId;
+  });
+  const missing=TABS.filter(t=>!have.has(t));
+  if(missing.length){
+    await sheetJSON(base+':batchUpdate',{method:'POST',body:{requests:missing.map(t=>({addSheet:{properties:{title:t}}}))}});
+    await sheetJSON(base+'/values:batchUpdate',{method:'POST',body:{valueInputOption:'RAW',data:missing.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))}});
+    const meta2=await sheetJSON(base+'?fields=sheets.properties(title,sheetId)');
+    (meta2.sheets||[]).forEach(s=>{
+      const p=s.properties||{};
+      if(p.title&&p.sheetId!==undefined&&p.sheetId!==null)SHEET_IDS['backup:'+p.title]=p.sheetId;
+    });
+  }
+}
+async function backupEnsureHeaders(base,tab){
+  const key=backupSetupId+':'+tab;
+  if(backupHeaders[key])return backupHeaders[key];
+  let h=[];
+  try{
+    const j=await sheetJSON(base+'/values/'+encodeURIComponent(tab)+'!1:1?valueRenderOption=UNFORMATTED_VALUE');
+    h=((j.values&&j.values[0])||[]).map(v=>String(v??'').trim());
+    while(h.length&&h[h.length-1]==='')h.pop();
+  }catch(e){h=[];}
+  if(!h.length){
+    h=SHEET_COLS[tab].slice();
+    await sheetJSON(base+'/values/'+encodeURIComponent(tab)+'!A1?valueInputOption=RAW',{method:'PUT',body:{values:[h]}});
+  }
+  /* A backup must be restorable, so add any current app column that an older backup
+     does not have. Existing columns keep their order; nothing is moved. */
+  const missing=SHEET_COLS[tab].filter(c=>h.indexOf(c)===-1);
+  if(missing.length){
+    const old=h.length;
+    h=h.concat(missing);
+    await sheetJSON(base+'/values:batchUpdate',{method:'POST',body:{valueInputOption:'RAW',data:missing.map((c,i)=>({range:tab+'!'+colLetter(old+i)+'1',values:[[c]]}))}});
+  }
+  backupHeaders[key]=h.slice();
+  return backupHeaders[key];
+}
+async function readBackupSnapshot(base){
+  const ranges=TABS.map(t=>'ranges='+encodeURIComponent(t)).join('&');
+  const j=await sheetJSON(base+'/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&'+ranges);
+  const result={};
+  TABS.forEach((tab,i)=>{
+    const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
+    const headers=backupHeaders[backupSetupId+':'+tab]||SHEET_COLS[tab];
+    const data=[],where=[];
+    rows.forEach((row,n)=>{
+      if(n===0||!row.some(v=>String(v??'').trim()!==''))return;
+      const rec=sheetRowToRec(tab,row,headers,{});
+      if(!String(rec.id||''))return;
+      data.push(rec);where.push({id:String(rec.id),row:n+1});
+    });
+    result[tab]={headers,rows:data,where};
+  });
+  return result;
+}
+async function backupAppendRows(base,tab,rows){
+  if(!rows.length)return;
+  await sheetJSON(base+'/values/'+encodeURIComponent(tab)+'!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',{method:'POST',body:{values:rows}});
+}
+async function backupSnapshot(){
+  const base=backupBase();
+  if(!base)throw new Error('No backup Sheet is configured.');
+  const data=await readBackupSnapshot(base);
+  const done={added:0,updated:0,deleted:0};
+  for(const tab of TABS){
+    const key=TAB_TO_DB[tab],headers=data[tab].headers;
+    const local=(DB[key]||[]).filter(r=>r&&r.id);
+    const byId=new Map(local.map(r=>[String(r.id),r]));
+    const existing=new Map(data[tab].rows.map((r,i)=>[String(r.id),{rec:r,row:data[tab].where[i].row}]));
+    const updates=[];
+    data[tab].rows.forEach((old,i)=>{
+      const hit=byId.get(String(old.id));
+      if(!hit)return;
+      updates.push({range:tab+'!A'+data[tab].where[i].row,values:[toSheetRow(tab,hit,headers)]});
+    });
+    if(updates.length){
+      await sheetJSON(base+'/values:batchUpdate',{method:'POST',body:{valueInputOption:'RAW',data:updates}});
+      done.updated+=updates.length;
+    }
+    const adds=local.filter(r=>!existing.has(String(r.id))).map(r=>toSheetRow(tab,r,headers));
+    if(adds.length){await backupAppendRows(base,tab,adds);done.added+=adds.length;}
+    const removeRows=data[tab].rows.map((r,i)=>!byId.has(String(r.id))?data[tab].where[i].row:null).filter(r=>r!==null);
+    if(removeRows.length){
+      const sid=SHEET_IDS['backup:'+tab];
+      if(sid===undefined||sid===null)throw new Error('Could not read the backup tab number for '+tab+'.');
+      removeRows.sort((a,b)=>b-a);
+      await sheetJSON(base+':batchUpdate',{method:'POST',body:{requests:removeRows.map(row=>({deleteDimension:{range:{sheetId:sid,dimension:'ROWS',startIndex:row-1,endIndex:row}}}))}});
+      done.deleted+=removeRows.length;
+    }
+  }
+  return done;
+}
+let backupPromise=null,backupQueued=false;
+async function backupToSheet({interactive=false,silent=false}={}){
+  if(backupPromise)return backupPromise;
+  const id=getBackupSheetId();
+  if(!id){if(!silent)flash('backupMsg','Set a different backup Google Sheet first.',false);return false;}
+  const check=checkBackupSheetRef(id);
+  if(!check.ok){if(!silent)flash('backupMsg',check.msg,false);return false;}
+  backupPromise=(async()=>{
+    try{
+      if(!silent)flash('backupMsg','Preparing the backup Sheet…');
+      await getAccessToken(interactive);
+      const base=backupBase();
+      const changed=backupSetupId!==id;
+      backupSetupId=id;
+      if(changed)backupHeaders={};
+      await backupEnsureTabs(base);
+      for(const tab of TABS)await backupEnsureHeaders(base,tab);
+      if(!totalRecords()&&!silent&&!confirm('This device has no records. Replace the backup Sheet with an empty snapshot?'))return false;
+      const done=await backupSnapshot();
+      const parts=[];
+      if(done.added)parts.push(done.added+' added');
+      if(done.updated)parts.push(done.updated+' updated');
+      if(done.deleted)parts.push(done.deleted+' old row'+(done.deleted===1?'':'s')+' removed');
+      const msg=parts.length?'✅ Backup Sheet updated — '+parts.join(' • ')+'.':'✅ Backup Sheet already matches this device.';
+      if(!silent){flash('backupMsg',msg,true);toast('✅ Backup copied to second Google Sheet');}
+      return true;
+    }catch(e){
+      if(!silent)flash('backupMsg','❌ Backup failed: '+((e&&e.message)||e),false);
+      if(!silent)toast('❌ Backup Sheet was not updated; the main Sheet and device are unchanged.');
+      return false;
+    }finally{backupPromise=null;}
+  })();
+  return backupPromise;
+}
+function backupNow(){
+  if(!applyBackupSheetIdFromBox(true).ok)return;
+  backupToSheet({interactive:true});
+}
+async function maybeAutoBackup(){
+  if(!autoBackupEnabled()||!getBackupSheetId())return false;
+  if(backupPromise){
+    backupQueued=true;
+    const first=await backupPromise;
+    /* A second record may have been saved while the first snapshot was in flight. */
+    if(backupQueued){
+      backupQueued=false;
+      return backupToSheet({interactive:false,silent:true});
+    }
+    return first;
+  }
+  return backupToSheet({interactive:false,silent:true});
+}
 async function sendRecord(sheet,rec){
   if(!AUTH.token){toast('💾 Saved on device — sign in on the Google Sheet tab to sync');updateSheetStatus();return;}
   /* This row is being written at this very moment, so a push running in the same moment must
@@ -1630,6 +1903,8 @@ async function sendRecord(sheet,rec){
     rec.synced=true;persist();
     toast('✅ Saved & sent to Google Sheet');
     closeSetupAlert();
+    /* Optional second copy: a backup failure never changes the successful primary write. */
+    maybeAutoBackup();
   }catch(e){
     /* always safe first: the entry is already on this device */
     if(reportProblem(e)||alertKey)toast('💾 Saved on device — the fix is shown on the Google Sheet tab');
@@ -1744,6 +2019,8 @@ async function runPush(){
     const plan=mergeSheetData(fresh);            // 2) MERGE  — the Sheet's rows + this device's rows
     const did=await writePlan(plan);             // 3) WRITE  — append / update / delete, one row at a time
     markAllSynced();
+    const backupRequested=autoBackupEnabled()&&!!getBackupSheetId();
+    const backupOk=backupRequested?await maybeAutoBackup():true;
     if(sheetSafetyRepair){sheetSafetyRepair=false;sheetSafetyWarning='';}   // the rows are back in the Sheet
     rememberSheet();
     closeSetupAlert();
@@ -1752,6 +2029,7 @@ async function runPush(){
     if(did.added)parts.push(did.added+' new row'+(did.added===1?'':'s')+' added');
     if(did.updated)parts.push(did.updated+' row'+(did.updated===1?'':'s')+' updated');
     if(did.deleted)parts.push(did.deleted+' deleted row'+(did.deleted===1?'':'s')+' removed');
+    if(backupRequested&&!backupOk)parts.push('⚠ backup Sheet was not updated');
     const msg=parts.length?('✅ '+parts.join(' • ')+'.'):'✅ The Sheet already matches this device — nothing to write.';
     flash('shMsg',msg,true);
     toast('✅ Google Sheet updated');
@@ -2183,13 +2461,15 @@ function updateSheetStatus(){
     safe.innerHTML=(sheetSafetyWarning?'<span style="color:var(--amber);font-weight:600;">'+esc(sheetSafetyWarning)+'</span><br>':'')
       +'🛡 Writes are per row: '+(n?n+' change'+(n===1?'':'s')+' waiting':'nothing waiting')
       +(d?' • '+d+' deleted row'+(d===1?'':'s')+' still to remove from the Sheet':'')
-      +'. A push reads the Sheet first and writes only what differs — it can no longer clear your tabs.';
+      +'. A push reads the Sheet first and writes only what differs — it can no longer clear your tabs.'
+      +(getBackupSheetId()?(autoBackupEnabled()?' Automatic backup is ON.':' Backup is configured; press 💾 Backup app data to second Sheet whenever needed.'):'');
   }
   /* which copy of the app this phone is running — compare it with the other phone */
   const buildLine=document.getElementById('appBuildLine');
   if(buildLine)buildLine.innerHTML='📱 App version <b>'+esc(APP_BUILD)+'</b> on this phone. Both phones should show the <b>same</b> version — a phone showing an older one is still running a cached copy: reload the page (or close the app and open it again) <b>before</b> pressing 🔄 Push app data to Sheet.';
   renderClientIdBox();
   renderSheetIdBox();
+  renderBackupSheetIdBox();
   show('btnSignIn',!connected);show('btnSignOut',connected);
   show('btnSyncAll3',true);                 // pushing can sign in first, so it is always available
   show('btnLoad3',connected);               // loading replaces device data → only while signed in
@@ -2224,7 +2504,8 @@ async function checkGoogleSetup(){
     +(v.ok?'\n   Shape is correct. If Google still answers 401 invalid_client, this Client ID does not exist in your project any more — create a new “Web application” client.':'\n   '+v.msg));
   L.push((SPREADSHEET_ID?'✅ ':'❌ ')+'Google Sheet: '+(SPREADSHEET_ID?sheetLink(SPREADSHEET_ID)+'  (source: '+(sheetIdSource().from==='device'?'typed on this device':'config.js')+')'
       :'NONE — Hisab has nowhere to write. Make one at sheet.new and paste its address in the “Google Sheet to write into” box.'));
-  L.push('   Hisab never creates a Sheet file (the Sheets API cannot) — it creates the 5 tabs inside the Sheet above.');
+  L.push((getBackupSheetId()?'✅ ':'ℹ️ ')+'Backup Sheet: '+(getBackupSheetId()?backupSheetLink(getBackupSheetId())+'  (source: '+(backupSheetIdSource().from==='device'?'typed on this device':'config.js')+')':'not configured — optional; use the backup box when you need a second copy.'));
+  L.push('   Hisab never creates a Sheet file (the Sheets API cannot) — it creates the 5 tabs inside each configured Sheet.');
   L.push((isGoogleConnected()?'✅ ':'⚠ ')+'Sign-in: '+(isGoogleConnected()?'connected on this device, access lasts till '+new Date(AUTH.expiresAt).toLocaleTimeString()
         :(AUTH.token?'an old sign-in is stored but expired — press “Sign in with Google”':'not signed in on this device')));
   L.push('   Google account: '+(String(storeItem(ACC_KEY)||'')||'(not recorded yet — sign in once while online to record it)'));
@@ -4698,7 +4979,7 @@ async function doClearAppData(){
 loadAuth();
 /* settings adopted earlier (after a stale-cache repair) win over the page's own copy,
    and anything that still looks wrong gets re-read from the server a moment later */
-(function(){const st=readStoredConfig();if(st)applySettings(st.cid,st.sid);
+(function(){const st=readStoredConfig();if(st)applySettings(st.cid,st.sid,st.bid);
   const ov=regSheetId(storeItem(SID_KEY));if(ov)setSheetId(ov);   // a Sheet typed on this device wins over config.js
 })();
 document.getElementById('sTo').value=todayStr();

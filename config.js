@@ -1,10 +1,13 @@
 /* ============================================================
    HISAB — PERMANENT SETTINGS (Google OAuth + the Google Sheets API)
    ============================================================
-   1) HISAB_SPREADSHEET_ID — the Google Sheet the app syncs with
+   1) HISAB_SPREADSHEET_ID — the main Google Sheet the app syncs with
       (already filled in below).
 
-   2) HISAB_GOOGLE_CLIENT_ID — OAuth 2.0 Client ID from
+   2) HISAB_BACKUP_SPREADSHEET_ID — optional second Sheet for a manual
+      or automatic backup copy. Leave empty until you create and share one.
+
+   3) HISAB_GOOGLE_CLIENT_ID — OAuth 2.0 Client ID from
       Google Cloud Console (one time, ~5 min — see README):
 
       a. https://console.cloud.google.com → create / pick a project
@@ -36,5 +39,9 @@
    ============================================================ */
 
 window.HISAB_SPREADSHEET_ID = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
+
+/* Optional second Sheet for a manual or automatic backup copy. Leave empty until
+   you make a second Sheet and share it with the Google accounts that use Hisab. */
+window.HISAB_BACKUP_SPREADSHEET_ID = '';
 
 window.HISAB_GOOGLE_CLIENT_ID = '663319983266-4i2dv5t5m2jli2h2lrklch4ji0319il3.apps.googleusercontent.com';
