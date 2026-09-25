@@ -2467,6 +2467,7 @@ async function checkGoogleSetup(){
   L.push((SPREADSHEET_ID?'✅ ':'❌ ')+'Google Sheet: '+(SPREADSHEET_ID?sheetLink(SPREADSHEET_ID)+'  (source: '+(sheetIdSource().from==='device'?'typed on this device':'config.js')+')'
       :'NONE — Hisab has nowhere to write. Make one at sheet.new and paste its address in the “Google Sheet to write into” box.'));
   L.push((getBackupSheetId()?'✅ ':'ℹ️ ')+'Backup Sheet: '+(getBackupSheetId()?backupSheetLink(getBackupSheetId())+'  (source: '+(backupSheetIdSource().from==='device'?'typed on this device':'config.js')+')':'not configured — optional; use the backup box when you need a second copy.'));
+  L.push('   Backup mode: upload-only — backup data rows are never imported into the app automatically; only the current device snapshot is uploaded.');
   L.push('   Hisab never creates a Sheet file (the Sheets API cannot) — it creates the 5 tabs inside each configured Sheet.');
   L.push((isGoogleConnected()?'✅ ':'⚠ ')+'Sign-in: '+(isGoogleConnected()?'connected on this device, access lasts till '+new Date(AUTH.expiresAt).toLocaleTimeString()
         :(AUTH.token?'an old sign-in is stored but expired — press “Sign in with Google”':'not signed in on this device')));
