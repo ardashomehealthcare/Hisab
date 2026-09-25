@@ -105,6 +105,8 @@ Google's verification process.
 | “Google Sheets API has not been used in project …” | The API is not enabled | Step 2 |
 | The Google window never opens | In-app browser (WhatsApp/Instagram), cookies or pop-ups blocked | Open the link in Chrome/Safari, allow pop-ups, sign in once |
 | It worked yesterday, not today | The phone is running an old cached `config.js` | **🔄 Re-read config.js** in the red box, then sign in again |
+| The books look emptied in the Sheet | Another phone (an older copy of the app) pushed over it | On a phone: *All Records* → **🕘 Bring back a past version**. On a computer: Google Sheets → **File → Version history → Restore this version**. Full order: HOW-IT-WORKS §12.2 |
+| “Google Drive API has not been used in project …” | Only **🕘 Bring back a past version** needs the Drive API | Cloud Console → APIs & Services → Library → **Google Drive API** → **Enable** (see SETUP-GOOGLE-CONSOLE Step 1b) |
 
 ---
 
