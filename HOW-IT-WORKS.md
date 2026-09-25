@@ -416,6 +416,44 @@ app's own Sheet: headers in §2's arrangement, the rows underneath in the same o
 
 ---
 
+### 12.2 If a Sheet was emptied — recovery, in this order
+An emptied Sheet is **not** the end of the books, but the ORDER of what you do next decides how much
+can still be recovered. The wipe is recognisable: the tabs that a pushing device had nothing for are
+left with only their heading row (a surviving tab — say *Expenses* — means the phone that pushed
+held only those rows).
+
+1. **Do not open the app on any phone yet.** The build before this one pulls the Sheet on every
+   start, and a phone that still has the books, opened while signed in and online, takes the emptied
+   Sheet as the truth and **deletes its own copy** (measured against the old build: 2 rows → 0).
+   After that, that phone has nothing left to give back.
+   If you must look at a phone: put it in **airplane mode** (or switch off Wi-Fi and mobile data)
+   first — with no network there is no pull, the app shows the data saved on the phone, and
+   *All Records → ⬇ Download backup (JSON)* saves it to a file.
+2. **Google Sheets → File → Version history → See version history** (on a computer, signed in with
+   an account that can edit the file). Each version is dated; click the one from just before the
+   wipe (check that all five tabs have their rows) and press **Restore this version** — it restores
+   the whole file, every tab at once, and keeps working versions of everything else.
+   Copy anything added *after* the wipe (today's expenses, …) into a scratch area first — version
+   history keeps every version, so those rows can also be fetched back afterwards, nothing is lost
+   by restoring. *Drive → the file → Activity* shows who changed it and when, which usually names
+   the phone/account that pushed.
+3. **Deploy this version before the phones write again** (merge the fix, then reload every phone so
+   none is still on the old cached copy — §15.1). From this build on, an empty tab can never empty a
+   device and a push can never clear a tab, so the situation cannot repeat.
+4. **On each phone, rescue its own copy:** the app keeps the five tables in the browser
+   (`hisabData_v1`). Open the app (fixed copy, or offline) and press *All Records → **⬇ Download
+   backup (JSON)*** — that file holds every row with its `id`, so importing it later adds back only
+   what is missing and can never duplicate or overwrite what the Sheet already has.
+5. **Put the books back with one push:** on the phone that holds the most rows (*⬆ Import backup
+   (JSON)* first if its copy is older or empty), press **🔄 Push app data to Sheet**. The merge adds
+   the rows the Sheet lacks, matches rows by `id`, and deletes nothing.
+
+If version history is not available and no phone kept a copy, the remaining sources are: JSON backups
+downloaded earlier (`hisab-backup-<date>.json`), the payment screenshots saved on the device
+(`hisabPayImages_v1`), the invoices/receipts printed or sent on WhatsApp (§9/§10), and the rows that
+survived in a tab like *Expenses*. Every one of those can be typed or imported back — this app never
+throws a row away by itself any more.
+
 ## 13. The data that ships with the app
 
 `data/hisab-data.json` holds the five tables and ships **empty** — all app data has been

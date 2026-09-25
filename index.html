@@ -715,7 +715,19 @@ function importBackup(inp){
       if(!d||!Array.isArray(d.employees))throw 0;
       if(!confirm('Replace all data on this device with the backup file?'))return;
       DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]};
-      persist();renderAll();toast('✅ Backup imported.');
+      /* Every imported row counts as "not sent yet". The backup was made on some other device,
+         so this app cannot know these rows are in the Sheet — and a row that is not in the Sheet
+         must never be read as "another phone deleted it" and thrown away (see mergeSheetData).
+         A row that IS already in the Sheet is matched by its id and updated in place, never
+         duplicated; a row the Sheet no longer has is put back by the next push. */
+      ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>(DB[k]||[]).forEach(r=>{
+        if(!r||typeof r!=='object')return;
+        if(!r.id)r.id=uid();
+        r.synced=false;
+      }));
+      savePendingDeletes({});       // the imported books are the truth now — no leftover deletions
+      persist();renderAll();updatePushButtons();
+      toast('✅ Backup imported — press 🔄 Push app data to Sheet to put it back in the Sheet');
     }catch(e){toast('❌ Not a valid Hisab backup file.');}
     inp.value='';};
   rd.readAsText(f);
@@ -1890,7 +1902,8 @@ function mergeSheetData(fresh){
   persist();renderAll();updatePushButtons();
   const warn=[];
   if(plan.empty.length)warn.push('The Sheet came back EMPTY on: '+plan.empty.join(', ')
-    +' — nothing on this device was deleted; its rows are kept and go back to the Sheet on the next 🔄 Push app data to Sheet.');
+    +' — nothing on this device was deleted; its rows are kept and go back to the Sheet on the next 🔄 Push app data to Sheet.'
+    +' (If other phones held rows too, the Sheet itself can be brought back from Google Sheets → File → Version history.)');
   if(plan.dropped)warn.push(plan.dropped+' row'+(plan.dropped===1?'':'s')+' had been deleted on another device and were removed here.');
   sheetSafetyWarning=warn.length?('⚠ '+warn.join(' ')):'';
   return plan;

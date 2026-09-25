@@ -216,7 +216,13 @@ function boot({ sheetSpec = {}, headers = {}, device = {}, cleared = false, toke
     prompt: () => '',
     alert: () => { },
     URL: { createObjectURL: () => 'blob:x', revokeObjectURL() { } },
-    Blob: class { }, FileReader: class { readAsText() { } },
+    Blob: class { },
+    FileReader: class {
+      readAsText() {
+        this.result = sandbox.__fileText || '';
+        setTimeout(() => { if (this.onload) this.onload(); }, 0);
+      }
+    },
     html2canvas: () => Promise.resolve({ toDataURL: () => '' }),
     addEventListener() { },
     google: undefined,
@@ -484,6 +490,60 @@ console.log('\n12. A push that fails half-way does not duplicate rows when it is
   eq(rows.find(r => r.id === 'F1').amount, '175', 'the failed update was completed by the retry');
   eq($('unsentCount()'), 0, 'nothing is left waiting');
   eq(clears(calls).length, 0, 'no tab was cleared');
+}
+
+
+console.log('\n13. Recovery: a JSON backup restored into a Sheet that still has some rows loses nothing');
+{
+  // what survived the wipe: two expense rows and one receipt
+  const sheetSpec = {
+    Expenses: [rowFor('Expenses', 'X9'), rowFor('Expenses', 'X10')],
+    ClientReceipts: [rowFor('ClientReceipts', 'KEEP1')]
+  };
+  const t = boot({ sheetSpec });                       // the phone itself is empty after the wipe
+  await new Promise(r => setTimeout(r, 30));
+
+  // a backup taken on another device before the wipe
+  const backup = {
+    employees: [{ id: 'E1', name: 'Emp One', wageType: 'daily', wageAmount: '700' }],
+    dutyLeave: [{ id: 'D1', empName: 'Emp One', type: 'duty', from: '2026-09-01', to: '2026-09-01', days: '1' }],
+    payments: [{ id: 'P1', empName: 'Emp One', date: '2026-09-05', amount: '3500', mode: 'Cash' }],
+    receipts: [{ id: 'R1', client: 'Client R', date: '2026-09-03', amount: '900' }, { id: 'KEEP1', client: 'Client KEEP1', date: '2026-09-01', amount: '1000' }],
+    expenses: [{ id: 'X11', item: 'New expense', date: '2026-09-20', amount: '250' }]
+  };
+  t.ctx.__fileText = JSON.stringify(backup);
+  await new Promise((resolve) => {
+    vm.runInContext(`importBackup({files:[{name:'b.json'}],value:''})`, t.ctx);
+    setTimeout(resolve, 30);
+  });
+
+  eq(t.$('DB.employees.length'), 1, 'the imported employee is on the device');
+  eq(t.$('DB.receipts.length'), 2, 'both imported receipts are on the device');
+  eq(t.$('unsentCount()'), 6, 'every imported row counts as "not sent yet"');
+
+  await t.ctx.syncAll();
+  const sh = t.sheet('ClientReceipts'), ex = t.sheet('Expenses');
+  eq(idsOf(sh, 'ClientReceipts').sort().join(','), 'KEEP1,R1', 'the receipt that survived is still there once, and the restored one was added');
+  eq(idsOf(ex, 'Expenses').sort().join(','), 'X10,X11,X9', 'the surviving expenses were kept and the restored one added');
+  eq(idsOf(t.sheet('Employees'), 'Employees'), ['E1'], 'the restored employee reached the Sheet');
+  eq(t.$('unsentCount()'), 0, 'and everything is marked as sent');
+}
+
+console.log('\n14. Recovery: a phone that still holds the books puts them back into an emptied Sheet');
+{
+  const sheetSpec = { ClientReceipts: [] };                     // wiped from outside
+  const device = {
+    receipts: [                                                  // the phone still has its copy
+      { id: 'S1', client: 'Client S1', date: '2026-09-01', amount: '1000', synced: true, updatedAt: '2026-09-01T04:30:00.000Z' },
+      { id: 'S2', client: 'Client S2', date: '2026-09-02', amount: '1100', synced: true, updatedAt: '2026-09-02T04:30:00.000Z' }
+    ]
+  };
+  const { ctx, sheet, $ } = boot({ sheetSpec, device });
+  await new Promise(r => setTimeout(r, 60));
+  eq($('DB.receipts.length'), 2, 'opening the app did NOT empty the phone (the old build would have)');
+  eq($('unsentCount()'), 2, 'the rows are waiting to be sent');
+  await ctx.syncAll();
+  eq(idsOf(sheet('ClientReceipts'), 'ClientReceipts').sort().join(','), 'S1,S2', 'one push restored both rows into the Sheet');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
