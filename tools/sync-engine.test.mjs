@@ -168,26 +168,6 @@ function makeApi(book, log, failOnce) {
   return api;
 }
 
-/* ------------------------------------------------------------------ mock Drive API */
-/* Only what 🕘 “bring back a past version” uses: the revision list, and the export
-   link of one revision (the bytes of that link are served by the fetch stub below). */
-function makeDrive(log) {
-  const calls = [];
-  const api = async (url, opts = {}) => {
-    const u = String(url);
-    calls.push({ method: (opts.method || 'GET').toUpperCase(), url: u });
-    log && log.push({ method: (opts.method || 'GET').toUpperCase(), url: u });
-    const json = (o, status = 200) => ({ ok: status < 400, status, json: async () => o });
-    if (/\/revisions\?/.test(u)) return json({ revisions: driveState.revs });
-    const one = u.match(/\/revisions\/([^?]+)\?/);
-    if (one && driveState.file) return json({ id: decodeURIComponent(one[1]), exportLinks: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': driveState.file.url } });
-    return json({ error: { message: 'not mocked: ' + u, status: 'NOT_FOUND' } }, 404);
-  };
-  api.calls = calls;
-  return api;
-}
-let driveState = { revs: [], file: null };
-
 /* ------------------------------------------------------------------ DOM stub */
 function makeDom() {
   const el = () => new Proxy({ _t: 0, value: '', checked: false, textContent: '', innerHTML: '', options: [], dataset: {}, style: {}, classList: { toggle() { }, add() { }, remove() { } } }, {
@@ -219,29 +199,19 @@ function makeDom() {
 }
 
 /* ------------------------------------------------------------------ boot the app */
-function boot({ sheetSpec = {}, headers = {}, device = {}, cleared = false, token = true, failWriteOnce = null, safety = null,
-                driveRevs = null, driveFile = null, scope = '' } = {}) {
+function boot({ sheetSpec = {}, headers = {}, device = {}, cleared = false, token = true, failWriteOnce = null } = {}) {
   const book = makeBook(sheetSpec, headers);
   const logs = [];
   const api = makeApi(book, logs, failWriteOnce);
-  driveState = { revs: driveRevs || [], file: driveFile };
-  const drive = makeDrive(logs);
   const { document, localStorage, store } = makeDom();
 
   const sandbox = {
     console, setTimeout, clearTimeout, setInterval, clearInterval,
     Date, Math, JSON, Promise, Map, Set, Number, String, Array, Object, RegExp, Error, isNaN, parseFloat, parseInt,
-    TextDecoder, TextEncoder, Uint8Array, DataView, ArrayBuffer, Response, DecompressionStream,
     document, localStorage, navigator: { userAgent: 'node-test', share: undefined },
     location: { origin: 'https://example.test', pathname: '/index.html', href: 'https://example.test/index.html', search: '' },
-    fetch: (url, opts) => {
-      const u = String(url);
-      if (u.includes('sheets.googleapis.com')) return api(url, opts);
-      if (u.includes('googleapis.com/drive/')) return drive(url, opts);          // the Drive API lives on www.googleapis.com
-      if (driveState.file && u.startsWith(driveState.file.url))
-        return Promise.resolve({ ok: true, status: 200, arrayBuffer: async () => driveState.file.bytes, json: async () => ({}) });
-      return Promise.resolve({ ok: false, status: 404, json: async () => ({}) });
-    },
+    fetch: (url, opts) => String(url).includes('sheets.googleapis.com') ? api(url, opts)
+      : Promise.resolve({ ok: false, status: 404, json: async () => ({}) }),
     confirm: () => true,
     prompt: () => '',
     alert: () => { },
@@ -264,14 +234,13 @@ function boot({ sheetSpec = {}, headers = {}, device = {}, cleared = false, toke
 
   store['hisabData_v1'] = JSON.stringify({ employees: [], dutyLeave: [], payments: [], receipts: [], expenses: [], ...device });
   store['hisabSyncedSheetId'] = '1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY';
-  if (token) store['hisabGoogleAuth_v1'] = JSON.stringify({ token: 'ya29.test', expiresAt: Date.now() + 3600e3, scope: scope || 'https://www.googleapis.com/auth/spreadsheets' });
+  if (token) store['hisabGoogleAuth_v1'] = JSON.stringify({ token: 'ya29.test', expiresAt: Date.now() + 3600e3 });
   if (cleared) store['hisabDeviceCleared'] = new Date().toISOString();
-  if (safety) store['hisabSafetyCopy_v1'] = JSON.stringify(safety);
 
   const ctx = vm.createContext(sandbox);
   vm.runInContext(CODE, ctx, { filename: 'index.html<script>' });
   const $ = (expr) => vm.runInContext(expr, ctx);
-  return { ctx, $, book, logs, api, drive, calls: api.calls, driveCalls: drive.calls, sheet: t => sheetOf(book, t), store };
+  return { ctx, $, book, logs, api, calls: api.calls, sheet: t => sheetOf(book, t), store };
 }
 
 /* ------------------------------------------------------------------ assertions */
@@ -594,7 +563,7 @@ console.log('\n15. A WIPED Sheet can no longer take the phone’s books with it 
   eq($('DB.receipts.length'), 26, 'the pull kept all 25 rows of this phone (+ the one the Sheet still had)');
   ok(/LOST most/.test($('sheetSafetyWarning')), 'the app says the Sheet lost most of this tab — a wipe, not a deletion');
   eq($('unsentCount()'), 25, 'the rows are marked “not sent yet” so one push puts them back');
-  eq($('sheetSafetyRepair'), true, 'and the notice offers that push');
+  eq($('sheetSafetyRepair'), true, 'and they are waiting for that push');
 
   await ctx.syncAll();
   const ids = idsOf(sheet('ClientReceipts'), 'ClientReceipts');
@@ -619,165 +588,24 @@ console.log('\n16. One row deleted on the other phone is still removed here (no 
   ok(!/LOST most|EMPTY/.test($('sheetSafetyWarning')), 'and one row is not called a wipe');
 }
 
-console.log('\n17. The dated copy this phone keeps puts the books back after a wipe');
-{
-  const copy = {
-    employees: [],
-    dutyLeave: [],
-    payments: [],
-    receipts: [
-      { id: 'C1', client: 'Client C1', date: '2026-09-21', amount: '1400', savedAt: '2026-09-21, 10:00:00 am' },
-      { id: 'C2', client: 'Client C2', date: '2026-09-22', amount: '1600', savedAt: '2026-09-22, 10:00:00 am' }
-    ],
-    expenses: [{ id: 'C9', item: 'Diesel', date: '2026-09-22', amount: '300', savedAt: '2026-09-22, 10:00:00 am' }]
-  };
-  const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'KEEP1')] };
-  const { ctx, $, sheet, calls } = boot({ sheetSpec, device: {}, safety: { '2026-09-24': copy } });
-  await sleep(90);
-
-  eq($('DB.receipts.length'), 1, 'the phone holds only the one row the Sheet still has');
-  eq($(`safetyCopyDates().join(',')`), '2026-09-24', 'the copy from the day before is on the phone');
-  const added = $(`applyRestore(safetyCopies()['2026-09-24'],'the copy from 24-09-2026')`);
-  eq(added, 3, 'the copy added its three rows back');
-  eq($('DB.receipts.length'), 3, 'both receipts are back on the phone');
-  eq($('DB.expenses.length'), 1, 'and the expense too');
-  eq($('unsentCount()'), 3, 'they are marked “not sent yet”');
-
-  await ctx.syncAll();
-  eq(idsOf(sheet('ClientReceipts'), 'ClientReceipts').sort().join(','), 'C1,C2,KEEP1', 'the Sheet has the surviving row and both restored rows, each once');
-  eq(idsOf(sheet('Expenses'), 'Expenses'), ['C9'], 'the restored expense reached the Sheet');
-  eq($('unsentCount()'), 0, 'everything is marked as sent');
-  eq(clears(calls).length, 0, 'no tab was cleared');
-}
-
-console.log('\n18. An Excel export of a PAST VERSION of the Sheet is read, and the missing rows go back');
-{
-  const buf = fs.readFileSync(path.join(ROOT, 'tools/fixtures/sheet-version.xlsx'));
-  const file = {
-    name: 'sheet-version.xlsx',
-    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    arrayBuffer: async () => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength),
-    text: async () => ''
-  };
-  // the Sheet as it stands after the wipe: only the rows the partner's phone had written
-  const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'AFTERWIPE1')], Expenses: [rowFor('Expenses', 'AFTERWIPE2')] };
-  const t = boot({ sheetSpec });
-  await sleep(90);
-  eq(t.$('DB.receipts.length'), 1, 'the phone holds only what survived the wipe');
-
-  t.ctx.__file = file;
-  await vm.runInContext('readRestoreFile(__file,{value:""})', t.ctx);
-  eq(t.$('DB.receipts.length'), 1, 'reading the file alone changes nothing on the phone');
-  ok(!!t.$('restorePreview'), 'the file was understood and a preview is ready');
-
-  vm.runInContext('doRestore()', t.ctx);
-  eq(t.$('DB.receipts.length'), 3, 'the two receipts of that version are back');
-  eq(t.$('DB.employees.length'), 2, 'and the two employees');
-  eq(t.$('DB.dutyLeave.length'), 1, 'and the leave row');
-  eq(t.$('DB.payments.length'), 1, 'and the salary payment');
-  eq(t.$('DB.expenses.length'), 3, 'and both expenses of that version (the surviving one was kept, not doubled)');
-
-  await sleep(500);                                        // the push the app offers after a restore
-  const ids = idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').sort();
-  eq(ids.join(','), 'AFTERWIPE1,FIX-R1,FIX-R2', 'the Sheet has the surviving row and both restored rows');
-  eq(idsOf(t.sheet('Employees'), 'Employees').sort().join(','), 'FIX-E1,FIX-E2', 'the Employees tab was read and written back');
-  const r1 = dataRows(t.sheet('ClientReceipts'), 'ClientReceipts').find(r => r.id === 'FIX-R1');
-  eq(r1.amount, '13000', 'the amount came out of the Excel file');
-  eq(r1.date, '2026-09-03', 'the date was turned back from an Excel serial number into a date');
-  eq(r1.invoiceNo, 'INV-0011', 'the invoice number came with it');
-  const d1 = dataRows(t.sheet('DutyLeave'), 'DutyLeave')[0];
-  eq(d1.from, '2026-09-20', 'the leave dates were converted too, not left as serial numbers');
-  eq(idsOf(t.sheet('Expenses'), 'Expenses').sort().join(','), 'AFTERWIPE2,FIX-X1,FIX-X2', 'a blank row in the middle of the tab did not shift the rows or hide one');
-  eq(dataRows(t.sheet('Expenses'), 'Expenses').find(r => r.id === 'FIX-X2').amount, '400', 'the row after the blank one was read with its own values');
-  eq(dataRows(t.sheet('EmployeePayments'), 'EmployeePayments')[0].date, '2026-09-05', 'the salary date as well');
-  eq(t.$('unsentCount()'), 0, 'everything reached the Sheet');
-  eq(clears(t.calls).length, 0, 'no tab was cleared');
-}
-
-console.log('\n19. A CSV export of one tab is read too (headings, quotes, commas)');
-{
-  const csv = 'id,client,clientPhone,date,amount,empName,mode,savedAt,clientAddress,invoiceNo,dealAmount,updatedAt\n'
-    + 'CSV-R1,"Test Client, with a comma",9876500009,2026-09-04,1500,,Cash,"2026-09-04, 10:00:00 am","Line 1, Line 2",INV-0020,1500,2026-09-04T04:30:00.000Z\n';
-  const file = { name: 'Hisab - ClientReceipts.csv', type: 'text/csv', arrayBuffer: async () => new ArrayBuffer(0), text: async () => csv };
-  const t = boot({ sheetSpec: {} });
-  await sleep(60);
-
-  t.ctx.__file = file;
-  await vm.runInContext('readRestoreFile(__file,{value:""})', t.ctx);
-  vm.runInContext('doRestore()', t.ctx);
-  eq(t.$('DB.receipts.length'), 1, 'the CSV row was read');
-  eq(t.$('DB.receipts[0].client'), 'Test Client, with a comma', 'a quoted comma inside a value survived');
-  eq(t.$('DB.receipts[0].clientAddress'), 'Line 1, Line 2', 'and inside the address too');
-  eq(t.$('DB.receipts[0].date'), '2026-09-04', 'the date is a date');
-  await sleep(500);
-  eq(idsOf(t.sheet('ClientReceipts'), 'ClientReceipts'), ['CSV-R1'], 'and it reached the Sheet');
-}
-
-console.log('\n20. 🕘 A wiped book is found in the Sheet’s own version list and put back (Drive API)');
-{
-  const buf = fs.readFileSync(path.join(ROOT, 'tools/fixtures/sheet-version.xlsx'));
-  const file = { url: 'https://docs.google.com/spreadsheets/export?id=1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY&revision=15098&exportFormat=xlsx',
-                 bytes: buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) };
-  const driveRevs = [                                            // oldest … newest, as Google lists them
-    { id: '15010', modifiedTime: '2026-09-20T04:00:00.000Z', lastModifyingUser: { displayName: 'Test Partner Two' } },
-    { id: '15098', modifiedTime: '2026-09-24T16:11:00.000Z', lastModifyingUser: { displayName: 'Test Partner Two' } },
-    { id: '15120', modifiedTime: '2026-09-25T02:38:00.000Z', lastModifyingUser: { displayName: 'Test Partner One' } }
-  ];
-  const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'AFTERWIPE1')] };
-  const t = boot({ sheetSpec, driveRevs, driveFile: file, scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.readonly' });
-  await sleep(90);
-
-  const revs = await t.ctx.listSheetVersions();
-  eq(revs.length, 3, 'the three versions came back from Google');
-  eq(revs[0].id, '15120', 'the newest is first (the one made while the wipe happened)');
-  eq(revs[1].id, '15098', 'then the one from the day before');
-  eq(revs[1].who, 'Test Partner Two', 'and it names who changed it');
-  ok(/24-09-2026/.test(revs[1].when), 'the date is shown the way the app shows dates');
-  ok(t.driveCalls.some(c => /\/revisions\?fields=/.test(c.url)), 'the app asked Drive for the version list, nothing else');
-
-  t.$(`recoveryCtx.versions=${JSON.stringify(revs)}`);
-  t.$(`recoveryCtx.picked='15098'`);
-  await t.ctx.recoveryReadPicked();                              // reads that version through the export link
-  ok(!!t.$('restorePreview'), 'the version was read and is ready to be put back');
-  vm.runInContext('doRestore()', t.ctx);
-  eq(t.$('DB.receipts.length'), 3, 'the two receipts of that version are back on the phone');
-
-  await sleep(500);
-  const ids = idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').sort();
-  eq(ids.join(','), 'AFTERWIPE1,FIX-R1,FIX-R2', 'the Sheet holds the surviving row and the two restored rows');
-  eq(dataRows(t.sheet('ClientReceipts'), 'ClientReceipts').find(r => r.id === 'FIX-R2').amount, '900', 'with the amounts of that version');
-  eq(t.$('unsentCount()'), 0, 'and everything is marked as sent');
-  eq(clears(t.calls).length, 0, 'no tab was cleared at any point');
-}
-
-console.log('\n21. The version list is asked for the read-only Drive permission only when it is needed');
-{
-  const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'A1')] };
-  const t = boot({ sheetSpec });                                  // signed in with the Sheets permission only
-  await sleep(60);
-  eq(t.$('AUTH.scope').includes('drive'), false, 'this device has not been asked for the Drive permission yet');
-  eq(t.$('hasDriveScope()'), false, 'so the app knows the version list is not available yet');
-  eq(t.$('driveScopeWanted'), false, 'and it does not ask for it on a normal sign-in');
-}
-
-console.log('\n22. The new screens build without errors (dialogs on a phone)');
+console.log('\n17. The screens build without errors, and every button calls a function that exists');
 {
   const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'A1')] };
   const t = boot({ sheetSpec });
   await sleep(60);
   let threw = '';
   try {
-    vm.runInContext('openRecoveryDialog()', t.ctx);
-    vm.runInContext('openCopiesDialog()', t.ctx);
     vm.runInContext('openClearDialog()', t.ctx);
-    vm.runInContext('renderSafetyNotice()', t.ctx);
-    vm.runInContext('renderCopiesLine()', t.ctx);
-    vm.runInContext('copyToFile(todayStr())', t.ctx);
-    vm.runInContext('keepSafetyCopy()', t.ctx);
+    vm.runInContext(`sheetSafetyWarning='⚠ test';renderSafetyNotice()`, t.ctx);
   } catch (e) { threw = String((e && e.message) || e); }
-  eq(threw, '', 'every new screen builds from the data it has');
-  eq(t.$('safetyCopyDates().length'), 1, 'this phone now keeps a copy of today');
-  eq(t.$('tableRows(safetyCopies()[todayStr()])'), 1, 'and the copy holds the books as they are');
+  eq(threw, '', 'the clear dialog and the Sheet notice build from the data they have');
+  // onclick="name(…)" anywhere in the page or the script → that function has to exist
+  const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'return', 'typeof', 'void', 'new']);   // onclick="if(…)…"
+  const called = [...new Set([...HTML.matchAll(/onclick=\\?["']([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]))]
+    .filter(fn => !KEYWORDS.has(fn));
+  ok(called.length > 20, 'the buttons of the page were found (' + called.length + ' functions)');
+  const missing = called.filter(fn => t.$(`typeof ${fn}`) !== 'function');
+  eq(missing.join(', '), '', 'no button points at a function that is not there');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

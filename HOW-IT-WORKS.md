@@ -262,10 +262,6 @@ money actually moved).
 * **⬇ Download backup (JSON)** / **⬆ Import backup (JSON)** — the whole five tables in one file;
   import replaces the device's data after a confirmation.
 * **📥 Add the data included in the app** — merges `data/hisab-data.json` (see §13).
-* **🗓 Saved copies** — the dated copies this phone keeps for itself (see §12.3): put the books
-  back from the copy of any of the last ten days, save one as a JSON file, or delete them.
-* **🕘 Bring back a past version** — the versions Google keeps of the Sheet, read on the phone and
-  merged back (see §12.4), plus **📁 Restore from a file** for an Excel / CSV / JSON export.
 * **🔄 Push app data to Sheet** — see §12.
 * **🗑 Clear app data** — opens a dialog that names both places the books live and lets you
   choose: *this device only* (the Sheet keeps every row) or *this device **and** the five tabs in
@@ -377,8 +373,8 @@ use and where it came from, and the last error.
 
 ### 12.0 How this is tested (no Google account needed)
 `node tools/sync-engine.test.mjs` extracts the `<script>` out of `index.html`, runs it in a Node VM
-with a stubbed DOM/localStorage, and talks to an **in-memory mock of the Sheets API** (and, for
-the version list, of the Drive API) that logs every request. 124 assertions cover: a push from a
+with a stubbed DOM/localStorage, and talks to an **in-memory mock of the Sheets API** that logs
+every request. 78 assertions cover: a push from a
 device holding fewer rows deletes nothing; the
 10 rows another phone added meanwhile survive; deleting one entry removes exactly its own row;
 a cleared device's push writes nothing at all; a Sheet that comes back empty keeps the device's
@@ -387,15 +383,10 @@ newer `updatedAt` wins in both directions; a row in the old column order is repa
 a Sheet in the older arrangement is never re-ordered; phone A → phone B handoff writes nothing
 twice; an entry saved while a push runs lands once; a push that fails half-way does not duplicate
 on retry; **a Sheet that lost most of a tab takes nothing from the phone, and one push puts it
-all back**; one row deleted on the other phone still leaves this phone; a dated copy puts the
-books back; an **Excel export of a past version** is read (shared strings, self-closing empty
-cells, a blank row, serial dates → real dates) and its missing rows reach the Sheet once; the
-same through a **CSV** file; and the **version list** is fetched from the mocked Drive API,
-newest first, and one version put back. Run the same suite against `git show HEAD:index.html` and
+all back**; one row deleted on the other phone still leaves this phone; and every button on the
+page calls a function that exists. Run the same suite against `git show HEAD:index.html` and
 scenario 1 fails with **5 × `values:clear`** — that is the "whole Sheet went empty" bug this
-engine replaced. The Excel file the reader is tested on is built by
-`python3 tools/make-version-fixture.py` into `tools/fixtures/sheet-version.xlsx` (made-up names —
-no real person or client is in it).
+engine replaced.
 
 ### 12.1 Clearing does not undo itself
 The old *Clear all data* emptied the device copy only, so the next open pulled every row back
@@ -415,10 +406,10 @@ writes a dated note (`hisabDeviceCleared`) that stays until you say otherwise:
 
 The device-only wipe removes everything Hisab keeps on the device: the five tables
 (`hisabData_v1`), the receipt images (`hisabPayImages_v1`), the remembered WhatsApp numbers
-(`hisabWaNum:*`) and the "bundled data already loaded" mark. Settings — the Google account, the
+(`hisabWaNum:*`), the "bundled data already loaded" mark, and any dated copies of the books an
+earlier build kept (`hisabSafetyCopy_v1` — no longer made). Settings — the Google account, the
 Client ID / Sheet ID, which Sheet this device belongs to — are left alone, because they are not
-books. The **dated safety copies** (§12.3) are left alone too, on purpose: they are the way back
-from a clear pressed by mistake (*All Records → 🗓 Saved copies → ↩ Put back*).
+books.
 
 ### The bundled records
 `data/hisab-data.json` holds the app's own books in the Sheet's column layout — and it ships
@@ -444,27 +435,23 @@ held only those rows).
    Sheet** once: the push reads the Sheet first, adds the rows it is missing, and deletes nothing.
    (With the *old* build still on the phone, do this in **airplane mode → no**: export first —
    *All Records → ⬇ Download backup (JSON)* — then push from the fixed build.)
-3. **Put the missing rows back from the version Google kept.** In the app: *All Records* or
-   *Google Sheet* tab → **🕘 Bring back a past version** → **🔄 Look up the Sheet’s past versions** →
-   pick the one from just before the wipe (dates are shown) → **👁 Read this version** → the app
-   lists what is missing per tab → **✅ Add these rows** → **🔄 Push app data to Sheet**. Nothing is
-   deleted or replaced on the way, so today's entries survive the recovery (§12.4).
-   On a computer the same thing can be done in Google's own UI: *File → Version history →
-   See version history* → pick the version from just before the wipe → **Restore this version**
-   (that restores the whole file at once; copy today's rows out first if you want to keep them
-   exactly as they are).
-4. **From the phone's own copy, if that phone still holds one.** *All Records → **🗓 Saved copies*** →
-   the dated copy from before the wipe → **↩ Put back** → **🔄 Push app data to Sheet** (§12.3).
-   The 💾 five tables in the browser are not touched by this — a copy is only ever added *from*.
-5. **From a file, if you have one.** *🕘 Bring back a past version → **📁 Restore from a file*** takes
-   an Excel (`.xlsx`) or CSV export of any version, or a `.json` Hisab backup, and merges it the
-   same way. A backup downloaded earlier with **⬇ Download backup (JSON)** is the same thing.
-6. **Type it back, as a last resort.** The rows that survived in a tab, the invoices and receipts
+3. **Put back the version Google kept, on a computer.** Google Sheets → *File → Version history →
+   See version history* → pick the version from just before the wipe (check that all five tabs
+   have their rows) → **Restore this version**. That restores the whole file at once, so copy
+   anything added *after* the wipe (today's rows) out first — version history keeps every version,
+   so nothing is lost by restoring. *Drive → the file → Activity* shows who changed it and when.
+4. **From a file, if you have one.** A backup downloaded earlier with **⬇ Download backup (JSON)**
+   (`hisab-backup-<date>.json`) goes back in with *⬆ Import backup (JSON)* — it replaces that
+   phone's copy, so use it on a phone whose own rows are older — then **🔄 Push app data to
+   Sheet**: every imported row counts as *not sent yet*, rows the Sheet already has are matched by
+   `id`, and only the missing ones are added.
+5. **Type it back, as a last resort.** The rows that survived in a tab, the invoices and receipts
    printed or sent on WhatsApp (§9/§10), and the payment screenshots on the device
    (`hisabPayImages_v1`) are all still there to copy from.
 
-The app never throws a row away by itself any more, and every path above only **adds** rows — so it
-is always safe to try the next one when the previous one does not have what you need.
+The app never throws a row away by itself any more, and **🔄 Push app data to Sheet** never removes
+a row you did not delete yourself — so it is always safe to try the next step when the previous
+one does not have what you need.
 
 ### 12.3 A data loss on one phone can no longer follow a data loss in the Sheet
 The reported incident had two halves: the old build **emptied the tabs** and wrote that phone's few
@@ -476,40 +463,10 @@ its own copy away** — the books then existed in neither place. Both halves are
   has are still read as deletions when there are only a few of them (that is what a real deletion on
   the other phone looks like). But when a pull would remove **six rows or more *and* at least 30 %
   of that tab at once** (`looksLikeWipe()`), the app refuses to believe them: the rows are kept,
-  marked **not sent yet**, and an amber notice on *All Records* and the *Google Sheet* tab offers
-  **🔄 Put my rows back in the Sheet** — one press and the Sheet holds them again.
+  marked **not sent yet**, and an amber notice on *All Records* and the *Google Sheet* tab says
+  so — one press of **🔄 Push app data to Sheet** and the Sheet holds them again.
   Deleting a whole block on purpose still works: delete it on this device as well (the ✕ button on
   the row), and then only that row leaves the Sheet.
-* **A dated copy of the books is kept on the phone itself.** `hisabSafetyCopy_v1` holds the five
-  tables — the same rows as a JSON backup — once a day, for the last **ten** days. A day's copy is
-  never made smaller (so a wipe cannot shrink it), the oldest fall off by themselves, and
-  *All Records → **🗓 Saved copies*** lists them with **↩ Put back** (adds only what is missing),
-  **⬇ File** and **✕ Delete the saved copies**. A device clear (`🗑 Clear app data`) deliberately
-  leaves them alone, so an accidental clear can still be undone; importing or restoring never
-  switches the automatic pull back on.
-
-### 12.4 Reading a past version of the Sheet, on the phone
-**🕘 Bring back a past version** exists because Google's own version history needs a computer, and
-"Restore this version" replaces the whole file — today's entries included. The app instead *reads*
-the older version and merges only what is missing:
-
-| Step | What happens |
-|---|---|
-| **🔄 Look up the Sheet’s past versions** | `GET /drive/v3/files/<Sheet>/revisions` — the version list with dates and who changed it, newest first (the app preselects the one before the newest). Needs the **read-only Drive permission** (asked for on the spot, once) and the **Drive API enabled** in the same Cloud project as the Sheets API — one link is shown on screen if it is missing. |
-| **👁 Read this version** | `revisions.get?fields=exportLinks`, then the export link itself (`…&exportFormat=xlsx`, the file *File → Download → Microsoft Excel* gives). Read on the phone: zip + XML, shared strings, inline strings, self-closing empty cells, blank rows, and **numeric dates/times put back into `yyyy-mm-dd` / `HH:mm`** by §3's column lists. |
-| **⬇ Download it (Excel)** | The same link opened in the browser, for when a browser refuses a cross-site fetch. The file lands in *Downloads*; **📁 Restore from a file** picks it up. |
-| Version number (advanced) | `https://docs.google.com/spreadsheets/export?id=<Sheet>&revision=<n>&exportFormat=xlsx` — works with the signed-in Google account and no extra permission at all, which is the way out when the Drive permission or the Drive API is not available. |
-| **✅ Add these rows** | Every row is read through the app's own Sheet reader (§2's headings, older arrangements included) and merged by `id` / natural key: missing rows are added, duplicates skipped, **nothing is deleted or replaced**. |
-
-A CSV export of a single tab works too (the tab is recognised by the file's name or its heading
-row). Everything it adds is marked **not sent yet**, so the following **🔄 Push app data to Sheet**
-writes it into the Sheet — and a push still deletes nothing.
-
-**If none of that is available**, the remaining sources are still on the devices: JSON backups
-downloaded earlier (`hisab-backup-<date>.json`), the dated copies under `hisabSafetyCopy_v1`, the
-payment screenshots (`hisabPayImages_v1`), the invoices and receipts printed or sent on WhatsApp
-(§9/§10), and the rows that survived in a tab like *Expenses*. Every one of them can be typed or
-imported back — this app never throws a row away by itself.
 
 ## 13. The data that ships with the app
 
@@ -547,8 +504,6 @@ tables.
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabDeviceCleared` | the day this device was cleared — while set, the automatic pull from the Sheet stays off (§12.1) |
 | `hisabPayImages_v1` | online-payment screenshots attached to receipts |
-| `hisabSafetyCopy_v1` | the dated safety copies of the five tables this phone keeps for itself — once a day, the last ten days (§12.3) |
-| `hisabDriveScope` | `on` once this device has been asked for the read-only Drive permission the version list needs (§12.4) |
 
 ---
 
