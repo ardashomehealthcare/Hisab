@@ -276,6 +276,18 @@ money actually moved).
 
 ## 12. Google Sheets sync
 
+### Optional second Google Sheet backup
+The main Sheet is the shared, row-safe source of truth. A second Sheet can be configured in the
+**Google Sheet** tab (or as `HISAB_BACKUP_SPREADSHEET_ID` in `config.js`). Share that second file
+with the signed-in Google account as **Editor**, then press **💾 Backup app data to second Sheet**
+whenever a separate snapshot is required. This second Sheet is **upload-only**: Hisab keeps its
+heading rows, replaces its app-managed data rows with the current device snapshot, and never
+imports rows from it into the app. The backup operation never changes the main Sheet. The checkbox
+**Also update this backup after every successful main-Sheet write or push** enables automatic
+copies. A backup error is reported without rolling back a successful main-Sheet write. The backup
+is a copy of the data currently on this device, so let the normal Sheet pull finish before taking
+a backup if this device was offline.
+
 ### The one rule: a write touches ONE row
 Every write in the app — a new entry, an edit, a delete — goes to a single row, found by its `id`:
 

@@ -81,7 +81,7 @@ find it). If you only have one project, the links work as they are.
 | 3 | Consent screen — now called **Google Auth Platform**. Set **App name** to `Hisab` and a support email. (Do not put the word “Google” in the app name; Google rejects it.) | <https://console.cloud.google.com/auth/branding?project=PROJECT_ID> |
 | 4 | **Audience** — user type and test users. See section A. | <https://console.cloud.google.com/auth/audience?project=PROJECT_ID> |
 | 5 | **Clients** — check the client `663319983266-4i2d…9il3.apps.googleusercontent.com` is type **Web application** and that **Authorised JavaScript origins** contains exactly `https://ardashomehealthcare.github.io` (no slash, no path). Save. | <https://console.cloud.google.com/auth/clients?project=PROJECT_ID> |
-| 6 | The **Client ID** (ends `.apps.googleusercontent.com`) goes in `config.js` as `HISAB_GOOGLE_CLIENT_ID`; the Sheet's long ID goes in as `HISAB_SPREADSHEET_ID`. Both can also be pasted into the app's **Google Sheet** tab to fix one phone at once. | — |
+| 6 | The **Client ID** (ends `.apps.googleusercontent.com`) goes in `config.js` as `HISAB_GOOGLE_CLIENT_ID`; the main Sheet's long ID goes in as `HISAB_SPREADSHEET_ID`. Both can also be pasted into the app's **Google Sheet** tab to fix one phone at once. An optional second Sheet can be set as `HISAB_BACKUP_SPREADSHEET_ID`, or configured in the **Optional backup Google Sheet** box. | — |
 | 7 | On the Sheet: **Share** → add every partner → **Editor**. Then each partner opens the app → **🔐 Sign in with Google** → **Allow**. | <https://docs.google.com/spreadsheets/d/1VV5TZyNEpBHS6gnaBU7XujuBdtzBEQwqofMmHzmKFAY/edit> |
 
 Scopes (optional — the app asks for `https://www.googleapis.com/auth/spreadsheets` by
