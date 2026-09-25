@@ -641,8 +641,9 @@
       <span class="msg" id="shMsg"></span>
     </div>
     <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
-    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> writes everything saved on this device into the Sheet — all five tabs (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses), each tab's <b>headings and rows in the same column order</b>. Press it once after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date. It is also the one press that puts a Sheet whose columns got out of step right again — money showing under <b>Date</b> and the saved date under <b>Mode</b> is that, and the rows are rewritten in their right columns. If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
+    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> first <b>reads the Sheet</b>, merges it with what this device holds (nothing another partner entered is ever deleted), then writes <b>only the rows that differ</b> — a new entry is added as one row, an edited entry rewrites its own row, and a row deleted here is removed from the Sheet on its own. Your tabs are <b>never cleared</b>, so two partners can work on the same books safely: each row carries a <b>updatedAt</b> stamp and the newer copy wins. Press it after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date — it is also the press that puts a Sheet whose columns got out of step right again (money showing under <b>Date</b> and the saved date under <b>Mode</b>). If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
     <div class="hint" id="appBuildLine" style="margin-top:6px;"></div>
+    <div class="hint" id="syncSafeLine" style="margin-top:6px;"></div>
   </div>
   <div class="card" id="diagCard" style="display:none;">
     <h2>Setup check <span class="badge" style="background:var(--soft);color:var(--brand-dark);">for the admin</span></h2>
@@ -674,6 +675,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer onerror="window._h2cFailed=true"></script>
 <script src="config.js?v=5"></script>
 <script>
+
 /* ================= STORAGE ================= */
 /* Google OAuth client ID + spreadsheet ID live in config.js - two lines, easy to edit. */
 let GOOGLE_CLIENT_ID=cleanId(window.HISAB_GOOGLE_CLIENT_ID);   // stray spaces / quotes from a copy-paste would make Google answer 401: invalid_client
@@ -682,7 +684,7 @@ let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-23 (15-day collection reminder)';
+const APP_BUILD='2026-09-25 (safe sync — a push can no longer clear the Sheet)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -702,7 +704,9 @@ function load(){
   }catch(e){}
   return {employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]};
 }
-function persist(){localStorage.setItem(KEY,JSON.stringify(DB));}
+/* `_sending` lives only while one row is being written — it is never stored, or a row could
+   stay marked as "being sent" after a crash and never be written to the Sheet again. */
+function persist(){localStorage.setItem(KEY,JSON.stringify(DB,(k,v)=>k==='_sending'?undefined:v));}
 function importBackup(inp){
   const f=inp.files[0];if(!f)return;
   const rd=new FileReader();
@@ -742,35 +746,52 @@ const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'p
    5 tabs are created with). Exact header row of every tab (left → right = A, B, C …):
 
      Employees        id | name | phone | wageType | wageAmount | dutyHours | dutyTime |
-                      joinDate | clientDutyStartDate | client | clientPhone | clientDeal | savedAt
+                      joinDate | clientDutyStartDate | client | clientPhone | clientDeal | savedAt |
+                      updatedAt
      DutyLeave        id | empName | type | from | fromTime | to | toTime | days | client | savedAt |
-                      forEmp | wageType | wageAmount | reason | notes
+                      forEmp | wageType | wageAmount | reason | notes | updatedAt
      EmployeePayments id | empName | date | amount | payType | mode | savedAt | periodFrom |
-                      periodTo | invoiceNo | summary | balance
+                      periodTo | invoiceNo | summary | balance | updatedAt
      ClientReceipts   id | client | clientPhone | date | amount | empName | mode | savedAt |
-                      clientAddress | invoiceNo | dealAmount
-     Expenses         id | item | date | amount | savedAt
+                      clientAddress | invoiceNo | dealAmount | updatedAt
+     Expenses         id | item | date | amount | savedAt | updatedAt
+
+   `updatedAt` is written by the app on every change (an ISO stamp, e.g. 2026-09-25T09:12:33.114Z).
+   It is what makes a write SAFE when two partners work on the same books: the Sheet is never
+   cleared any more, every write goes to one row by its `id`, and when both phones hold the same
+   row the newer `updatedAt` wins. A Sheet that does not have the column yet gets it added by the
+   app the first time it writes there.
 
    A row is a list of cells written left → right, so this order IS the Sheet.
    The app also reads the Sheet's own header row on every load and follows it: if a
    column is inserted or moved in the Sheet, values still land in the right column,
    and a column the app needs but the Sheet lacks is reported, never guessed. */
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes'],
-  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance'],
-  ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount'],
-  Expenses:['id','item','date','amount','savedAt']
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt','updatedAt'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes','updatedAt'],
+  EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance','updatedAt'],
+  ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','updatedAt'],
+  Expenses:['id','item','date','amount','savedAt','updatedAt']
 };
+/* columns the app writes but never complains about: a Sheet that does not have them yet
+   is not "an old arrangement" — they are added by the app itself on the first write. */
+const OPTIONAL_SYNC_COLS=new Set(['updatedAt']);
+/* ids of rows deleted on THIS device that may still be sitting in the Sheet. They are
+   removed from the Sheet one row at a time (never by clearing the tab), and until that
+   has happened the row is not read back in — so a delete cannot undo itself. */
+const PENDING_DEL_KEY='hisabPendingDeletes_v1';
+const DB_TO_TAB={employees:'Employees',dutyLeave:'DutyLeave',payments:'EmployeePayments',receipts:'ClientReceipts',expenses:'Expenses'};
 /* the two end-duty rows read exactly like this in the Sheet */
 const END_DUTY_TEXT={
   endEmployeeDuty:{reason:'Assignment completed',notes:'Employee duty ended'},
   endClientDuty:{reason:'Assignment completed',notes:'Client service ended'}
 };
 let SHEET_HEADERS={};          // the header row actually found in the Sheet, per tab
+let SHEET_ROWS={};             // {tab:[{id,row}]} — where each row sits in the Sheet, from the last read
+let SHEET_IDS={};              // {tab: sheetId} — the tab's internal number, needed to delete one row
 let sheetLayoutWarning='';     // set by fetchSheetData when the arrangement is older
+let sheetSafetyWarning='';     // set when the Sheet lost rows and this device kept its own
 let layoutNotified=false;      // the arrangement notice is worth showing once per start
-let sheetPulled=false;         // has this device read the Sheet at least once in this session?
 /* ==== the arrangements this app wrote BEFORE the one above ====
    ClientReceipts moved `clientPhone` from the LAST column to position 3, Employees
    gained clientDutyStartDate / clientPhone / clientDeal in the middle, DutyLeave
@@ -851,7 +872,8 @@ function sheetValues(sheet,rec,cols){
       clientPhone:rec.clientPhone||receiptFieldForClient(rec.client,'clientPhone'),
       clientDeal:rec.clientDeal||receiptFieldForClient(rec.client,'dealAmount'),
       dutyShift:rec.dutyShift||'',      /* only written while a Sheet still has that column */
-      savedAt:rec.savedAt
+      savedAt:rec.savedAt,
+      updatedAt:rec.updatedAt||''
     };
   }
   if(sheet==='DutyLeave'){
@@ -867,7 +889,8 @@ function sheetValues(sheet,rec,cols){
       notes:rec.notes||(end?end.notes:''),
       /* only written while a Sheet still has the old columns */
       byShifts:rec.byShifts?true:'',
-      subWage:rec.subWage||''
+      subWage:rec.subWage||'',
+      updatedAt:rec.updatedAt||''
     };
   }
   const o={};
@@ -922,10 +945,11 @@ function sheetRowToRec(sheet,row,headers,info){
 /* which columns to write into: the Sheet's own order once it has been read, else the
    fixed layout above (a fresh device, before the first load) */
 function sheetColsFor(sheet){const h=SHEET_HEADERS[sheet];return (h&&h.length)?h:SHEET_COLS[sheet];}
-/* columns the app needs but the Sheet does not have (reported, never guessed) */
+/* columns the app needs but the Sheet does not have (reported, never guessed).
+   The optional sync columns are excluded: the app adds them itself. */
 function missingSheetCols(sheet,headers){
   if(!headers||!headers.length)return [];
-  return SHEET_COLS[sheet].filter(c=>headers.indexOf(c)===-1);
+  return SHEET_COLS[sheet].filter(c=>headers.indexOf(c)===-1&&!OPTIONAL_SYNC_COLS.has(c));
 }
 /* the row to append / write — in the Sheet's own column order, or in `cols` when a
    caller knows the arrangement it is writing into (the push writes its own) */
@@ -970,10 +994,18 @@ function repairShiftedRecords(){
    account may edit the spreadsheet — no shared "Anyone" URL anymore. */
 const GS_API='https://sheets.googleapis.com/v4/spreadsheets/';
 let GS_BASE=GS_API+SPREADSHEET_ID;
-const GS_SCOPES='https://www.googleapis.com/auth/spreadsheets';
+/* `email` is asked for on top of the Sheets permission so the app can SHOW which Google
+   account is signed in — the books saved in a browser are shared by everyone who signs in
+   there, and a partner signing in with a different account must not look like the same
+   person. If Google ever refuses that extra scope, sign-in is retried without it. */
+const GS_SCOPES_BASE='https://www.googleapis.com/auth/spreadsheets';
+const GS_SCOPES='email '+GS_SCOPES_BASE;
+let extraScopeOk=true;
+const isScopeError=e=>/invalid_scope|unregistered scope|bad scope|scope.*(not|invalid)/i.test(String((e&&e.code)||'')+' '+String((e&&e.message)||''));
 const AUTH_KEY='hisabGoogleAuth_v1';
 const CID_KEY='hisabClientId';
 const SID_KEY='hisabSheetId';
+const ACC_KEY='hisabAccountEmail';      // the Google account last signed in on this device
 let AUTH={token:'',expiresAt:0};
 let tokenClient=null,tokenClientId='',ensureTabsPromise=null;
 let pendingAuth=null,lastGsError=null,alertKey='';
@@ -1392,7 +1424,7 @@ function initTokenClient(){
   tokenClientId=id;
   tokenClient=window.google.accounts.oauth2.initTokenClient({
     client_id:id,
-    scope:GS_SCOPES,
+    scope:extraScopeOk?GS_SCOPES:GS_SCOPES_BASE,
     callback:resp=>{
       if(resp&&resp.error){finishAuth(noteError(authErr(resp.error,resp.error_description||resp.error)));return;}
       if(!resp||!resp.access_token){finishAuth(noteError(authErr('no_access_token','Google sent back no access token.')));return;}
@@ -1481,12 +1513,20 @@ function reportProblem(e,force){
   showSetupAlert(e);
   return true;
 }
-/* Create any missing tab + header row (like the old script did automatically) */
+/* Create any missing tab + header row (like the old script did automatically).
+   The tab's internal number (sheetId) is remembered here as well: deleting ONE row
+   needs it, and every delete in this app is a single row, never a whole tab. */
 function ensureTabs(){
   if(ensureTabsPromise)return ensureTabsPromise;
   ensureTabsPromise=(async()=>{
-    const meta=await sheetJSON(GS_BASE+'?fields=sheets.properties.title');
-    const have=new Set((meta.sheets||[]).map(s=>s.properties&&s.properties.title));
+    const meta=await sheetJSON(GS_BASE+'?fields=sheets.properties(title,sheetId)');
+    const have=new Set();
+    (meta.sheets||[]).forEach(s=>{
+      const p=s.properties||{};
+      if(!p.title)return;
+      have.add(p.title);
+      if(p.sheetId!==undefined&&p.sheetId!==null)SHEET_IDS[p.title]=p.sheetId;
+    });
     const missing=TABS.filter(t=>!have.has(t));
     if(missing.length){
       await sheetJSON(GS_BASE+':batchUpdate',{method:'POST',body:{requests:missing.map(t=>({addSheet:{properties:{title:t}}}))}});
@@ -1494,9 +1534,21 @@ function ensureTabs(){
         valueInputOption:'RAW',
         data:missing.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))
       }});
+      SHEET_HEADERS={};                       // the tabs were just created → re-read the headings
+      const meta2=await sheetJSON(GS_BASE+'?fields=sheets.properties(title,sheetId)');
+      (meta2.sheets||[]).forEach(s=>{
+        const p=s.properties||{};
+        if(p.title&&p.sheetId!==undefined&&p.sheetId!==null)SHEET_IDS[p.title]=p.sheetId;
+      });
     }
   })().catch(e=>{ensureTabsPromise=null;throw e;});
   return ensureTabsPromise;
+}
+/* A column letter from a 0-based index: 0→A, 25→Z, 26→AA … */
+function colLetter(i){
+  let s='',n=Number(i)+1;
+  while(n>0){const r=(n-1)%26;s=String.fromCharCode(65+r)+s;n=Math.floor((n-1)/26);}
+  return s;
 }
 /* the header row of one tab, fetched on demand (before the first append on a fresh
    device, or when a tab is created while the app is running). A tab whose first row
@@ -1524,9 +1576,22 @@ async function ensureHeaders(sheet){
   }catch(e){}
   return SHEET_HEADERS[sheet];
 }
+/* The arrangement a write must follow — the Sheet's own header row, with the sync
+   column (`updatedAt`) added to the Sheet when it is not there yet. A column is only
+   ever ADDED at the end; nothing else in the Sheet's order is ever touched. */
+async function sheetColsForWrite(sheet){
+  const h=(await ensureHeaders(sheet))||SHEET_COLS[sheet].slice();
+  if(h.indexOf('updatedAt')!==-1)return h;
+  const at=colLetter(h.length)+'1';
+  await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!'+at+'?valueInputOption=RAW',{method:'PUT',body:{values:[['updatedAt']]}});
+  h.push('updatedAt');
+  SHEET_HEADERS[sheet]=h.slice();
+  return h;
+}
 async function appendRow(sheet,row){
+  const rows=Array.isArray(row)&&Array.isArray(row[0])?row:[row];   // one row or several, in one call
   const url=GS_BASE+'/values/'+encodeURIComponent(sheet)+'!A1:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS';
-  const body={values:[row]};
+  const body={values:rows};
   try{await sheetJSON(url,{method:'POST',body});}
   catch(e){
     if(!/parse range/i.test(String(e.message)))throw e;   // tab missing → create it and retry once
@@ -1536,9 +1601,13 @@ async function appendRow(sheet,row){
 }
 async function sendRecord(sheet,rec){
   if(!AUTH.token){toast('💾 Saved on device — sign in on the Google Sheet tab to sync');updateSheetStatus();return;}
+  /* This row is being written at this very moment, so a push running in the same moment must
+     not write it a second time (that would make two rows in the Sheet for one entry). */
+  rec._sending=true;
   try{
-    await ensureHeaders(sheet);                      // follow the Sheet's own columns
-    await appendRow(sheet,toSheetRow(sheet,rec));
+    const cols=await sheetColsForWrite(sheet);       // follow the Sheet's own columns
+    touchRec(rec);                                   // this row is newer than anything in the Sheet
+    await appendRow(sheet,toSheetRow(sheet,rec,cols));
     rec.synced=true;persist();
     toast('✅ Saved & sent to Google Sheet');
     closeSetupAlert();
@@ -1547,63 +1616,133 @@ async function sendRecord(sheet,rec){
     if(reportProblem(e)||alertKey)toast('💾 Saved on device — the fix is shown on the Google Sheet tab');
     else if(isAuthError(e))toast('💾 Saved on device — sign in on the Google Sheet tab to sync');
     else toast('💾 Saved on device — not sent to the Sheet, retry with 🔄 Push app data to Sheet');
+  }finally{
+    delete rec._sending;                             // never stored, never left behind
   }
   updateSheetStatus();
 }
+/* ==================================================================
+   THE SAFE SYNC ENGINE — one row at a time, never a whole tab
+   ==================================================================
+   Every write in this app now goes to ONE row, found by its `id`:
+
+     a new entry     → append one row            (values:append)
+     an edited entry → rewrite only that row     (values:update, that row's number)
+     a deleted entry → remove only that row      (deleteDimension, that row's number)
+
+   `values:clear` is NEVER used again. That was the bug: a push cleared all five
+   tabs and rewrote them from one phone's memory, so a phone holding 3 rows could
+   wipe the 500 rows in the Sheet it had never read — "the whole Sheet went empty"
+   the moment the other partner signed in or pressed a button.
+
+   Before anything is written the Sheet is read and merged first, so nothing another
+   partner entered can be lost, and every row carries an `updatedAt` stamp: when both
+   phones hold the same row, the newer one wins.
+
+   Nothing here ever deletes a row that this device has not read.
+   ================================================================== */
+
+/* ---------- rows deleted on this device, waiting to leave the Sheet ---------- */
+function pendingDeletes(){
+  try{const m=JSON.parse(storeItem(PENDING_DEL_KEY)||'{}');return (m&&typeof m==='object')?m:{};}catch(e){return {};}
+}
+function savePendingDeletes(m){setStoreItem(PENDING_DEL_KEY,(m&&Object.keys(m).length)?JSON.stringify(m):'');}
+function addPendingDelete(tab,id){
+  if(!tab||!id)return;
+  const m=pendingDeletes(),list=m[tab]||[];
+  if(list.indexOf(String(id))===-1)list.push(String(id));
+  m[tab]=list;savePendingDeletes(m);
+}
+function dropPendingDelete(tab,id){
+  const m=pendingDeletes(),list=(m[tab]||[]).filter(x=>x!==String(id));
+  if(list.length)m[tab]=list;else delete m[tab];
+  savePendingDeletes(m);
+}
+function isPendingDelete(tab,id){
+  const m=pendingDeletes();
+  return (m[tab]||[]).indexOf(String(id))!==-1;
+}
+function pendingDeleteCount(){
+  const m=pendingDeletes();
+  return Object.keys(m).reduce((n,k)=>n+(m[k]||[]).length,0);
+}
+/* a record that changed on this device: newer than the Sheet's copy, not sent yet */
+function touchRec(rec){
+  if(!rec)return rec;
+  rec.updatedAt=new Date().toISOString();
+  rec.synced=false;
+  return rec;
+}
+/* ISO stamps compare as plain strings; rows written before this column existed have none */
+const stampOf=rec=>String((rec&&rec.updatedAt)||'');
+const sheetCopyNewer=(mine,theirs)=>{const a=stampOf(mine),b=stampOf(theirs);return !!b&&(!a||b>a);};
+function markAllSynced(){
+  /* a row that is being written right now is not marked as sent: if that write failed, it must
+     still count as "not sent yet" — otherwise the next pull would read it as a row that another
+     device deleted, and drop it. */
+  [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>{if(x&&!x._sending)x.synced=true;});
+  persist();updatePushButtons();
+}
+/* Delete records HERE (this device) and remember their ids so their own rows leave
+   the Sheet as well. This is what the ✕ / re-activate / "End duty" paths use: one
+   row disappears instead of the whole Sheet being rewritten from this phone. */
+function removeRecords(list,ids){
+  const tab=DB_TO_TAB[list];
+  const gone=(Array.isArray(ids)?ids:[ids]).map(String).filter(Boolean);
+  if(!gone.length)return 0;
+  const set=new Set(gone);
+  DB[list]=(DB[list]||[]).filter(r=>!set.has(String(r.id)));
+  gone.forEach(id=>addPendingDelete(tab,id));
+  persist();updatePushButtons();
+  return gone.length;
+}
+
+/* 🔄 Push app data to Sheet — "make the Sheet match these books", safely:
+   1) read the Sheet        2) merge it with this device   3) write only what differs.
+   One push runs at a time: a button pressed twice (or a delete that also syncs) joins the
+   push already running instead of racing it — two overlapping pushes could delete a row
+   that the first one had already shifted. */
+let pushPromise=null;
 async function syncAll(){
-  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
-  /* A push REPLACES the Sheet with this device's rows (the tabs are cleared first).
-     Right after a clear the device holds little or nothing, so say so plainly
-     before the Sheet's books are overwritten by it. */
-  if(isDeviceCleared()&&!confirm('This device was cleared on '+String(clearedOn()).slice(0,10)+' and the automatic pull from the Sheet is off.\n\n🔄 Push app data to Sheet DELETES everything in the Sheet first and writes only what this device holds right now ('+totalRecords()+' record'+(totalRecords()===1?'':'s')+').\n\nTo keep the books: press ⬇ Load data FROM Sheet first, then push. Continue and overwrite the Sheet?'))return;
-  flash('shMsg','Sending everything…');
+  if(pushPromise)return pushPromise;
+  pushPromise=runPush().then(v=>{pushPromise=null;return v;},e=>{pushPromise=null;throw e;});
+  return pushPromise;
+}
+async function runPush(){
+  if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return false;}
+  /* A device that was deliberately emptied must never be the one that defines the books:
+     the old code asked "overwrite anyway?" and did the wipe. Now it simply refuses. */
+  if(isDeviceCleared()){
+    flash('shMsg','🧹 This device was cleared on '+String(clearedOn()).slice(0,10)+' — nothing was written. Press ⬇ Load data FROM Sheet to bring the books back (or ↩ Turn the automatic pull back on), then push.',false);
+    toast('🧹 Nothing was sent — this device was cleared. Load the Sheet first.');
+    return false;
+  }
+  flash('shMsg',isGoogleConnected()?'Reading the Sheet, then writing only what changed…':'Signing in…');
   try{
-    /* pressing the button IS the user gesture — if this device is not signed in
-       (or the hour is up), Google's sign-in opens first and the push continues
-       from where it left off. Nothing is written before the sign-in succeeds. */
-    await getAccessToken(true);
-    /* A device that has NOT read the Sheet yet in this session — a brand-new phone, or
-       one whose automatic pull could not run because nobody was signed in on it — holds
-       only part of the books. Pushing from it would delete every row it has never seen
-       (on another phone, that is the whole history). So the Sheet is read once first and
-       merged the safe way — rows typed on this device win, rows only the Sheet has are
-       kept — and only then is anything cleared or written. A device the user deliberately
-       CLEARED is left alone: that push really is meant to replace the Sheet. */
-    if(!sheetPulled&&!isDeviceCleared()){
-      const fresh=await fetchSheetData();
-      sheetPulled=true;
-      applySheetData(fresh,true);
-      rememberSheet();
-      toast('📥 Read the Sheet first — nothing another phone entered is lost');
-    }
+    await getAccessToken(true);       // pressing the button IS the user gesture
     await ensureTabs();
-    for(const t of TABS)await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(t)+':clear',{method:'POST',body:{}});
-    /* The header row AND the rows must be written in the SAME arrangement. This is
-       the current one (SHEET_COLS): building the rows from SHEET_HEADERS instead —
-       the arrangement read from the Sheet before it was cleared — wrote today's
-       headings over rows still in the older order, and every column from `date`
-       on shifted one place (money received under “Date”, the saved-at date under
-       “Mode”, and so on). */
-    await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
-      valueInputOption:'RAW',
-      data:TABS.map(t=>{
-        const cols=SHEET_COLS[t];
-        return {range:t+'!A1',values:[cols,...(DB[TAB_TO_DB[t]]||[]).map(r=>toSheetRow(t,r,cols))]};
-      })
-    }});
-    [...DB.employees,...DB.dutyLeave,...DB.payments,...DB.receipts,...DB.expenses].forEach(x=>x.synced=true);persist();
-    TABS.forEach(t=>{SHEET_HEADERS[t]=SHEET_COLS[t].slice();});   // the Sheet now has this arrangement
+    const fresh=await fetchSheetData();          // 1) READ   — fills SHEET_HEADERS + SHEET_ROWS
+    const plan=mergeSheetData(fresh);            // 2) MERGE  — the Sheet's rows + this device's rows
+    const did=await writePlan(plan);             // 3) WRITE  — append / update / delete, one row at a time
+    markAllSynced();
     rememberSheet();
     closeSetupAlert();
-    flash('shMsg','✅ All data written to your Google Sheet.');toast('✅ Google Sheet updated.');
+    const parts=[];
+    if(did.added)parts.push(did.added+' new row'+(did.added===1?'':'s')+' added');
+    if(did.updated)parts.push(did.updated+' row'+(did.updated===1?'':'s')+' updated');
+    if(did.deleted)parts.push(did.deleted+' deleted row'+(did.deleted===1?'':'s')+' removed');
+    const msg=parts.length?('✅ '+parts.join(' • ')+'.'):'✅ The Sheet already matches this device — nothing to write.';
+    flash('shMsg',msg,true);
+    toast('✅ Google Sheet updated');
     return true;
   }catch(e){
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Google refused the write — the fix is shown above.':'❌ Could not write to the Sheet: '+((e&&e.message)||e),false);
     toast('❌ Could not reach Google Sheet — nothing is lost, it is still on this device.');
     return false;
+  }finally{
+    updateSheetStatus();
   }
-  updateSheetStatus();
 }
 /* Columns that may hold real DATE / TIME cells: rows written before this app
    wrote through the Sheets API were auto-parsed by Google Sheets and come back
@@ -1624,7 +1763,7 @@ async function fetchSheetData(){
     await ensureTabs();
     j=await sheetJSON(url);
   }
-  const warn=[],shifted=[];
+  const warn=[],shifted=[],where={},shiftedIds={};
   const map=(sheet,i)=>{
     const rows=((j.valueRanges||[])[i]&&j.valueRanges[i].values)||[];
     /* row 1 is the header — remember it, so every write follows the Sheet's own order */
@@ -1633,14 +1772,24 @@ async function fetchSheetData(){
     if(headers.length)SHEET_HEADERS[sheet]=headers;
     const missing=missingSheetCols(sheet,headers);
     if(missing.length)warn.push(sheet);
-    return rows.slice(1)
-      .filter(row=>row.some(v=>String(v??'').trim()!==''))   // ignore trailing blank rows
-      .map(row=>{
-        const info={};
-        const rec=sheetRowToRec(sheet,row,headers,info);
-        if(info.legacy)shifted.push(sheet);                  // row was written in the older order
-        return rec;
-      });
+    const out=[],at=[];
+    rows.forEach((row,n)=>{
+      if(n===0)return;                                     // row 1 = the headings
+      if(!row.some(v=>String(v??'').trim()!==''))return;    // ignore trailing blank rows
+      const info={};
+      const rec=sheetRowToRec(sheet,row,headers,info);
+      if(info.legacy){                                      // row was written in the older order
+        shifted.push(sheet);
+        (shiftedIds[sheet]=shiftedIds[sheet]||[]).push(String(rec.id||''));
+      }
+      out.push(rec);
+      /* WHERE this row physically sits in the tab (1-based, counting the heading row).
+         Updates and deletes need it; blank rows are skipped above, so it is the row's
+         real position, not the number of rows the app has. */
+      at.push({id:String(rec.id||''),row:n+1});
+    });
+    where[sheet]=at;
+    return out;
   };
   const data={
     employees:map('Employees',0),
@@ -1649,47 +1798,193 @@ async function fetchSheetData(){
     receipts:map('ClientReceipts',3),
     expenses:map('Expenses',4)
   };
+  SHEET_ROWS=where;
+  SHEET_SHIFTED=shiftedIds;
   const shiftedTabs=[...new Set(shifted)];
   const sentences=[];
   if(warn.length)sentences.push('This Sheet is still in the old arrangement on: '+warn.join(', ')+'.');
   if(shiftedTabs.length)sentences.push(shiftedTabs.join(', ')+' has rows written in the older column order'
     +' — that is why money can show under Date and the saved-at date under Mode; they are read correctly here.');
-  sheetLayoutWarning=sentences.length?('⚠ '+sentences.join(' ')+' Press 🔄 Push app data to Sheet once to rewrite the whole Sheet in the current column layout.'):'';
+  sheetLayoutWarning=sentences.length?('⚠ '+sentences.join(' ')+' Press 🔄 Push app data to Sheet once to bring the whole Sheet into the current column layout (rows are rewritten in place, nothing is deleted).'):'';
   return data;
 }
-function applySheetData(fresh,keepUnsynced){
-  ['employees','dutyLeave','payments','receipts','expenses'].forEach(k=>{
-    const rows=fresh[k];
-    if(keepUnsynced){
-      const ids=new Set(rows.map(r=>String(r.id)));
-      (DB[k]||[]).forEach(r=>{if(!r.synced&&r.id&&!ids.has(String(r.id)))rows.push(r);});
+/* Read the Sheet + this device, keep BOTH sides, and say exactly what has to be written:
+     • a row on both sides   → this device's copy wins if it changed here and is not older
+                               than the Sheet's (the `updatedAt` rule); else the Sheet's wins
+     • a row only here, unsent → append it (it never reached the Sheet)
+     • a row only here, sent   → it was deleted on another phone → drop it here too
+     • a row only in the Sheet → add it here, unless THIS device deleted it just now
+   An empty tab deletes nothing: if the Sheet comes back empty on a tab that has rows
+   here, this device keeps its books and marks them unsent, so the next push puts them
+   back. This is the case that used to empty the whole Sheet for everybody. */
+function mergeSheetData(fresh){
+  const plan={updates:{},appends:{},dropped:0,added:0,empty:[]};
+  TABS.forEach(tab=>{
+    const key=TAB_TO_DB[tab];
+    const fromSheet=fresh[key]||[];
+    const local=(DB[key]||[]).slice();
+    const where=SHEET_ROWS[tab]||[];
+    const byId=new Map();
+    fromSheet.forEach((rec,i)=>{
+      const id=String(rec.id||'');
+      if(id)byId.set(id,{rec,row:(where[i]&&where[i].row)||0});
+    });
+    /* ---- the Sheet has NOTHING on this tab, but this device does ---- */
+    if(!fromSheet.length){
+      if(local.length){
+        plan.empty.push(tab);
+        local.forEach(r=>{r.synced=false;});
+        const queued=local.filter(r=>!r._sending);   // one being written right now is not queued twice
+        if(queued.length)plan.appends[tab]=queued;
+      }
+      DB[key]=local;
+      return;
     }
-    DB[k]=rows;
+    const out=[],seen=new Set(),updates=[],appends=[];
+    local.forEach(rec=>{
+      const id=String(rec.id||'');
+      const at=id?byId.get(id):null;
+      if(at){
+        seen.add(id);
+        if(rec.synced===false){
+          /* changed here: this copy wins unless the Sheet's copy was changed even later */
+          if(stampOf(rec)&&sheetCopyNewer(rec,at.rec))out.push(Object.assign({},at.rec));
+          else{updates.push({row:at.row,rec});out.push(rec);}
+        }else{
+          if(sheetCopyNewer(rec,at.rec))out.push(Object.assign({},at.rec));
+          else out.push(rec);
+        }
+        return;
+      }
+      if(!id)rec.id=uid();
+      /* Only a row this device KNOWS it sent can have been deleted elsewhere. Anything
+         that was never confirmed as sent is written to the Sheet instead of being
+         thrown away — a pushed row can be removed, a row that never arrived cannot. */
+      if(rec._sending){                              // being written right now → not a second time
+        out.push(rec);
+      }else if(!id||rec.synced!==true){
+        appends.push(rec);out.push(rec);
+      }else{
+        plan.dropped++;                              // deleted on another device → remove here too
+      }
+    });
+    fromSheet.forEach((rec,i)=>{
+      const id=String(rec.id||'');
+      if(id&&seen.has(id))return;
+      if(id&&isPendingDelete(tab,id))return;         // this device deleted it — it must not come back
+      out.push(rec);plan.added++;
+    });
+    /* Rows the Sheet still holds in an older column order (money under Date, the saved-at
+       date under Mode) are written again in the Sheet's own current order by the same push
+       — one row at a time, nothing cleared. A row changed here keeps the local values. */
+    (SHEET_SHIFTED[tab]||[]).forEach(id=>{
+      const at=byId.get(String(id));
+      if(!at||!at.row)return;
+      if(updates.some(u=>u.row===at.row))return;
+      updates.push({row:at.row,rec:at.rec});
+    });
+    DB[key]=out;
+    if(updates.length)plan.updates[tab]=updates;
+    if(appends.length)plan.appends[tab]=appends;
   });
-  persist();renderAll();
+  persist();renderAll();updatePushButtons();
+  const warn=[];
+  if(plan.empty.length)warn.push('The Sheet came back EMPTY on: '+plan.empty.join(', ')
+    +' — nothing on this device was deleted; its rows are kept and go back to the Sheet on the next 🔄 Push app data to Sheet.');
+  if(plan.dropped)warn.push(plan.dropped+' row'+(plan.dropped===1?'':'s')+' had been deleted on another device and were removed here.');
+  sheetSafetyWarning=warn.length?('⚠ '+warn.join(' ')):'';
+  return plan;
 }
+/* Write the plan — one row at a time, in the Sheet's own column order. */
+async function writePlan(plan){
+  const done={added:0,updated:0,deleted:0};
+  const pending=pendingDeletes();
+  for(const tab of TABS){
+    const ups=plan.updates[tab]||[];
+    const aps=plan.appends[tab]||[];
+    /* a tab with nothing to add, change or delete is not touched at all */
+    if(!ups.length&&!aps.length&&!(pending[tab]||[]).length)continue;
+    const cols=await sheetColsForWrite(tab);
+    if(ups.length){
+      await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{
+        valueInputOption:'RAW',
+        data:ups.map(u=>{
+          touchRec(u.rec);                                        // this row is newer than the Sheet's
+          return {range:tab+'!A'+u.row,values:[toSheetRow(tab,u.rec,cols)]};
+        })
+      }});
+      done.updated+=ups.length;
+    }
+    if(aps.length){
+      aps.forEach(r=>touchRec(r));
+      await appendRow(tab,aps.map(r=>toSheetRow(tab,r,cols)));
+      done.added+=aps.length;
+    }
+  }
+  done.deleted=await deletePendingRows();
+  SHEET_ROWS={};                                                 // row numbers moved — re-read next time
+  return done;
+}
+/* Remove the rows this device deleted. The row is found by its own `id` in the Sheet
+   immediately before it is removed (column A, or wherever the `id` heading sits), so a
+   row that moved in the meantime — another phone adding or removing rows — can never
+   make the app delete the wrong row. Rows are removed from the bottom up. */
+async function deletePendingRows(){
+  const m=pendingDeletes();
+  if(!Object.keys(m).length)return 0;
+  let done=0;
+  for(const tab of TABS){
+    const list=m[tab]||[];
+    if(!list.length)continue;
+    const headers=SHEET_HEADERS[tab]||SHEET_COLS[tab];
+    const at=headers.indexOf('id');
+    const C=colLetter(at<0?0:at);
+    let col=[];
+    try{
+      const j=await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(tab)+'!'+C+'2:'+C+'?valueRenderOption=UNFORMATTED_VALUE');
+      col=((j.values||[]).map(r=>String((r&&r[0])??'').trim()));
+    }catch(e){
+      if(!/parse range/i.test(String(e.message)))throw e;   // tab missing → nothing to delete there
+    }
+    const rows=[];
+    list.forEach(id=>{const i=col.indexOf(String(id));if(i!==-1)rows.push(i+2);});
+    if(rows.length){
+      const sid=SHEET_IDS[tab];
+      if(sid===undefined||sid===null)throw new Error('Could not read the tab number (sheetId) of '+tab+' — press 🔐 Sign in with Google again and retry.');
+      rows.sort((a,b)=>b-a);
+      await sheetJSON(GS_BASE+':batchUpdate',{method:'POST',body:{requests:rows.map(r=>({deleteDimension:{range:{sheetId:sid,dimension:'ROWS',startIndex:r-1,endIndex:r}}}))}});
+      done+=rows.length;
+    }
+    list.forEach(id=>dropPendingDelete(tab,id));      // gone from the Sheet (or it never reached it)
+  }
+  return done;
+}
+/* Read the Sheet and use it here. Rows saved on this device that were never sent are
+   kept (they are shown as "not sent yet"), and an empty Sheet never wipes this device. */
 async function loadFromSheet(){
   if(!getClientId()){flash('shMsg','Add your Google OAuth Client ID first (see the box above).',false);showSetupAlert(clientProblem(checkClientId(getClientId())));return;}
   const lastSheet=String(storeItem(SYNCED_SHEET_KEY)||'');
   const otherSheet=lastSheet&&lastSheet!==String(getSheetId()||'');
-  if(!confirm('This will REPLACE the data on this device with the data in your Google Sheet. Continue?'
+  if(!confirm('Read the Google Sheet and use it here?\n\nEvery row in the Sheet is taken as it is. Rows you added on this device that were never sent are kept.'
     +(otherSheet?'\n\n⚠ This device was synced with a DIFFERENT Sheet until now — what is saved here will be replaced by the new Sheet\'s data. Press ⬇ Download backup (JSON) in All Records first if you are not sure.':'')))return;
   flash('shMsg','Loading from Sheet…');
   try{
     await getAccessToken(true);
+    await ensureTabs();
     const data=await fetchSheetData();
-    applySheetData(data,false);
-    sheetPulled=true;
+    mergeSheetData(data);
     rememberSheet();
     setDeviceCleared(false);            // a deliberate load ends the "cleared" state — pulling resumes
     closeSetupAlert();
-    flash('shMsg',sheetLayoutWarning||'✅ Data loaded from Google Sheet.');
-    toast(sheetLayoutWarning?'⚠ Check the Sheet columns — details above':'✅ Data loaded from Google Sheet.');
+    const note=sheetSafetyWarning||sheetLayoutWarning;
+    flash('shMsg',note||'✅ Data loaded from Google Sheet.',!note);
+    toast(sheetSafetyWarning?'⚠ Check the Sheet — details above':(sheetLayoutWarning?'⚠ Check the Sheet columns — details above':'✅ Data loaded from Google Sheet.'));
   }catch(e){
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Could not load — the fix is shown above.':'❌ Could not load from the Sheet: '+((e&&e.message)||e),false);
     toast('❌ Could not load from Google Sheet.');
   }
+  updateSheetStatus();
 }
 /* The device remembers which Sheet it last synced with. If the app is pointed at a
    DIFFERENT spreadsheet (config.js changed, or a new address typed in the box), the
@@ -1706,25 +2001,27 @@ function noteSheetSwitch(){
 function rememberSheet(){const cur=String(getSheetId()||'');if(cur)setStoreItem(SYNCED_SHEET_KEY,cur);}
 /* On every app start, silently pull the latest data from the Google Sheet
    so the interface always shows what is in the Sheet — on any device.
-   Local entries that were never synced are kept and merged in. */
+   Local entries that were never synced are kept and merged in. Nothing is written. */
 async function autoLoadFromSheet(){
   if(isDeviceCleared())return;             // the user cleared this device on purpose — do not pull the books back
   if(!getClientId()||!AUTH.token)return;   // never signed in on this device → stay local
   try{
+    await ensureTabs();
     const data=await fetchSheetData();
-    sheetPulled=true;                       // this device now has the Sheet's rows
-    if(isDeviceCleared())return;           // cleared while the Sheet was being read → keep it cleared
+    if(isDeviceCleared())return;            // cleared while the Sheet was being read → keep it cleared
     const switched=noteSheetSwitch();
-    applySheetData(data,true);
+    mergeSheetData(data);
     rememberSheet();
+    const notice=sheetSafetyWarning||sheetLayoutWarning;
     if(switched)toast('⚠ Different Google Sheet — entries saved on this device were kept, not sent yet');
-    else if(sheetLayoutWarning){if(!layoutNotified){layoutNotified=true;toast(sheetLayoutWarning);}}
+    else if(notice){if(!layoutNotified){layoutNotified=true;toast(notice);}}
     else toast('✅ Data refreshed from Google Sheet');
     closeSetupAlert();
   }catch(e){
     const explained=reportProblem(e);
     toast(explained?'⚠ Sheet not reachable — the fix is on the Google Sheet tab. Data from this device is shown':'⚠ Could not reach Google Sheet — showing data saved on this device');
   }
+  updateSheetStatus();
 }
 async function googleSignIn(){
   /* whatever is typed in the box is used straight away — and a Client ID that
@@ -1741,14 +2038,38 @@ async function googleSignIn(){
     flash('shMsg','Waiting for Google…');
     await signInFinish();
   }catch(e){
+    /* the optional "show which account is signed in" permission was refused → sign in
+       again with just the Sheets permission, so the app keeps working either way */
+    if(isScopeError(e)&&extraScopeOk){
+      extraScopeOk=false;tokenClient=null;tokenClientId='';
+      try{await signInFinish();updateSheetStatus();return;}catch(e2){e=e2;}
+    }
     if(await retryWithConfigId(e)){updateSheetStatus();return;}   // a bad ID saved on this device, cleared + retried
     const explained=reportProblem(e,true);
     flash('shMsg',explained?'❌ Sign-in failed — the fix is shown above.':'❌ Sign-in failed: '+((e&&e.message)||e),false);
   }
   updateSheetStatus();
 }
+/* Which Google account is signed in. Shown on the Google Sheet tab, and the app says so
+   when a DIFFERENT account signs in on a device that already holds books: the copy saved
+   in a browser is shared by everyone who uses that browser, it is not split per account. */
+async function rememberAccount(){
+  try{
+    const res=await fetch('https://www.googleapis.com/oauth2/v3/userinfo',{headers:{Authorization:'Bearer '+AUTH.token}});
+    if(!res||!res.ok)return '';
+    const j=await res.json();
+    const em=String((j&&j.email)||'').trim();
+    if(!em)return '';
+    const prev=String(storeItem(ACC_KEY)||'');
+    setStoreItem(ACC_KEY,em);
+    if(prev&&prev.toLowerCase()!==em.toLowerCase()&&totalRecords())
+      toast('⚠ Signed in as '+em+' — this browser held the books of '+prev+' before. One browser has ONE copy of the books, shared by whoever signs in.');
+    return em;
+  }catch(e){return '';}
+}
 async function signInFinish(){
   await getAccessToken(true);
+  await rememberAccount();
   updateSheetStatus();
   const tabsErr=await ensureTabs().then(()=>null).catch(e=>e);   // create missing tabs + header rows
   if(tabsErr){
@@ -1793,8 +2114,18 @@ function updateSheetStatus(){
   const cid=getClientId(),noFile=settingsFileState()==='missing';
   const v=checkClientId(cid);
   const connected=isGoogleConnected();
-  t.textContent=connected?'Google Sheet: connected':(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(!getSheetId()?'Google: no Sheet to write into — see the box below':(AUTH.token?'Google: sign-in expired — press Sign in':'Google: not signed in')))));
+  const acc=String(storeItem(ACC_KEY)||'');
+  t.textContent=connected?('Google Sheet: connected'+(acc?' — signed in as '+acc:'')):(noFile?'Google: config.js did not load — signing in with the ID saved on this device':(!cid?'Google: not configured':(!v.ok?'Google: Client ID needs fixing':(!getSheetId()?'Google: no Sheet to write into — see the box below':(AUTH.token?('Google: sign-in expired — press Sign in'+(acc?' ('+acc+')':'')):('Google: not signed in'+(acc?' — last account: '+acc:'')))))));
   if(s)s.classList.toggle('ok',connected&&v.ok);
+  /* what the sync engine is doing with the two copies of the books */
+  const safe=document.getElementById('syncSafeLine');
+  if(safe){
+    const d=pendingDeleteCount(),n=unsentCount();
+    safe.innerHTML=(sheetSafetyWarning?'<span style="color:var(--amber);font-weight:600;">'+esc(sheetSafetyWarning)+'</span><br>':'')
+      +'🛡 Writes are per row: '+(n?n+' change'+(n===1?'':'s')+' waiting':'nothing waiting')
+      +(d?' • '+d+' deleted row'+(d===1?'':'s')+' still to remove from the Sheet':'')
+      +'. A push reads the Sheet first and writes only what differs — it can no longer clear your tabs.';
+  }
   /* which copy of the app this phone is running — compare it with the other phone */
   const buildLine=document.getElementById('appBuildLine');
   if(buildLine)buildLine.innerHTML='📱 App version <b>'+esc(APP_BUILD)+'</b> on this phone. Both phones should show the <b>same</b> version — a phone showing an older one is still running a cached copy: reload the page (or close the app and open it again) <b>before</b> pressing 🔄 Push app data to Sheet.';
@@ -1837,6 +2168,13 @@ async function checkGoogleSetup(){
   L.push('   Hisab never creates a Sheet file (the Sheets API cannot) — it creates the 5 tabs inside the Sheet above.');
   L.push((isGoogleConnected()?'✅ ':'⚠ ')+'Sign-in: '+(isGoogleConnected()?'connected on this device, access lasts till '+new Date(AUTH.expiresAt).toLocaleTimeString()
         :(AUTH.token?'an old sign-in is stored but expired — press “Sign in with Google”':'not signed in on this device')));
+  L.push('   Google account: '+(String(storeItem(ACC_KEY)||'')||'(not recorded yet — sign in once while online to record it)'));
+  L.push('   ⚠ One browser holds ONE copy of the books: whoever signs in on this device sees and');
+  L.push('     edits the same saved data. It is not split per Google account — use one device each.');
+  L.push('• Safe sync (this version): every write touches a single row — a new entry is');
+  L.push('   appended, an edit rewrites its own row, a delete removes its own row. Tabs are');
+  L.push('   never cleared, so pushing from a phone that holds fewer rows cannot empty the Sheet.');
+  L.push('   Waiting here: '+unsentCount()+' row(s) not sent yet, '+pendingDeleteCount()+' deletion(s) to apply');
   if(isGoogleConnected()){
     L.push('');
     L.push('Checking the Sheet with your access…');
@@ -1891,7 +2229,7 @@ function saveEmployee(){
   if(existing){
     ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client','clientDutyStartDate','clientPhone','clientDeal'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
     if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';existing.dutyShift='';}
-    existing.savedAt=rec.savedAt;existing.synced=false;persist();
+    existing.savedAt=rec.savedAt;touchRec(existing);persist();   // newer than the Sheet's copy of this row
     flash('eMsg','Updated existing employee "'+existing.name+'".');
     sendRecord('Employees',existing);
   }else{
@@ -3749,7 +4087,8 @@ function reactivateEmployee(id){
   if(!e)return;
   const key=String(e.name||'').trim().toLowerCase();
   if(!confirm('Re-activate employee "'+e.name+'"?'))return;
-  DB.dutyLeave=DB.dutyLeave.filter(r=>!(r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key));
+  const gone=DB.dutyLeave.filter(r=>r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key).map(r=>r.id);
+  removeRecords('dutyLeave',gone);
   persist();renderAll();
   if(isGoogleConnected()){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
   else toast('↩ Employee re-activated.');
@@ -3813,11 +4152,11 @@ function fillEmpSelects(){
 }
 function delRec(list,id){
   if(!confirm('Delete this entry?'))return;
-  DB[list]=DB[list].filter(r=>r.id!==id);persist();
+  removeRecords(list,id);            // this device now; its own Sheet row goes on the next sync
   if(list==='payments')delPayImg(id);
   renderAll();
-  if(isGoogleConnected()){toast('Deleted — updating Google Sheet…');syncAll();}
-  else toast('Deleted.');
+  if(isGoogleConnected()){toast('Deleted — removing that row from the Google Sheet…');syncAll();}
+  else toast('Deleted — press 🔄 Push app data to Sheet to remove that row from the Sheet too.');
 }
 function renderEmployees(){
   const tb=document.querySelector('#empTable tbody');tb.innerHTML='';
@@ -4052,8 +4391,11 @@ function unsentCount(){
     .reduce((n,k)=>n+(DB[k]||[]).filter(r=>r&&!r.synced).length,0);
 }
 function updatePushButtons(){
-  const n=unsentCount();
-  const label='🔄 Push app data to Sheet'+(n?' ('+n+' not sent yet)':'');
+  const n=unsentCount(),d=pendingDeleteCount();
+  const bits=[];
+  if(n)bits.push(n+' not sent yet');
+  if(d)bits.push(d+' deletion'+(d===1?'':'s')+' to apply');
+  const label='🔄 Push app data to Sheet'+(bits.length?' ('+bits.join(', ')+')':'');
   ['btnSyncAll2','btnSyncAll3'].forEach(id=>{const b=document.getElementById(id);if(b)b.textContent=label;});
 }
 function exportBackup(){
@@ -4119,9 +4461,13 @@ function clearDeviceOnly(){
     localStorage.removeItem(PAY_IMG_KEY);
     Object.keys(localStorage).filter(k=>k.indexOf(WA_NUM_KEY)===0).forEach(k=>localStorage.removeItem(k));
   }catch(e){}
+  /* Nothing is left here to delete from the Sheet either: a device-only wipe must not
+     leave "this id was deleted" notes behind that would later remove Sheet rows. */
+  savePendingDeletes({});
+  SHEET_ROWS={};
   setStoreItem(INCLUDED_FLAG,'done');
   setDeviceCleared(true);
-  renderAll();
+  renderAll();updatePushButtons();
   return n;
 }
 function openClearDialog(){
@@ -4168,6 +4514,7 @@ async function doClearAppData(){
       await sheetJSON(GS_BASE+'/values:batchUpdate',{method:'POST',body:{valueInputOption:'RAW',
         data:TABS.map(t=>({range:t+'!A1',values:[SHEET_COLS[t]]}))}});   // headings back, no rows
       TABS.forEach(t=>{SHEET_HEADERS[t]=SHEET_COLS[t].slice();});
+      savePendingDeletes({});SHEET_ROWS={};      // nothing left in the Sheet to delete row by row
       rememberSheet();
     }catch(e){
       const explained=reportProblem(e,true);

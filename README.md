@@ -29,6 +29,7 @@ Hisab carries **`data/hisab-data.json`** — the employees, duty & leave rows, e
 | File | What it holds |
 |---|---|
 | `data/hisab-data.json` | The five tables — same columns as the Sheet tabs, **empty**; the Sheet's rows are added after sign-in |
+| `tools/sync-engine.test.mjs` | The sync engine's tests (`node tools/sync-engine.test.mjs`): runs the real script from `index.html` against a **mock Sheets API** in Node — no Google account, nothing is sent anywhere. It is what proves the important rules: a push never clears a tab, a phone holding 3 rows cannot delete the 500 it has never seen, an empty Sheet cannot empty a device, a cleared device cannot push, a delete removes exactly its own row, and one entry saved while a push runs lands in the Sheet **once**. |
 
 * **The data comes from the Sheet.** Sign in with Google and the Sheet's rows are added on the device (pulled automatically on every start; **⬇ Load from Google Sheet** takes the Sheet as-is). While the file is empty there is nothing bundled to load — a new phone starts clean and fills from the Sheet.
 * **On a device that already has data:** *All Records* → **📥 Add the data included in the app**. It shows what is new, asks first, merges, and never deletes anything.
@@ -50,7 +51,7 @@ The books live in **two** places — **this device** and **your Google Sheet** �
 * **The Sheet is emptied first.** If Google refuses (not signed in, wrong Sheet, no permission) **nothing is deleted anywhere** and the reason is shown on screen.
 * **A cleared device stays cleared.** The wipe leaves a dated note in the browser (`hisabDeviceCleared`) that switches the automatic pull **off**, so the next time the app opens the rows do **not** come back from the Sheet — this is what made the old *Clear all data* look like it had not worked. An amber note on *All Records* and on the *Google Sheet* tab shows the cleared state with two buttons: **⬇ Load data FROM Sheet** (brings the books back and resumes the pull) and **↩ Turn the automatic pull back on** (resumes without loading). An imported backup never switches the pull back on, so nothing overwrites it behind your back.
 * **Download a backup first** — the dialog has a **⬇ Download backup first** button that saves all five tables as one JSON file.
-* **🔄 Push app data to Sheet** asks before overwriting right after a clear: a push *replaces* the Sheet with the rows this device holds (which, just after a clear, is nothing).
+* **🔄 Push app data to Sheet is refused on a cleared device.** It used to ask “overwrite anyway?” and then rewrite the Sheet from a device that holds almost nothing — which is how a push after a clear could empty the books. Now it says *nothing was written* and points at **⬇ Load data FROM Sheet** / **↩ Turn the automatic pull back on**.
 
 ## How to run
 
@@ -85,8 +86,9 @@ records are added **from your Google Sheet** after sign-in (the automatic pull o
 **⬇ Load from Google Sheet**). Nothing else is kept: **no other spreadsheet, no reference sheet,
 no link to any outside Sheet is stored in the app** — it writes only to its own Sheet
 (`HISAB_SPREADSHEET_ID` in `config.js`). On the **Google Sheet** tab, **🔄 Push app data to
-Sheet** writes the device's rows into the app's own Sheet: same tabs, same columns, same rows
-in the same order, starting under row 1's headers.
+Sheet** brings the two copies together: it reads the Sheet, merges it with this device row by row
+(by `id`), and then writes **only the rows that differ** — a new entry as one appended row, an edit
+onto its own row, a delete as the removal of its own row. Tabs are never cleared.
 
 ### The Sheet layout — column for column
 
@@ -95,19 +97,27 @@ This is the **arrangement the app writes into** — the column order of every ta
 * **Reading is by column name.** The app reads the Sheet's own header row every time it loads, so a Sheet that is still in an older arrangement (or that has an extra column of your own) is read correctly, and a single new entry is still appended under the right headings.
 * **A row that was written in an older column order is recognised and read that way.** The three arrangements this app has used are known to it (`LEGACY_LAYOUTS`): Employees before the client columns existed, DutyLeave before `wageType` / `wageAmount`, and **ClientReceipts before `clientPhone` moved from the last column to position 3**. A row is spotted by what its cells *are* — a saved-at stamp where a payment mode belongs, a date-only cell where a name belongs — and then read with the arrangement it really holds. This is what puts money received back under **Amount** (instead of under **Date**) and the payment mode back under **Mode** (instead of the saved date) on a Sheet that was written half-way through a column change.
 * **Records already on a device repair themselves** at start-up: a receipt that was read while the columns were out of step is put back in its right columns, marked *not sent yet*, and the *Google Sheet* tab says so.
-* **A push never deletes rows it has not read.** If the device has not pulled the Sheet yet in this session (a new phone, or one that was not signed in, so the automatic pull could not run), the push **reads the Sheet once and merges it first** — rows typed on this device win, rows only the Sheet has are kept. A device you deliberately **cleared** is exempt, because that push is meant to replace the Sheet.
-* **Writing it once.** Press **🔄 Push app data to Sheet** (it sits on the *Google Sheet* tab and in *All Records*) one time to rewrite all five tabs in the arrangement below. The **header row and the rows are written in the same order** — always the current arrangement — so a tab can never end up with today's headings over yesterday's rows (that is what makes money appear under Date and the date under Mode). Nothing is lost, because everything was read correctly first. The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement or has rows in an older order.
+* **Every write touches ONE row — a tab is never cleared.** A new entry is appended as one row, an edited entry rewrites its own row (`values:batchUpdate` on `<Tab>!A<row>`), a deleted entry removes its own row (`deleteDimension`). `values:clear` is not used by the sync at all any more — the one place it still exists is **🗑 Clear app data → *this device and the Google Sheet***, which is a deliberate wipe with two confirmations. The row to delete is found **by its own `id`** in the Sheet right before the delete, so rows that moved in the meantime cannot make the app delete the wrong one.
+* **A push reads and merges first, then writes only what differs.** Press **🔄 Push app data to Sheet** (on the *Google Sheet* tab and in *All Records*) and it reads all five tabs, merges them with this device by `id` — this device wins for its unsent changes, the Sheet's copy wins for anything newer there, rows only the Sheet has are kept, rows only this device has are added — and then writes just those rows. A phone that holds 3 rows can no longer delete the 500 it has never seen. One push runs at a time, and a push whose books already match writes nothing at all.
+* **An empty Sheet never empties a device, and a cleared device never writes.** If a tab comes back empty while this device holds rows, the rows are kept, marked *not sent yet* and the app says so — pressing the push puts them back. A device that was deliberately **cleared** refuses to push instead of overwriting the Sheet with nothing.
+* **Each row carries `updatedAt`** (ISO stamp, a column of its own at the end of every tab, added to an older Sheet the first time the app writes there). When both phones hold the same row, the newer stamp wins — the last write wins *per row*, not per Sheet.
+* **Rows in an older column order are repaired by the same push.** The app reads them with the arrangement they really hold (see below) *and* rewrites those rows in the Sheet's own current order when you press 🔄 Push — one row at a time, nothing deleted. The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement or has rows in an older order.
 * If the Sheet does not have a column the app needs at all, the app says which one — it never guesses and never shifts values into the wrong column.
 
 | Tab | Columns (A → …) |
 |---|---|
-| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` |
-| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` |
-| **EmployeePayments** | `id` • `empName` • `date` • `amount` • `payType` • `mode` • `savedAt` • `periodFrom` • `periodTo` • `invoiceNo` • `summary` • `balance` |
-| **ClientReceipts** | `id` • `client` • `clientPhone` • `date` • `amount` • `empName` • `mode` • `savedAt` • `clientAddress` • `invoiceNo` • `dealAmount` |
-| **Expenses** | `id` • `item` • `date` • `amount` • `savedAt` |
+| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` • `updatedAt` |
+| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` • `updatedAt` |
+| **EmployeePayments** | `id` • `empName` • `date` • `amount` • `payType` • `mode` • `savedAt` • `periodFrom` • `periodTo` • `invoiceNo` • `summary` • `balance` • `updatedAt` |
+| **ClientReceipts** | `id` • `client` • `clientPhone` • `date` • `amount` • `empName` • `mode` • `savedAt` • `clientAddress` • `invoiceNo` • `dealAmount` • `updatedAt` |
+| **Expenses** | `id` • `item` • `date` • `amount` • `savedAt` • `updatedAt` |
 
 Where each value comes from:
+
+* **`updatedAt`** is the last column of every tab: an ISO stamp (`2026-09-25T09:12:33.114Z`) the app
+  writes on every change to that row. It is what makes two partners safe on one Sheet — when both
+  phones hold the same row, the newer stamp wins. A Sheet that does not have the column yet gets it
+  at the end of row 1 the first time the app writes there; nothing else in the Sheet's order changes.
 
 * **Employees** — the last three client boxes of the *Add employee* form are the Sheet's `clientDutyStartDate`, `clientPhone` and `clientDeal` columns. Typing a client name fills the phone and the deal automatically from Money Entry (the client's last receipt); press **✎** on any row to edit it later.
 * **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries `Assignment completed` in `reason` plus `Employee duty ended` / `Client service ended` in `notes`.
@@ -138,7 +148,7 @@ The app calculates from the columns, so a row typed straight into the Sheet work
 | `Expenses.amount` / `date` | Counted in the monthly Profit/Loss for the partners |
 
 
-To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (you can still press **Load data FROM Sheet** to force a full replace, or use the JSON backup export/import in All Records). Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
+To use the same data on a second phone/computer: open the app there, press **Sign in with Google** once — from then on it **auto-loads the latest data from the Sheet every time it starts** (a pull never writes; you can still press **Load data FROM Sheet** to take the Sheet's rows as they are, or use the JSON backup export/import in All Records). Another partner can work at the same time: writes are per row, so their entries are merged in, not overwritten. Sign-in lasts about an hour per session; if it expires, the app keeps saving on the device and one tap on **Sign in with Google** (or any sync button) refreshes it silently.
 
 ### If Google refuses the sign-in — what each error means
 
@@ -156,6 +166,6 @@ Press **🩺 Check my Google setup** on the app's **Google Sheet** tab: it print
 | **“Google Sheets API has not been used in project …”** | The API is not enabled in the project that owns the Client ID. | Library → enable **Google Sheets API** in that project, wait a minute, sign in again. |
 | **`idpiframe_initialization_failed`, popup blocked/closed** | Google's window cannot open: in-app browser (WhatsApp/Instagram), blocked cookies, or pop-ups disallowed. | Open the link in Chrome/Safari directly, allow cookies + pop-ups for the site, sign in once and press **Allow**. |
 | **Works on one phone but not another** — or it still fails after you *fixed* `config.js` | The browser is running an **old cached copy of `config.js`** and signs in with a Client ID the server no longer has, so Google answers `401: invalid_client` even though the file on GitHub is correct. | Press **🔄 Re-read config.js** in the red box on the Google Sheet tab (the app also re-reads it by itself whenever the settings look off, and adopts the server values). Or hard-reload: Ctrl+Shift+R / Cmd+Shift+R; iPhone Home-Screen icon → remove and add again. When you edit `config.js`, bump the `?v=` number on its `<script>` tag in `index.html` so every device must fetch the new copy. |
-| **One phone shows corrected/new behaviour and another does not** (columns out of step, money under Date and the date under Mode) | That phone is running an **old cached copy of `index.html`**. Both phones talk to the same Sheet, so a phone that reloaded repairs the Sheet on its next **🔄 Push app data to Sheet**, while an old copy can still write the mismatch back. | On the **Google Sheet** tab, compare **📱 App version** (also printed by 🩺 *Check my Google setup*). If a phone shows an older version, reload the page — or close the app and open it again (iPhone Home-Screen icon: remove and add it again). Do that on **both** phones, then press **🔄 Push app data to Sheet** once from either one: the headings and rows are rewritten together and the Sheet is correct for everybody. `APP_BUILD` in `index.html` is bumped with every release. |
+| **One phone shows corrected/new behaviour and another does not** (columns out of step, money under Date and the date under Mode) | That phone is running an **old cached copy of `index.html`**. Both phones talk to the same Sheet, so the new copy repairs the rows it finds in the old order on its next **🔄 Push app data to Sheet**, while an old copy can still write the mismatch back — and an old copy's push also *clears the tabs first*, which is what empties the Sheet. | On the **Google Sheet** tab, compare **📱 App version** (also printed by 🩺 *Check my Google setup*). If a phone shows an older version, reload the page — or close the app and open it again (iPhone Home-Screen icon: remove and add it again) **before** it writes anything. Then press **🔄 Push app data to Sheet** from either phone: the rows in the old order are rewritten in place, nothing is deleted. `APP_BUILD` in `index.html` is bumped with every release. |
 
 Signing in on one device never unlocks another: each phone/laptop signs in with its own Google account. **A wrong `config.js` Client ID used to be unfixable without re-uploading the code** — now the value typed on the device overrides `config.js` (the tag next to the box shows which one is live), and **↩ Use the one in config.js** hands control back to the file.
