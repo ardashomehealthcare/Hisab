@@ -260,8 +260,10 @@ money actually moved).
 
 * Filters by employee and by month; every table is deletable row by row.
 * **⬇ Download backup (JSON)** / **⬆ Import backup (JSON)** — the whole five tables in one file;
-  import replaces the device's data after a confirmation.
-* **📥 Add the data included in the app** — merges `data/hisab-data.json` (see §13).
+  import replaces the device's data after a confirmation (which says that records changed since go
+  back to the file's version on the next push, and points at 📥 for adding only what is missing).
+* **📥 Add missing records** — adds only what is missing from a Hisab file on the device (or from
+  `data/hisab-data.json` when it carries records), after reading the Sheet first (see §13).
 * **🔄 Push app data to Sheet** — see §12.
 * **🗑 Clear app data** — opens a dialog that names both places the books live and lets you
   choose: *this device only* (the Sheet keeps every row) or *this device **and** the five tabs in
@@ -402,7 +404,9 @@ writes a dated note (`hisabDeviceCleared`) that stays until you say otherwise:
   anyway?” and then empty the Sheet, because a push wrote this device's few rows and cleared the
   rest): the app says *nothing was written* and points at the two ways back;
 * an **imported backup never** switches the pull back on, so an import cannot be overwritten by
-  the Sheet behind the user's back.
+  the Sheet behind the user's back;
+* **📥 Add missing records** is refused on a cleared device — it has to read the Sheet first, and a
+  cleared device does not read it until **⬇ Load data FROM Sheet**.
 
 The device-only wipe removes everything Hisab keeps on the device: the five tables
 (`hisabData_v1`), the receipt images (`hisabPayImages_v1`), the remembered WhatsApp numbers
@@ -441,10 +445,12 @@ held only those rows).
    anything added *after* the wipe (today's rows) out first — version history keeps every version,
    so nothing is lost by restoring. *Drive → the file → Activity* shows who changed it and when.
 4. **From a file, if you have one.** A backup downloaded earlier with **⬇ Download backup (JSON)**
-   (`hisab-backup-<date>.json`) goes back in with *⬆ Import backup (JSON)* — it replaces that
-   phone's copy, so use it on a phone whose own rows are older — then **🔄 Push app data to
-   Sheet**: every imported row counts as *not sent yet*, rows the Sheet already has are matched by
-   `id`, and only the missing ones are added.
+   (`hisab-backup-<date>.json`), or an older copy of `data/hisab-data.json` from the project's
+   history, goes back in with *All Records → **📥 Add missing records*** (§13): the Sheet is read
+   first and only the records it is missing are added — then **🔄 Push app data to Sheet**.
+   (*⬆ Import backup (JSON)* replaces the phone's copy instead: rows the Sheet already has are
+   matched by `id`, but the file's older copy is written over them, and entries typed in again
+   under a new id are sent twice — use it only when the Sheet is empty.)
 5. **Type it back, as a last resort.** The rows that survived in a tab, the invoices and receipts
    printed or sent on WhatsApp (§9/§10), and the payment screenshots on the device
    (`hisabPayImages_v1`) are all still there to copy from.
@@ -479,11 +485,27 @@ tables.
 * On a device with **no data at all**, it loads once automatically (`hisabIncludedDataAuto`) —
   nothing to add while the file is empty; rows put into the file reach a new phone on its first
   open.
-* On a device that already has data: **📥 Add the data included in the app** shows what is new per
-  tab, asks, then merges.
+* **📥 Add missing records** (*All Records*). While the file is empty (as now) the button opens a
+  file chooser straight away — a browser only opens one from the tap itself, so whether the file
+  has records is learnt once at start (`checkShippedData`). The chosen file (a ⬇ backup, or an
+  older copy of this records file) or, when it carries records, this file is then added in four
+  steps (`addMissingRecords`):
+  1. **the Sheet is read first** (`fetchSheetData` → `mergeSheetData`, with the sign-in the device
+     already has — no popup), so every row the Sheet holds is on the device. Refused on a cleared
+     device or one last used with another Sheet; if the Sheet cannot be read, **nothing is added**;
+  2. per tab, how many records are **missing** is shown, and the user is asked;
+  3. only those are added — nothing is replaced or deleted;
+  4. they are sent by the next 🔄 Push app data to Sheet.
+  Reading the Sheet first is what makes an old file safe: a row the Sheet still has is skipped
+  instead of being queued, so the file's older copy can never be written over a newer one.
 * **Duplicates are skipped** against a snapshot taken *before* the merge: employees by name,
   everything else by person/client + date + amount. Two identical rows that really are two rows
-  are both kept; importing twice cannot double the books.
+  are both kept; importing twice cannot double the books. A row deleted on this device that is still
+  waiting to leave the Sheet (`hisabPendingDeletes_v1`) counts as there and is not brought back.
+* **Limits.** A record deleted *after* the file was made, whose deletion already reached the Sheet,
+  comes back when the file is added (nothing remembers it any more) — delete it again. And when a
+  file holds two identical rows but the Sheet kept only one, the second is taken for the same
+  entry and not added.
 * Added rows are marked **unsent**, so 🔄 Push app data to Sheet sends them to the Sheet when you
   are ready.
 
@@ -514,7 +536,8 @@ tables.
    put back in their right columns (§13) and marked unsent, so the wrong values can never be
    pushed back out.
 2. Draw everything (`renderAll`), which also labels the push buttons with the number of unsent rows.
-3. If the device is empty, pull in `data/hisab-data.json` once.
+3. If the device is empty, pull in `data/hisab-data.json` once; on every start, note whether it
+   carries any records (`checkShippedData`) — while it is empty, 📥 opens a file chooser instead.
 4. If signed in, pull the Sheet in the background and merge (`mergeSheetData` — by `id`, both sides
    kept, nothing written, rows marked unsent if a tab came back empty); if the settings look wrong,
    re-read `config.js` uncached (a phone can be serving a stale copy) and adopt the server values.

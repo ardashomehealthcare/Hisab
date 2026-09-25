@@ -574,18 +574,19 @@
       <div class="field"><label>Filter by employee</label><select id="fEmp" class="empSelect" onchange="renderRecords()"></select></div>
       <div class="field"><label>Filter by month</label><input id="fMonth" type="month" onchange="renderRecords()"></div>
       <button class="btn ghost" onclick="document.getElementById('fEmp').value='';document.getElementById('fMonth').value='';renderRecords();">Clear filters</button>
-      <button class="btn ghost" onclick="loadIncludedData()">📥 Add the data included in the app</button>
+      <button class="btn ghost" onclick="loadIncludedData()">📥 Add missing records</button>
       <button class="btn ghost" onclick="exportBackup()">⬇ Download backup (JSON)</button>
       <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Push app data to Sheet</button>
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
       <span class="msg" id="bkMsg"></span>
-      <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Push app data to Sheet</b>.</div>
+      <div class="hint" style="margin-top:8px;">📥 <b>Add missing records</b> takes a Hisab file from this device (for example a <b>⬇ backup</b>) and adds <b>only what is missing</b>. It reads your Google Sheet first: anything already there — the same entry, even under another id (same person or client, date and amount) — is skipped, and nothing is replaced or deleted. The added records go to your Sheet when you press <b>🔄 Push app data to Sheet</b>. <b>⬆ Import backup</b> is different: it <b>replaces</b> everything on this device with the file.</div>
       <button class="btn red" onclick="openClearDialog()">🗑 Clear app data</button>
       <span class="msg" id="clearMsg"></span>
       <div class="clearNotice" id="clearNotice2" style="display:none;"></div>
       <div class="clearNotice" id="safetyNotice2" style="display:none;"></div>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
+      <input type="file" id="addFile" accept=".json,application/json,text/plain,.txt" style="display:none;" onchange="addRecordsFromFile(this)">
     </div>
   </div>
   <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Invoice</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
@@ -643,7 +644,7 @@
     </div>
     <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
     <div class="clearNotice" id="safetyNotice3" style="display:none;"></div>
-    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> first <b>reads the Sheet</b>, merges it with what this device holds (nothing another partner entered is ever deleted), then writes <b>only the rows that differ</b> — a new entry is added as one row, an edited entry rewrites its own row, and a row deleted here is removed from the Sheet on its own. Your tabs are <b>never cleared</b>, so two partners can work on the same books safely: each row carries a <b>updatedAt</b> stamp and the newer copy wins. Press it after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date — it is also the press that puts a Sheet whose columns got out of step right again (money showing under <b>Date</b> and the saved date under <b>Mode</b>). If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
+    <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> first <b>reads the Sheet</b>, merges it with what this device holds (nothing another partner entered is ever deleted), then writes <b>only the rows that differ</b> — a new entry is added as one row, an edited entry rewrites its own row, and a row deleted here is removed from the Sheet on its own. Your tabs are <b>never cleared</b>, so two partners can work on the same books safely: each row carries a <b>updatedAt</b> stamp and the newer copy wins. Press it after <b>📥 Add missing records</b> (All Records tab), or any time the Sheet looks out of date — it is also the press that puts a Sheet whose columns got out of step right again (money showing under <b>Date</b> and the saved date under <b>Mode</b>). If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
     <div class="hint" id="appBuildLine" style="margin-top:6px;"></div>
     <div class="hint" id="syncSafeLine" style="margin-top:6px;"></div>
   </div>
@@ -686,7 +687,7 @@ let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-25 (safe sync • a wipe cannot take a phone’s rows with it • recovery buttons removed)';
+const APP_BUILD='2026-09-25 (safe sync • a wipe cannot take a phone’s rows with it • recovery buttons removed • 📥 adds only missing records from a file)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -715,7 +716,10 @@ function importBackup(inp){
   rd.onload=()=>{try{
       const d=JSON.parse(rd.result);
       if(!d||!Array.isArray(d.employees))throw 0;
-      if(!confirm('Replace all data on this device with the backup file?'))return;
+      if(!confirm('Replace all data on this device with the backup file?'
+        +'\n\nEverything on this device is replaced by the file. Records changed after the backup was made go back to'
+        +' the backup\'s version when you push, and entries typed in again since then are sent twice.'
+        +' To add only what is missing, press Cancel and use 📥 Add missing records instead.'))return;
       DB={employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]};
       /* Every imported row counts as "not sent yet". The backup was made on some other device,
          so this app cannot know these rows are in the Sheet — and a row that is not in the Sheet
@@ -739,7 +743,7 @@ const todayStr=()=>{const t=new Date();return t.getFullYear()+'-'+String(t.getMo
 const fmt=n=>'₹'+Number(n||0).toLocaleString('en-IN',{maximumFractionDigits:0});
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function toast(t){const el=document.getElementById('toast');el.textContent=t;el.classList.add('show');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),2600);}
-function flash(id,txt,ok=true){const el=document.getElementById(id);el.textContent=txt;el.className='msg '+(ok?'ok':'err');clearTimeout(el._t);el._t=setTimeout(()=>el.textContent='',4000);}
+function flash(id,txt,ok=true,ms=4000){const el=document.getElementById(id);el.textContent=txt;el.className='msg '+(ok?'ok':'err');clearTimeout(el._t);el._t=setTimeout(()=>el.textContent='',ms);}
 
 /* ================= NAV ================= */
 function showTab(name){
@@ -4346,11 +4350,13 @@ function naturalKey(tab,r){
 }
 /* What the device has right now — ids and natural keys — taken once before a merge,
    so two identical rows inside the data file are both kept (they are two rows in
-   the Sheet too) while anything already on the device is skipped. */
+   the Sheet too) while anything already on the device is skipped. A row deleted on
+   this device that is still waiting to leave the Sheet counts as there: it must not
+   come back. */
 function dbSnapshot(){
-  const snap={};
+  const snap={},gone=pendingDeletes();
   DB_TABS.forEach(([k])=>{
-    const ids=new Set(),keys=new Set();
+    const ids=new Set((gone[DB_TO_TAB[k]]||[]).map(String)),keys=new Set();
     (DB[k]||[]).forEach(r=>{
       if(r&&r.id)ids.add(String(r.id));
       const nk=r?naturalKey(k,r):'';
@@ -4395,29 +4401,117 @@ function mergeIncludedData(data){
   persist();renderAll();
   return {added,total};
 }
-async function loadIncludedData(){
-  try{
-    const url=(location.pathname.replace(/[^/]*$/,'')||'')+DATA_FILE+'?_='+Date.now();
-    const res=await fetch(url,{cache:'no-store'});
-    if(!res||!res.ok)throw new Error('data file not found');
-    const txt=await res.text();
-    let data;
-    try{data=JSON.parse(txt);}catch(e){throw new Error('the data file is not readable');}
-    if(!data||!Array.isArray(data.employees))throw new Error('the data file has no records');
-    const {counts,fresh}=includedCounts(data);
-    const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
-    const lines=DB_TABS.map(([k])=>DB_LABEL[k]+': '+counts[k]+' row'+(counts[k]===1?'':'s')+(fresh[k]!==counts[k]?' ('+fresh[k]+' new)':'')).join('\n');
-    if(!totalNew){toast('ℹ️ Everything in the app\'s data file is already on this device.');return;}
-    if(!confirm('Add the records that come with Hisab to this device?\n\n'+lines
-      +'\n\nDuplicates are skipped and nothing on this device is deleted.'
-      +' The added records go to your Google Sheet on the next 🔄 Push app data to Sheet.'))return;
-    const {added,total}=mergeIncludedData(data);
-    const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ');
-    flash('bkMsg','✅ Added: '+sum+'. Now on this device: '+DB_TABS.map(([k])=>DB_LABEL[k]+' '+total[k]).join(' • ')+'.',true);
-    toast('✅ '+totalNew+' record'+(totalNew===1?'':'s')+' added — press 🔄 Push app data to Sheet to put them in your Sheet');
-  }catch(e){
-    toast('⚠️ Could not read '+DATA_FILE+' — '+(e&&e.message?e.message:'not available on this device')+'. You can still import a JSON backup.');
+/* 📥 Add missing records.
+   The app's own records file has been empty since 21 Sept (the books live in the Google
+   Sheet), so 📥 asks for a Hisab file on this device instead — a ⬇ backup, or an older copy
+   of the records file. The file chooser is opened straight from the tap: a browser refuses
+   to open one a moment later. Whether the app's file has records is learnt once at start;
+   if it carries records again, those are offered, as before. */
+let shippedHasRecords=false;
+async function readShippedData(){
+  const url=(location.pathname.replace(/[^/]*$/,'')||'')+DATA_FILE+'?_='+Date.now();
+  const res=await fetch(url,{cache:'no-store'});
+  if(!res||!res.ok)throw new Error('data file not found');
+  const txt=await res.text();
+  let data;
+  try{data=JSON.parse(txt);}catch(e){throw new Error('the data file is not readable');}
+  if(!data||!Array.isArray(data.employees))throw new Error('the data file has no records');
+  shippedHasRecords=DB_TABS.some(([k])=>Array.isArray(data[k])&&data[k].length>0);
+  return data;
+}
+async function checkShippedData(){try{await readShippedData();}catch(e){shippedHasRecords=false;}}
+function loadIncludedData(){
+  if(!shippedHasRecords){
+    const inp=document.getElementById('addFile');
+    if(inp)inp.click();
+    return;
   }
+  return addShippedData();
+}
+async function addShippedData(){
+  let data;
+  try{data=await readShippedData();}
+  catch(e){toast('⚠️ Could not read '+DATA_FILE+' — '+(e&&e.message?e.message:'not available on this device')+'.');return false;}
+  if(!shippedHasRecords){toast('ℹ️ The app carries no records of its own now — press 📥 Add missing records again to choose a file.');return false;}
+  return addMissingRecords(data,'the records that come with Hisab');
+}
+/* The file picked for 📥. Resolves when the add has finished (or was refused). */
+function addRecordsFromFile(inp){
+  const f=inp&&inp.files&&inp.files[0];
+  if(!f)return Promise.resolve(false);
+  return new Promise(resolve=>{
+    const rd=new FileReader();
+    rd.onload=()=>{
+      inp.value='';                                // the same file can be chosen again
+      let data=null;
+      try{data=JSON.parse(rd.result);}catch(e){data=null;}
+      if(!data||!Array.isArray(data.employees)){
+        toast('❌ That is not a Hisab records or backup file — nothing was added.');
+        resolve(false);return;
+      }
+      resolve(addMissingRecords(data,'“'+String(f.name||'the file')+'”'));
+    };
+    rd.onerror=()=>{inp.value='';toast('❌ Could not read that file — nothing was added.');resolve(false);};
+    rd.readAsText(f);
+  });
+}
+/* Add only what is missing — and never an old copy over a newer one:
+   1) the Google Sheet is read first, so every row it holds is on this device (an old
+      copy of a row the Sheet has is then skipped instead of being sent over the Sheet's
+      newer one on the next push);
+   2) a row already here is skipped — the same id, the same entry under another id
+      (an employee by name, the rest by person/client + date + amount), or a row deleted
+      here that is still waiting to leave the Sheet;
+   3) the rest is added, marked "not sent yet", for the next 🔄 Push app data to Sheet.
+   Nothing is replaced or deleted. If the Sheet cannot be read, nothing is added at all. */
+async function addMissingRecords(data,from){
+  const sheet=!!(getClientId()&&getSheetId());
+  if(sheet){
+    if(isDeviceCleared()){
+      flash('bkMsg','🧹 Nothing was added: this device was cleared. Press ⬇ Load from Google Sheet first, then 📥 Add missing records again.',false,15000);
+      toast('🧹 Nothing added — load the Google Sheet first');
+      return false;
+    }
+    const last=String(storeItem(SYNCED_SHEET_KEY)||'');
+    if(last&&last!==String(getSheetId())){
+      flash('bkMsg','⚠ Nothing was added: this device was last used with a different Google Sheet. Press ⬇ Load from Google Sheet first, then 📥 Add missing records again.',false,15000);
+      toast('⚠ Nothing added — load the Google Sheet first');
+      return false;
+    }
+    flash('bkMsg','Reading your Google Sheet first, so nothing it already has is added twice…',true,15000);
+    if(pushPromise){try{await pushPromise;}catch(e){}}   // a push still running finishes first
+    try{
+      await getAccessToken(false);                   // the sign-in this device already has — no popup
+      await ensureTabs();
+      mergeSheetData(await fetchSheetData());
+      rememberSheet();
+    }catch(e){
+      reportProblem(e,true);
+      flash('bkMsg','❌ Nothing was added: your Google Sheet could not be read (it is read first, so that no record is added twice). Sign in with Google on the Google Sheet tab, then press 📥 Add missing records again.',false,20000);
+      toast('❌ Nothing added — the Google Sheet could not be read');
+      return false;
+    }
+  }
+  const {counts,fresh}=includedCounts(data);
+  const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
+  if(!totalNew){
+    flash('bkMsg','ℹ️ Nothing to add — every record in '+from+' is already in your books.',true,10000);
+    toast('ℹ️ Nothing is missing — every record in '+from+' is already there');
+    return true;
+  }
+  const lines=DB_TABS.filter(([k])=>counts[k]).map(([k])=>DB_LABEL[k]+': '+fresh[k]+' missing (of '+counts[k]+')').join('\n');
+  if(!confirm('Add the records that are missing?\n\nFrom '+from+':\n'+lines
+    +'\n\nRecords already in your books'+(sheet?' (your Google Sheet was read just now)':'')+' are skipped, and nothing is replaced or deleted.'
+    +' The added records go to your Google Sheet on the next 🔄 Push app data to Sheet.')){
+    flash('bkMsg','Nothing was added.',true);
+    return false;
+  }
+  const {added}=mergeIncludedData(data);
+  const n=DB_TABS.reduce((m,[k])=>m+(added[k]||0),0);
+  const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ');
+  flash('bkMsg','✅ Added '+n+' missing record'+(n===1?'':'s')+': '+sum+'. Press 🔄 Push app data to Sheet to put them in your Google Sheet.',true,20000);
+  toast('✅ '+n+' missing record'+(n===1?'':'s')+' added — press 🔄 Push app data to Sheet');
+  return true;
 }
 /* On a device that has nothing at all, the included records load by themselves —
    so a new phone starts with the full history instead of an empty app. */
@@ -4625,6 +4719,7 @@ document.getElementById('cbTo').value=todayStr();
 updateSheetStatus();renderAll();
 maybeAutoOpenReminder();
 autoLoadIncludedDataOnce();
+checkShippedData();
 autoLoadFromSheet();
 if(configLooksOff())setTimeout(()=>{recheckConfigFile().then(ch=>{if(ch&&ch.length)autoLoadFromSheet();});},1200);
 </script>

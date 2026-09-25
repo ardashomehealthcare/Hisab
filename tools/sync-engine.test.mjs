@@ -588,7 +588,7 @@ console.log('\n16. One row deleted on the other phone is still removed here (no 
   ok(!/LOST most|EMPTY/.test($('sheetSafetyWarning')), 'and one row is not called a wipe');
 }
 
-console.log('\n17. The screens build without errors, and every button calls a function that exists');
+console.log('\n17. The screens build without errors, and every button and file picker calls a function that exists');
 {
   const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'A1')] };
   const t = boot({ sheetSpec });
@@ -599,13 +599,92 @@ console.log('\n17. The screens build without errors, and every button calls a fu
     vm.runInContext(`sheetSafetyWarning='⚠ test';renderSafetyNotice()`, t.ctx);
   } catch (e) { threw = String((e && e.message) || e); }
   eq(threw, '', 'the clear dialog and the Sheet notice build from the data they have');
-  // onclick="name(…)" anywhere in the page or the script → that function has to exist
+  // onclick="name(…)" / onchange="name(…)" anywhere in the page or the script → that function has to exist
   const KEYWORDS = new Set(['if', 'for', 'while', 'switch', 'return', 'typeof', 'void', 'new']);   // onclick="if(…)…"
-  const called = [...new Set([...HTML.matchAll(/onclick=\\?["']([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]))]
+  const called = [...new Set([...HTML.matchAll(/on(?:click|change)=\\?["']([A-Za-z_$][\w$]*)\(/g)].map(m => m[1]))]
     .filter(fn => !KEYWORDS.has(fn));
   ok(called.length > 20, 'the buttons of the page were found (' + called.length + ' functions)');
   const missing = called.filter(fn => t.$(`typeof ${fn}`) !== 'function');
-  eq(missing.join(', '), '', 'no button points at a function that is not there');
+  eq(missing.join(', '), '', 'no button or file picker points at a function that is not there');
+  ok(called.includes('addRecordsFromFile') && called.includes('loadIncludedData'), '📥 and its file picker are wired up');
+}
+
+console.log('\n18. 📥 Add missing records from a file: the Sheet is read first — only what it lacks is added, nothing doubled, no later change undone');
+{
+  // the Sheet today: part of the old entries — one of them changed later, one typed in again under a new id
+  const sheetSpec = {
+    Employees: [rowFor('Employees', 'E1', { name: 'Emp One', wageAmount: '800', updatedAt: '2026-09-22T06:00:00.000Z' })],  // wage raised after the file was made
+    ClientReceipts: [
+      rowFor('ClientReceipts', 'R1', { client: 'Client A', date: '2026-09-03', amount: '900' }),     // the same id as in the file
+      rowFor('ClientReceipts', 'RT2', { client: 'Client B', date: '2026-09-04', amount: '1200' })    // typed in again, new id
+    ],
+    Expenses: [rowFor('Expenses', 'X1', { item: 'Fuel', date: '2026-09-05', amount: '300' })]
+  };
+  const t = boot({ sheetSpec });
+  await sleep(60);                                                    // the phone opened and pulled the Sheet
+  // afterwards the other phone types one more old receipt in again — this phone has not seen it yet
+  t.sheet('ClientReceipts').grid.push(rowFor('ClientReceipts', 'LATE', { client: 'Client C', date: '2026-09-06', amount: '450' }));
+  // and on this phone the fuel expense is deleted (the delete has not reached the Sheet yet)
+  t.$(`removeRecords('expenses','X1')`);
+
+  // an old records file, made before all of that
+  const file = {
+    employees: [
+      { id: 'E1', name: 'Emp One', wageType: 'daily', wageAmount: '700' },
+      { id: 'E2', name: 'Emp Two', wageType: 'monthly', wageAmount: '15000' }
+    ],
+    dutyLeave: [{ id: 'D1', empName: 'Emp Two', type: 'leave', from: '2026-08-26', to: '2026-08-29', days: '4' }],
+    payments: [{ id: 'P1', empName: 'Emp Two', date: '2026-09-10', amount: '5000', mode: 'Cash' }],
+    receipts: [
+      { id: 'R1', client: 'Client A', date: '2026-09-03', amount: '900' },
+      { id: 'R2', client: 'Client B', date: '2026-09-04', amount: '1200' },
+      { id: 'R3', client: 'Client C', date: '2026-09-06', amount: '450' },
+      { id: 'R4', client: 'Client D', date: '2026-09-07', amount: '650' }
+    ],
+    expenses: [
+      { id: 'X1', item: 'Fuel', date: '2026-09-05', amount: '300' },
+      { id: 'X2', item: 'Gloves', date: '2026-09-08', amount: '120' }
+    ]
+  };
+  eq(t.$('shippedHasRecords'), false, 'the app’s own records file is empty, so 📥 asks for a file on this device');
+  t.ctx.__fileText = JSON.stringify(file);
+  eq(await t.$(`addRecordsFromFile({files:[{name:'hisab-data.json'}],value:''})`), true, 'the file was read and the add finished');
+  eq(t.$('DB.receipts.map(r=>r.id).sort().join()'), 'LATE,R1,R4,RT2', 'the Sheet was read first: the receipt typed in meanwhile on the other phone is recognised — only R4 is added');
+  eq(t.$('unsentCount()'), 5, 'only the 5 missing records were added (E2, D1, P1, R4, X2)');
+  eq(t.$('DB.employees.find(e=>e.id==="E1").wageAmount'), '800', 'the wage raised after the file was made is kept');
+  ok(!t.$('DB.expenses.some(r=>r.id==="X1")'), 'the expense deleted on this phone did not come back');
+
+  await t.ctx.syncAll();
+  eq(idsOf(t.sheet('Employees'), 'Employees').sort().join(), 'E1,E2', 'the missing employee reached the Sheet');
+  eq(dataRows(t.sheet('Employees'), 'Employees').find(r => r.id === 'E1').wageAmount, '800', 'the Sheet still has the raised wage — the old copy was never sent over it');
+  eq(idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').sort().join(), 'LATE,R1,R4,RT2', 'receipts: nothing doubled, the missing one added');
+  eq(idsOf(t.sheet('Expenses'), 'Expenses').join(), 'X2', 'expenses: the missing one added, the deleted one removed');
+  eq(idsOf(t.sheet('DutyLeave'), 'DutyLeave').join() + ' / ' + idsOf(t.sheet('EmployeePayments'), 'EmployeePayments').join(), 'D1 / P1', 'the missing leave and payment reached the Sheet');
+  eq(t.$('unsentCount()'), 0, 'nothing is left waiting');
+}
+
+console.log('\n19. 📥 twice adds nothing twice; a Sheet that cannot be read, or a wrong file, adds nothing at all');
+{
+  const receipts = [{ id: 'R1', client: 'Client A', date: '2026-09-03', amount: '900' }, { id: 'R9', client: 'Client Z', date: '2026-09-09', amount: '100' }];
+  const sheetSpec = { ClientReceipts: [rowFor('ClientReceipts', 'R1', { client: 'Client A', date: '2026-09-03', amount: '900' })] };
+  const t = boot({ sheetSpec });
+  await sleep(40);
+  t.ctx.__fileText = JSON.stringify({ employees: [], receipts });
+  await t.$(`addRecordsFromFile({files:[{name:'old.json'}],value:''})`);
+  await t.ctx.syncAll();
+  t.ctx.__fileText = JSON.stringify({ employees: [], receipts });
+  eq(await t.$(`addRecordsFromFile({files:[{name:'old.json'}],value:''})`), true, 'the same file chosen a second time is read again');
+  eq(t.$('unsentCount()'), 0, 'and adds nothing the second time');
+  eq(idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').sort().join(), 'R1,R9', 'the Sheet holds each receipt once');
+
+  const t2 = boot({ sheetSpec, token: false });                       // not signed in: the Sheet cannot be read
+  await sleep(40);
+  t2.ctx.__fileText = JSON.stringify({ employees: [], receipts });
+  eq(await t2.$(`addRecordsFromFile({files:[{name:'old.json'}],value:''})`), false, 'with the Sheet unreadable the add is refused');
+  eq(t2.$('DB.receipts.length') + t2.$('unsentCount()'), 0, 'nothing was added — so no old copy can be sent over the Sheet later');
+
+  t2.ctx.__fileText = 'this is not a Hisab file';
+  eq(await t2.$(`addRecordsFromFile({files:[{name:'photo.jpg'}],value:''})`), false, 'a file that is not a Hisab file is refused');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);
