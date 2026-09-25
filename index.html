@@ -579,12 +579,18 @@
       <button class="btn ghost" id="btnSyncAll2" style="display:none;" onclick="syncAll()">🔄 Push app data to Sheet</button>
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
+      <button class="btn ghost" onclick="openRecoveryDialog()">🕘 Bring back a past version</button>
+      <button class="btn ghost" onclick="openCopiesDialog()">🗓 Saved copies</button>
       <span class="msg" id="bkMsg"></span>
       <div class="hint" style="margin-top:8px;">📥 <b>Add the data included in the app</b> merges the records that ship with Hisab (<code>data/hisab-data.json</code>) — employees, duty/leave, payments, receipts and expenses. Entries already on this device are kept, duplicates are skipped, and nothing is ever deleted. They are written to your own Google Sheet the next time you press <b>🔄 Push app data to Sheet</b>.</div>
+      <div class="hint" id="copiesLine" style="margin-top:6px;"></div>
+      <div class="hint" style="margin-top:6px;">🕘 <b>Bring back a past version</b> finds the version of your Google Sheet from <b>before it was wiped</b> (Google keeps them) and adds the missing rows back — or restores from an <b>Excel / CSV / JSON</b> file. A restore only ever <b>adds</b> rows: nothing in the books or in the Sheet is deleted or replaced by it.</div>
       <button class="btn red" onclick="openClearDialog()">🗑 Clear app data</button>
       <span class="msg" id="clearMsg"></span>
       <div class="clearNotice" id="clearNotice2" style="display:none;"></div>
+      <div class="clearNotice" id="safetyNotice2" style="display:none;"></div>
       <input type="file" id="importFile" accept=".json,application/json" style="display:none;" onchange="importBackup(this)">
+      <input type="file" id="restoreFile" accept=".xlsx,.xls,.csv,.json,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv,application/json" style="display:none;" onchange="readRestoreFile(this.files[0],this)">
     </div>
   </div>
   <div class="card"><h2>Client payments received</h2><div class="tableWrap"><table id="recReceipts"><thead><tr><th>Date</th><th>Client</th><th>Invoice</th><th>Employee</th><th>Mode</th><th class="right">Amount</th><th></th></tr></thead><tbody></tbody></table></div></div>
@@ -637,10 +643,14 @@
       <button class="btn ghost" id="btnSignOut" style="display:none;" onclick="googleSignOut()">🚪 Sign out</button>
       <button class="btn green" id="btnSyncAll3" onclick="syncAll()">🔄 Push app data to Sheet</button>
       <button class="btn ghost" id="btnLoad3" style="display:none;" onclick="loadFromSheet()">⬇ Load data FROM Sheet (restore)</button>
+      <button class="btn ghost" onclick="openRecoveryDialog()">🕘 Bring back a past version</button>
+      <button class="btn ghost" onclick="openCopiesDialog()">🗓 Saved copies on this phone</button>
       <button class="btn ghost" onclick="checkGoogleSetup()">🩺 Check my Google setup</button>
       <span class="msg" id="shMsg"></span>
     </div>
     <div class="clearNotice" id="clearNotice3" style="display:none;"></div>
+    <div class="clearNotice" id="safetyNotice3" style="display:none;"></div>
+    <div class="hint" id="copiesLine3" style="margin-top:8px;"></div>
     <div class="hint" style="margin-top:10px;">🔄 <b>Push app data to Sheet</b> first <b>reads the Sheet</b>, merges it with what this device holds (nothing another partner entered is ever deleted), then writes <b>only the rows that differ</b> — a new entry is added as one row, an edited entry rewrites its own row, and a row deleted here is removed from the Sheet on its own. Your tabs are <b>never cleared</b>, so two partners can work on the same books safely: each row carries a <b>updatedAt</b> stamp and the newer copy wins. Press it after <b>📥 Add the data included in the app</b> (All Records tab), or any time the Sheet looks out of date — it is also the press that puts a Sheet whose columns got out of step right again (money showing under <b>Date</b> and the saved date under <b>Mode</b>). If you are not signed in yet, it signs you in with Google first — nothing is written until that succeeds, and the data on this device is never deleted.</div>
     <div class="hint" id="appBuildLine" style="margin-top:6px;"></div>
     <div class="hint" id="syncSafeLine" style="margin-top:6px;"></div>
@@ -684,7 +694,7 @@ let SPREADSHEET_ID=String(window.HISAB_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-25 (safe sync — a push can no longer clear the Sheet)';
+const APP_BUILD='2026-09-25 (safe sync • a wipe cannot take a phone’s rows with it • bring back a past version)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -803,6 +813,7 @@ let SHEET_ROWS={};             // {tab:[{id,row}]} — where each row sits in th
 let SHEET_IDS={};              // {tab: sheetId} — the tab's internal number, needed to delete one row
 let sheetLayoutWarning='';     // set by fetchSheetData when the arrangement is older
 let sheetSafetyWarning='';     // set when the Sheet lost rows and this device kept its own
+let sheetSafetyRepair=false;   // true while those rows are waiting to be pushed back
 let layoutNotified=false;      // the arrangement notice is worth showing once per start
 /* ==== the arrangements this app wrote BEFORE the one above ====
    ClientReceipts moved `clientPhone` from the LAST column to position 3, Employees
@@ -1018,12 +1029,12 @@ const AUTH_KEY='hisabGoogleAuth_v1';
 const CID_KEY='hisabClientId';
 const SID_KEY='hisabSheetId';
 const ACC_KEY='hisabAccountEmail';      // the Google account last signed in on this device
-let AUTH={token:'',expiresAt:0};
+let AUTH={token:'',expiresAt:0,scope:''};
 let tokenClient=null,tokenClientId='',ensureTabsPromise=null;
 let pendingAuth=null,lastGsError=null,alertKey='';
-function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY));if(a&&a.token)AUTH={token:a.token,expiresAt:a.expiresAt||0};}catch(e){}}
+function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY));if(a&&a.token)AUTH={token:a.token,expiresAt:a.expiresAt||0,scope:(a&&a.scope)||''};}catch(e){}}
 function saveAuth(){try{localStorage.setItem(AUTH_KEY,JSON.stringify(AUTH));}catch(e){}}
-function clearAuth(){AUTH={token:'',expiresAt:0};ensureTabsPromise=null;try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
+function clearAuth(){AUTH={token:'',expiresAt:0,scope:''};ensureTabsPromise=null;try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
 function storeItem(k){try{return localStorage.getItem(k)||'';}catch(e){return '';}}
 function setStoreItem(k,v){try{v?localStorage.setItem(k,v):localStorage.removeItem(k);}catch(e){}}
 
@@ -1436,12 +1447,12 @@ function initTokenClient(){
   tokenClientId=id;
   tokenClient=window.google.accounts.oauth2.initTokenClient({
     client_id:id,
-    scope:extraScopeOk?GS_SCOPES:GS_SCOPES_BASE,
+    scope:(extraScopeOk?GS_SCOPES:GS_SCOPES_BASE)+(driveScopeWanted?' '+DRIVE_SCOPE:''),
     callback:resp=>{
       if(resp&&resp.error){finishAuth(noteError(authErr(resp.error,resp.error_description||resp.error)));return;}
       if(!resp||!resp.access_token){finishAuth(noteError(authErr('no_access_token','Google sent back no access token.')));return;}
       /* the token is kept even when the caller already gave up (timed out) */
-      AUTH={token:resp.access_token,expiresAt:Date.now()+(Number(resp.expires_in)||3600)*1000};
+      AUTH={token:resp.access_token,expiresAt:Date.now()+(Number(resp.expires_in)||3600)*1000,scope:String(resp.scope||(AUTH&&AUTH.scope)||'')};
       saveAuth();updateSheetStatus();
       finishAuth(null,AUTH.token);
     },
@@ -1737,8 +1748,11 @@ async function runPush(){
     const plan=mergeSheetData(fresh);            // 2) MERGE  — the Sheet's rows + this device's rows
     const did=await writePlan(plan);             // 3) WRITE  — append / update / delete, one row at a time
     markAllSynced();
+    if(sheetSafetyRepair){sheetSafetyRepair=false;sheetSafetyWarning='';}   // the rows are back in the Sheet
+    keepSafetyCopy();                            // the books as they stand after a successful write
     rememberSheet();
     closeSetupAlert();
+    renderSafetyNotice();
     const parts=[];
     if(did.added)parts.push(did.added+' new row'+(did.added===1?'':'s')+' added');
     if(did.updated)parts.push(did.updated+' row'+(did.updated===1?'':'s')+' updated');
@@ -1829,8 +1843,31 @@ async function fetchSheetData(){
    An empty tab deletes nothing: if the Sheet comes back empty on a tab that has rows
    here, this device keeps its books and marks them unsent, so the next push puts them
    back. This is the case that used to empty the whole Sheet for everybody. */
+/* ==================================================================
+   A MISSING ROW IS NOT ALWAYS A DELETED ROW
+   ==================================================================
+   A row this device sent but the Sheet no longer has used to be read as
+   "deleted on the other phone" and dropped here — which is right for one row,
+   and a catastrophe for a hundred. That is exactly what the reported wipe was:
+   another partner's phone (on the old build) emptied the tabs and wrote its few
+   rows back, so every other phone was told its whole book had been deleted and
+   threw its own copy away.
+
+   So the two cases are told apart by SIZE. A handful of missing rows is still
+   what it always was — an entry deleted on the other phone. A tab that lost
+   most of its rows in one go was emptied by the app, and nothing is deleted
+   here: those rows are kept, marked "not sent yet", and the next
+   🔄 Push app data to Sheet puts them back in the Sheet.
+
+   Deleting a whole block on purpose still works: delete it here as well
+   (the ✕ button on a row), and only then does it leave the Sheet.          */
+const WIPE_MIN_ROWS=6;                        // six or more rows missing at once…
+const WIPE_SHARE=0.3;                         // …and a good part of the tab → a wipe
+function looksLikeWipe(deviceRows,missingRows){
+  return missingRows>=WIPE_MIN_ROWS && missingRows>=Math.ceil(deviceRows*WIPE_SHARE);
+}
 function mergeSheetData(fresh){
-  const plan={updates:{},appends:{},dropped:0,added:0,empty:[]};
+  const plan={updates:{},appends:{},dropped:0,added:0,empty:[],wiped:[],wipedRows:0};
   TABS.forEach(tab=>{
     const key=TAB_TO_DB[tab];
     const fromSheet=fresh[key]||[];
@@ -1853,6 +1890,7 @@ function mergeSheetData(fresh){
       return;
     }
     const out=[],seen=new Set(),updates=[],appends=[];
+    const missing=[];                                // sent from here, no longer in the Sheet
     local.forEach(rec=>{
       const id=String(rec.id||'');
       const at=id?byId.get(id):null;
@@ -1877,9 +1915,17 @@ function mergeSheetData(fresh){
       }else if(!id||rec.synced!==true){
         appends.push(rec);out.push(rec);
       }else{
-        plan.dropped++;                              // deleted on another device → remove here too
+        missing.push(rec);                           // decided below: a deletion, or a wipe
       }
     });
+    /* One row gone is an entry deleted on the other phone. A whole block gone is the
+       Sheet having been emptied by the app — see the note above the function. */
+    if(missing.length&&looksLikeWipe(local.length,missing.length)){
+      missing.forEach(r=>{r.synced=false;out.push(r);appends.push(r);});
+      plan.wiped.push(tab);plan.wipedRows+=missing.length;
+    }else{
+      plan.dropped+=missing.length;
+    }
     fromSheet.forEach((rec,i)=>{
       const id=String(rec.id||'');
       if(id&&seen.has(id))return;
@@ -1903,9 +1949,14 @@ function mergeSheetData(fresh){
   const warn=[];
   if(plan.empty.length)warn.push('The Sheet came back EMPTY on: '+plan.empty.join(', ')
     +' — nothing on this device was deleted; its rows are kept and go back to the Sheet on the next 🔄 Push app data to Sheet.'
-    +' (If other phones held rows too, the Sheet itself can be brought back from Google Sheets → File → Version history.)');
+    +' (If other phones held rows too, the Sheet itself can be brought back from Google Sheets → File → Version history, or with 🕘 Bring back a past version below.)');
+  if(plan.wiped.length)warn.push('The Sheet LOST most of this device’s rows on: '+plan.wiped.join(', ')
+    +' ('+plan.wipedRows+' row'+(plan.wipedRows===1?'':'s')+' gone at once — that is a wipe, not a deletion). '
+    +'Nothing was deleted here: those rows are kept and marked “not sent yet”. Press 🔄 Push app data to Sheet to put them back. '
+    +'(If they really were deleted on the other phone, delete them here as well — the ✕ button on the row.)');
   if(plan.dropped)warn.push(plan.dropped+' row'+(plan.dropped===1?'':'s')+' had been deleted on another device and were removed here.');
   sheetSafetyWarning=warn.length?('⚠ '+warn.join(' ')):'';
+  sheetSafetyRepair=!!(plan.empty.length||plan.wiped.length);
   return plan;
 }
 /* Write the plan — one row at a time, in the Sheet's own column order. */
@@ -4280,7 +4331,7 @@ function renderDash(){
   document.querySelector('#dashTable tbody').innerHTML=rows.slice(0,12).map(r=>
     `<tr><td>${esc(String(r.d).slice(0,10))}</td><td>${r.type}</td><td>${r.det}</td><td class="right money ${r.cls}">${r.amt?fmt(r.amt):''}</td></tr>`).join('')||'<tr><td colspan="4" style="color:var(--muted);">No entries yet — start with the Employees tab.</td></tr>';
 }
-function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();renderClearNotice();updateRemindBadge();}
+function renderAll(){fillEmpSelects();renderEmployees();renderOnLeave();renderDuty();renderRecords();renderPLTable();renderDash();updatePushButtons();renderClearNotice();renderSafetyNotice();renderCopiesLine();updateRemindBadge();}
 
 /* ================= DATA THAT SHIPS WITH THE APP ================= */
 /* Hisab carries a plain records file — data/hisab-data.json — with the employees,
@@ -4417,6 +4468,591 @@ function exportBackup(){
   a.download='hisab-backup-'+todayStr()+'.json';a.click();
 }
 
+/* ==================================================================
+   THE COPY THIS DEVICE KEEPS FOR ITSELF  (dated safety copies)
+   ==================================================================
+   Every day this device is used once, it keeps a copy of the five tables as
+   they stand — plain rows, exactly like ⬇ Download backup (JSON). Ten days are
+   kept on the phone itself, so "yesterday's books" can be put back even if the
+   Sheet was emptied, a pull went wrong, or the app data was cleared here by
+   mistake. A day's copy is never made smaller (a wipe cannot shrink it), the
+   oldest ones fall off by themselves, and ✕ Delete saved copies removes them.
+   Copying is a purely local act: nothing is sent anywhere.
+   ================================================================== */
+const SAFETY_KEY='hisabSafetyCopy_v1';
+const SAFETY_DAYS=10;                                     // how many days are kept
+const SAFETY_MAX=1500000;                                 // and how many bytes they may take
+const snapTables=()=>({employees:DB.employees||[],dutyLeave:DB.dutyLeave||[],payments:DB.payments||[],receipts:DB.receipts||[],expenses:DB.expenses||[]});
+let safetyCache=null;
+function safetyCopies(){
+  if(safetyCache)return safetyCache;
+  try{const m=JSON.parse(storeItem(SAFETY_KEY)||'{}');safetyCache=(m&&typeof m==='object')?m:{};}catch(e){safetyCache={};}
+  return safetyCache;
+}
+function saveSafetyCopies(m){
+  const days=Object.keys(m).sort();
+  while(days.length&&JSON.stringify(m,rowSafe).length>SAFETY_MAX&&days.length>1){delete m[days.shift()];}
+  safetyCache=(m&&typeof m==='object')?m:{};
+  setStoreItem(SAFETY_KEY,Object.keys(m).length?JSON.stringify(m,rowSafe):'');
+}
+const rowSafe=(k,v)=>k==='_sending'?undefined:v;          // never store a "being written" mark
+const tableRows=t=>['employees','dutyLeave','payments','receipts','expenses'].reduce((n,k)=>n+((t&&t[k]||[]).length),0);
+function keepSafetyCopy(){
+  try{
+    if(!totalRecords())return;                            // nothing to keep yet
+    if(isDeviceCleared())return;                          // a cleared device stays cleared
+    const day=todayStr(),m=safetyCopies(),cur=m[day];
+    if(cur&&tableRows(cur)>=totalRecords())return;         // today's copy never shrinks
+    m[day]=JSON.parse(JSON.stringify(snapTables(),rowSafe));
+    Object.keys(m).sort().slice(0,-SAFETY_DAYS).forEach(d=>delete m[d]);
+    saveSafetyCopies(m);
+    renderCopiesLine();
+  }catch(e){/* storage full or blocked → this device just keeps fewer copies */}
+}
+function safetyCopyDates(){return Object.keys(safetyCopies()).sort().reverse();}
+function copyCounts(t){return DB_TABS.map(([k])=>DB_LABEL[k]+' '+((t&&t[k])||[]).length).join(' • ');}
+
+/* ==================================================================
+   PUTTING ROWS BACK  —  one safe operation, three sources
+   ==================================================================
+   Used by the safety copies on this device, by "🕘 Bring back a past version of
+   the Sheet", and by "📁 Restore from a file" (Excel / CSV / JSON backup). It
+   goes through the same merge the app uses for its own data file:
+
+     • a row that is already here — matched by its `id`, or by the person / client
+       + date + amount when the ids differ — is SKIPPED, never doubled;
+     • a row that is missing is added and marked "not sent yet", so
+       🔄 Push app data to Sheet writes it back into the Sheet;
+     • nothing is ever deleted or overwritten by a restore.
+   ================================================================== */
+let restorePreview=null;                    // {data,label,src} waiting for the user's yes
+function restoreCounts(data){return includedCounts(data);}
+function restoreSummary(counts,fresh){
+  return DB_TABS.map(([k])=>DB_LABEL[k]+': '+counts[k]+' row'+(counts[k]===1?'':'s')
+    +(fresh[k]!==counts[k]?' ('+fresh[k]+' new)':'')).join('\n');
+}
+function applyRestore(data,label){
+  const {fresh}=includedCounts(data);
+  const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
+  if(!totalNew){toast('ℹ️ Nothing to add — every row in '+(label||'that copy')+' is already in the books.');return 0;}
+  const {added}=mergeIncludedData(data);
+  keepSafetyCopy();
+  const sum=DB_TABS.map(([k])=>added[k]?DB_LABEL[k]+' +'+added[k]:'').filter(Boolean).join(' • ');
+  flash('bkMsg','✅ Added from '+(label||'the copy')+': '+sum+'. Press 🔄 Push app data to Sheet to put these rows back in your Google Sheet.',true);
+  toast('✅ '+totalNew+' row'+(totalNew===1?'':'s')+' added — now press 🔄 Push app data to Sheet');
+  updatePushButtons();
+  return totalNew;
+}
+/* the device's own dated copies */
+function openCopiesDialog(){
+  const m=safetyCopies(),days=safetyCopyDates();
+  dlgCtx={kind:'copies'};
+  document.getElementById('dlgTitle').innerHTML='🗓 Saved copies on this phone';
+  document.getElementById('dlgHint').innerHTML='A plain copy of the five tables is kept here <b>once a day</b> — the same rows as <b>⬇ Download backup (JSON)</b>. They are for putting books back if something is wiped; nothing here is ever sent anywhere on its own.';
+  const rows=days.map(d=>{
+    const n=tableRows(m[d]),today=d===todayStr();
+    return `<div class="dlgInfo" style="display:flex;gap:10px;align-items:center;justify-content:space-between;">
+      <span><b>${esc(d.split('-').reverse().join('-'))}</b>${today?' (today)':''} — ${n} record${n===1?'':'s'}
+        <div style="font-size:.8rem;color:var(--muted);">${esc(copyCounts(m[d]))}</div></span>
+      <span style="white-space:nowrap;">
+        <button class="miniBtn blue" onclick="previewRestore('copy','${esc(d)}')">↩ Put back</button>
+        <button class="miniBtn" onclick="copyToFile('${esc(d)}')">⬇ File</button>
+      </span></div>`;
+  }).join('')||'<div class="dlgInfo">No copies yet — one is kept the first time the app is used on a new day.</div>';
+  document.getElementById('dlgBody').innerHTML=rows
+    +'<div class="hint">↩ <b>Put back</b> adds only the rows that are missing from the books (and leaves everything else exactly as it is) — then <b>🔄 Push app data to Sheet</b> writes them into the Sheet. Nothing is ever deleted by a restore.</div>'
+    +'<div class="actions">'
+    +(days.length?'<button class="btn ghost sm" onclick="deleteSafetyCopies()">✕ Delete the saved copies</button>':'')
+    +'<button class="btn ghost sm" onclick="exportBackup()">⬇ Download backup (JSON)</button>'
+    +'<button class="btn ghost sm" onclick="closeDlg()">✕ Close</button></div>';
+  showDlg();
+}
+function copyToFile(day){
+  const m=safetyCopies(),t=m[day];
+  if(!t)return;
+  const a=document.createElement('a');
+  a.href='data:application/json,'+encodeURIComponent(JSON.stringify({employees:t.employees||[],dutyLeave:t.dutyLeave||[],payments:t.payments||[],receipts:t.receipts||[],expenses:t.expenses||[]},null,2));
+  a.download='hisab-copy-'+day+'.json';a.click();
+}
+function deleteSafetyCopies(){
+  if(!confirm('Delete the dated copies this phone keeps?\n\nYour books are not touched — only the safety copies go. (The Sheet is not touched either.)'))return;
+  saveSafetyCopies({});
+  toast('✕ Saved copies deleted');
+  closeDlg();
+}
+/* a dated copy of this device → the normal "put the missing rows back" flow */
+function previewRestore(src,which){
+  const t=src==='copy'?safetyCopies()[which]:null;
+  if(!t)return toast('⚠️ That copy is no longer here.');
+  previewRestoreData({employees:t.employees||[],dutyLeave:t.dutyLeave||[],payments:t.payments||[],receipts:t.receipts||[],expenses:t.expenses||[]},
+    'the copy from '+which.split('-').reverse().join('-'));
+}
+function doRestore(){
+  const p=restorePreview;if(!p)return;
+  const n=applyRestore(p.data,p.label);
+  closeDlg();
+  if(n)autoPushAfterRestore();
+}
+/* after a restore the rows are only on this device — offer the push that puts them back */
+function autoPushAfterRestore(){
+  if(!isGoogleConnected()){toast('✅ Added on this device — sign in on the Google Sheet tab, then press 🔄 Push app data to Sheet');return;}
+  setTimeout(()=>{if(confirm('Write the '+unsentCount()+' restored row(s) back into your Google Sheet now?'))syncAll();},250);
+}
+
+/* ==================================================================
+   READING A VERSION OF THE SHEET  (Excel .xlsx or .csv, no library)
+   ==================================================================
+   Google can hand out any past version of the Sheet as a file:
+   https://docs.google.com/spreadsheets/export?id=<Sheet>&revision=<n>&exportFormat=xlsx
+   (the same file Google Sheets → File → Download → Microsoft Excel gives for
+   today's version). This reads those files on the phone itself.
+   The tab is recognised by the file's sheet names (or, for a CSV, by its heading
+   row), and every row is read through the app's own Sheet reader — so the older
+   column arrangements, numeric dates and the missing-column rules all still apply.
+   ================================================================== */
+function tabForGrid(name,grid){
+  const byName=TABS.find(t=>keyOf(t)===keyOf(name));
+  if(byName)return byName;
+  const loose=String(name||'').toLowerCase();
+  for(const t of TABS){if(loose.includes(t.toLowerCase()))return t;}
+  const h=(grid&&grid[0]||[]).map(c=>keyOf(c));
+  const has=(...c)=>c.every(x=>h.includes(x));
+  if(has('empname','type','from'))return 'DutyLeave';            // before Employees: both carry a name
+  if(has('empname','amount','date'))return 'EmployeePayments';
+  if(has('client','amount','date'))return 'ClientReceipts';
+  if(has('item','amount'))return 'Expenses';
+  if(has('name','wageamount')||has('name','wagetype'))return 'Employees';
+  return '';
+}
+/* one tab's cells → the app's records, read by the headings in the file itself */
+function gridToRecords(tab,grid){
+  if(!grid||!grid.length)return [];
+  const headers=(grid[0]||[]).map(v=>String(v??'').trim());
+  if(!headers.some(h=>h))return [];
+  const out=[];
+  grid.slice(1).forEach(row=>{
+    if(!row||!row.some(v=>String(v??'').trim()!==''))return;      // blank row
+    const info={};
+    const rec=sheetRowToRec(tab,row,headers,info);
+    if(!rec.id&&!rec.name&&!rec.empName&&!rec.client&&!rec.item)return;   // nothing to identify it by
+    out.push(rec);
+  });
+  return out;
+}
+function workbookToData(gridsByName){
+  const data={employees:[],dutyLeave:[],payments:[],receipts:[],expenses:[]},seen={};
+  Object.keys(gridsByName).forEach(name=>{
+    const grid=gridsByName[name];
+    const tab=tabForGrid(name,grid);
+    if(!tab)return;
+    seen[tab]=true;
+    gridToRecords(tab,grid).forEach(rec=>data[TAB_TO_DB[tab]].push(rec));
+  });
+  return {data,seen:Object.keys(seen)};
+}
+/* ---------- .csv (Google's export of ONE tab; headings are in the file) ---------- */
+function csvToGrid(text){
+  const rows=[];let row=[],cell='',q=false;
+  text=String(text||'').replace(/^\uFEFF/,'');
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(q){
+      if(c==='"'){if(text[i+1]==='"'){cell+='"';i++;}else q=false;}
+      else cell+=c;
+    }else if(c==='"')q=true;
+    else if(c===','){row.push(cell);cell='';}
+    else if(c==='\n'){row.push(cell);cell='';rows.push(row);row=[];}
+    else if(c==='\r'){/* ignore */}
+    else cell+=c;
+  }
+  if(cell!==''||row.length){row.push(cell);rows.push(row);}
+  return rows.filter(r=>r.some(v=>String(v??'').trim()!==''));
+}
+/* ---------- .xlsx (a zip of XML) ---------- */
+function unzip(buf){
+  const u8=buf instanceof Uint8Array?buf:new Uint8Array(buf),dv=new DataView(u8.buffer,u8.byteOffset,u8.byteLength);
+  let eocd=-1;
+  for(let i=u8.length-22;i>=Math.max(0,u8.length-66000);i--){if(dv.getUint32(i,true)===0x06054b50){eocd=i;break;}}
+  if(eocd<0)throw new Error('this file is not an Excel (.xlsx) file');
+  const count=dv.getUint16(eocd+10,true);let p=dv.getUint32(eocd+16,true);const out=new Map();
+  for(let n=0;n<count&&p+46<=u8.length;n++){
+    if(dv.getUint32(p,true)!==0x02014b50)break;
+    const method=dv.getUint16(p+10,true),csize=dv.getUint32(p+20,true);
+    const nameLen=dv.getUint16(p+28,true),extraLen=dv.getUint16(p+30,true),cmtLen=dv.getUint16(p+32,true);
+    const lho=dv.getUint32(p+42,true);
+    const name=new TextDecoder().decode(u8.subarray(p+46,p+46+nameLen));
+    out.set(name,{method,csize,lho});p+=46+nameLen+extraLen+cmtLen;
+  }
+  return {u8,dv,out};
+}
+async function zipText(z,name){
+  const e=z.out.get(name);if(!e)return '';
+  const nl=z.dv.getUint16(e.lho+26,true),el=z.dv.getUint16(e.lho+28,true);
+  const start=e.lho+30+nl+el,data=z.u8.subarray(start,start+e.csize);
+  if(e.method===0)return new TextDecoder().decode(data);
+  if(typeof DecompressionStream!=='function')
+    throw new Error('this browser cannot open an Excel file — ask for the version as CSV, or open the app in Chrome');
+  const stream=new Response(data).body.pipeThrough(new DecompressionStream('deflate-raw'));
+  return await new Response(stream).text();
+}
+const xmlText=s=>String(s||'').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&#(\d+);/g,(m,d)=>String.fromCharCode(+d)).replace(/&amp;/g,'&');
+const attrOf=(tag,key)=>{
+  const safe=String(key).replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
+  const m=new RegExp('(?:^|[\\s:])'+safe+'\\s*=\\s*"([^"]*)"').exec(tag);
+  return m?xmlText(m[1]):'';
+};
+const colNumber=ref=>{let n=0;for(const ch of String(ref).replace(/[^A-Z]/g,''))n=n*26+(ch.charCodeAt(0)-64);return n-1;};
+/* one sheet's XML → rows of text (shared strings, inline strings, numbers, dates) */
+function sheetXmlToGrid(xml,shared){
+  const grid=[];
+  const rows=xml.match(/<row[^>]*\/>|<row[^>]*>[\s\S]*?<\/row>/g)||[];
+  let rowAt=0;
+  rows.forEach(rowTag=>{
+    const rAttr=/r="(\d+)"/.exec(rowTag);
+    const rowIdx=(rAttr?Number(rAttr[1])-1:rowAt);rowAt=rowIdx+1;
+    const row=[];
+    const cells=rowTag.match(/<c[^>]*\/>|<c[^>]*>[\s\S]*?<\/c>/g)||[];
+    let colAt=0;
+    cells.forEach(c=>{
+      const ref=/\br="([A-Z]+\d+)"/.exec(c);
+      const ci=ref?colNumber(ref[1]):colAt;colAt=ci+1;
+      const t=/\bt="([^"]*)"/.exec(c);
+      let v='';
+      if(t&&t[1]==='inlineStr'){
+        const is=/<is>([\s\S]*?)<\/is>/.exec(c);
+        v=is?(is[1].match(/<t[^>]*>([\s\S]*?)<\/t>/g)||[]).map(x=>xmlText(x.replace(/<[^>]+>/g,''))).join(''):'';
+      }else if(t&&t[1]==='s'){
+        const n=/<v>([\s\S]*?)<\/v>/.exec(c);
+        const i=n?Number(xmlText(n[1])):-1;
+        v=(shared[i]===undefined?'':shared[i]);
+      }else{
+        const n=/<v>([\s\S]*?)<\/v>/.exec(c);
+        v=n?xmlText(n[1]):'';
+      }
+      row[ci]=v;
+    });
+    grid[rowIdx]=row;
+  });
+  const out=[];
+  for(let i=0;i<grid.length;i++){const row=grid[i]||[];out.push(row.map(c=>c===undefined?'':c));}
+  while(out.length&&!out[out.length-1].some(v=>String(v??'').trim()!==''))out.pop();
+  return out;
+}
+async function xlsxToGrids(buf){
+  const z=unzip(buf);
+  const sharedXml=await zipText(z,'xl/sharedStrings.xml');
+  const shared=(sharedXml.match(/<si>[\s\S]*?<\/si>/g)||[]).map(si=>{
+    const plain=si.replace(/<rPh[\s\S]*?<\/rPh>/g,'');
+    return (plain.match(/<t[^>]*>[\s\S]*?<\/t>/g)||[]).map(t=>xmlText(t.replace(/<[^>]+>/g,''))).join('');
+  });
+  const wb=await zipText(z,'xl/workbook.xml');
+  const rels=await zipText(z,'xl/_rels/workbook.xml.rels');
+  const relMap={};
+  (rels.match(/<Relationship[^>]*\/?>/g)||[]).forEach(tag=>{relMap[attrOf(tag,'Id')]=attrOf(tag,'Target');});
+  const sheets=(wb.match(/<sheet[^>]*\/?>/g)||[]).map(tag=>({name:attrOf(tag,'name'),rid:attrOf(tag,'r:id')||attrOf(tag,'id')}));
+  const grids={};
+  for(const s of sheets){
+    let target=relMap[s.rid]||'';
+    if(!target)continue;
+    target=target.replace(/^\//,'').replace(/^xl\//,'');
+    const xml=await zipText(z,'xl/'+target);
+    if(!xml)continue;
+    grids[s.name||('Sheet'+Object.keys(grids).length+1)]=sheetXmlToGrid(xml,shared);
+  }
+  return grids;
+}
+/* numeric DATE / TIME cells (a Sheet where the dates are real dates, not text) */
+function fixSerialCells(tab,grid){
+  const dates=DATE_COLS[tab]||[],times=[...TIME_COLS];
+  const heads=(grid[0]||[]).map(h=>keyOf(h));
+  const dateAt=dates.map(d=>heads.indexOf(keyOf(d))).filter(i=>i>=0);
+  const timeAt=times.map(d=>heads.indexOf(keyOf(d))).filter(i=>i>=0);
+  const isNum=v=>/^\d+(\.\d+)?$/.test(String(v??'').trim());
+  grid.slice(1).forEach(row=>{
+    dateAt.forEach(i=>{if(isNum(row[i]))row[i]=serialToDate(Number(row[i]));});
+    timeAt.forEach(i=>{
+      if(isNum(row[i])){const n=Number(row[i]);row[i]=serialToTime(n);}
+    });
+  });
+  return grid;
+}
+async function gridsFromFile(file){
+  const name=String((file&&file.name)||'').toLowerCase();
+  const isCsv=/\.csv$/.test(name)||/\.tsv$/.test(name)||/^text\/(csv|plain)/.test(String((file&&file.type)||''));
+  if(isCsv)return {[String(name).replace(/\.[a-z]+$/,'')||'CSV']:csvToGrid(await file.text())};
+  return await xlsxToGrids(await file.arrayBuffer());
+}
+/* any set of grids → the five tables, with numeric dates/times put back */
+function gridsToData(gridsByName){
+  const fixed={};
+  Object.keys(gridsByName).forEach(n=>{
+    const t=tabForGrid(n,gridsByName[n]);
+    fixed[n]=t?fixSerialCells(t,gridsByName[n]):gridsByName[n];
+  });
+  return workbookToData(fixed);
+}
+async function readRestoreFile(file,inp){
+  try{
+    const single=/\.json$/i.test(String(file.name||''));
+    if(single){
+      const d=JSON.parse(await file.text());
+      if(!d||!Array.isArray(d.employees))throw new Error('this JSON file is not a Hisab backup');
+      previewRestoreData({employees:d.employees||[],dutyLeave:d.dutyLeave||[],payments:d.payments||[],receipts:d.receipts||[],expenses:d.expenses||[]},'the file '+file.name);
+    }else{
+      const {data,seen}=gridsToData(await gridsFromFile(file));
+      if(!seen.length)throw new Error('no Hisab tab was recognised in this file');
+      previewRestoreData(data,'the file '+file.name+' ('+seen.join(', ')+')');
+    }
+  }catch(e){
+    toast('⚠️ Could not read that file — '+(e&&e.message?e.message:'unknown error'));
+  }
+  if(inp)inp.value='';
+}
+/* the one screen every restore goes through: what is new, then a yes */
+function previewRestoreData(data,label){
+  const {counts,fresh}=restoreCounts(data);
+  const totalNew=DB_TABS.reduce((n,[k])=>n+(fresh[k]||0),0);
+  const empty=DB_TABS.every(([k])=>!counts[k]);
+  if(empty){toast('⚠️ That file holds no rows for any of the five tabs.');return;}
+  restorePreview={data,label};
+  dlgCtx={kind:'restore'};
+  document.getElementById('dlgTitle').innerHTML='↩ Put these rows back';
+  document.getElementById('dlgHint').innerHTML='From <b>'+esc(label)+'</b>. Only rows that are not in the books any more are added — everything else is left alone.';
+  document.getElementById('dlgBody').innerHTML='<div class="dlgInfo" style="white-space:pre-wrap;">'+esc(restoreSummary(counts,fresh))+'</div>'
+    +'<div class="hint">'+(totalNew?'<b>'+totalNew+'</b> row'+(totalNew===1?'':'s')+' will be added, marked <b>not sent yet</b>. Then press <b>🔄 Push app data to Sheet</b> to write them into your Google Sheet.':'Everything in this file is already in the books — nothing would be added.')+'</div>'
+    +'<div class="actions">'
+    +(totalNew?'<button class="btn primary sm" onclick="doRestore()">✅ Add these rows</button>':'')
+    +'<button class="btn ghost sm" onclick="closeDlg()">✕ Cancel</button></div>';
+  showDlg();
+}
+/* ==================================================================
+   🕘 BRING BACK A PAST VERSION OF THE SHEET
+   ==================================================================
+   Google keeps every version of a Sheet (File → Version history). This asks
+   Google Drive for that list, lets the wiped version be picked, reads it here
+   on the phone and puts the missing rows back — without restoring the whole
+   file, so today's entries are not thrown away by a restore.
+
+   Looking the list up needs one extra Google permission (read-only Drive) and
+   the Drive API switched on in the same Cloud project as the Sheets API; both
+   are one-time. If they are not there yet, the export link still works through
+   the browser: the version can be downloaded as an Excel file and read with
+   📁 Restore from a file.
+   ================================================================== */
+const DRIVE_SCOPE='https://www.googleapis.com/auth/drive.readonly';
+const DRIVE_KEY='hisabDriveScope';
+let driveScopeWanted=storeItem(DRIVE_KEY)==='on';
+let recoveryCtx={versions:[],picked:''};
+const DRIVE_FILES='https://www.googleapis.com/drive/v3/files/';
+function hasDriveScope(){
+  return driveScopeWanted||/drive\.readonly|auth\/drive/.test(String(AUTH.scope||''));
+}
+async function ensureDriveToken(){
+  if(isGoogleConnected()&&hasDriveScope())return AUTH.token;
+  driveScopeWanted=true;setStoreItem(DRIVE_KEY,'on');
+  tokenClient=null;                                  // sign in again, now asking for the version list too
+  try{
+    await getAccessToken(true);
+  }catch(e){
+    driveScopeWanted=false;setStoreItem(DRIVE_KEY,'');tokenClient=null;
+    throw noteError(e);
+  }
+  if(!AUTH.scope||/drive/.test(String(AUTH.scope)))return AUTH.token;
+  throw noteError(new Error('Google did not give this app the “read your past versions” permission.'));
+}
+async function driveFetch(url,opts={}){
+  const run=async tok=>fetch(url,{method:opts.method||'GET',headers:{Authorization:'Bearer '+tok},body:opts.body});
+  let tok=await ensureDriveToken();
+  let res=await run(tok);
+  if(res.status===401){clearAuth();tok=await getAccessToken(false);res=await run(tok);}
+  return res;
+}
+async function driveJSON(url,opts={}){
+  let res;
+  try{res=await driveFetch(url,opts);}
+  catch(e){throw noteError(e);}
+  const j=await res.json().catch(()=>({}));
+  if(!res.ok){
+    const e=new Error((j.error&&j.error.message)||('HTTP '+res.status));
+    e.status=res.status;e.code=(j.error&&j.error.status)||'';
+    throw noteError(e);
+  }
+  return j;
+}
+const two=n=>String(n).padStart(2,'0');
+function fmtStamp(iso){
+  const d=new Date(iso);
+  if(isNaN(d.getTime()))return String(iso||'');
+  const h=d.getHours(),amp=h<12?'am':'pm',h12=h%12===0?12:h%12;
+  return two(d.getDate())+'-'+two(d.getMonth()+1)+'-'+d.getFullYear()+', '+h12+':'+two(d.getMinutes())+' '+amp;
+}
+async function listSheetVersions(){
+  const id=getSheetId();
+  if(!id)throw new Error('No Google Sheet is set on this device yet.');
+  const url=DRIVE_FILES+encodeURIComponent(id)+'/revisions?fields=revisions(id,modifiedTime,lastModifyingUser(displayName)),nextPageToken&pageSize=200';
+  const j=await driveJSON(url);
+  const out=(j.revisions||[]).map(r=>({
+    id:String(r.id),
+    at:r.modifiedTime||'',
+    when:fmtStamp(r.modifiedTime),
+    who:(r.lastModifyingUser&&r.lastModifyingUser.displayName)||''
+  }));
+  out.sort((a,b)=>String(b.at).localeCompare(String(a.at)));      // newest first
+  return out;
+}
+/* the link Google hands out for one version: prefer the link from the API,
+   fall back to the well-known export address (both open/download with the
+   signed-in Google account in the browser) */
+async function versionExportUrl(revId,format){
+  const id=getSheetId();
+  const url=DRIVE_FILES+encodeURIComponent(id)+'/revisions/'+encodeURIComponent(revId)+'?fields=id,exportLinks';
+  try{
+    const j=await driveJSON(url);
+    const links=(j&&j.exportLinks)||{};
+    if(format==='csv'){const k=Object.keys(links).find(k=>k==='text/csv');if(k)return links[k];}
+    else{const k=Object.keys(links).find(k=>/spreadsheetml\.sheet$/.test(k));if(k)return links[k];}
+  }catch(e){/* the API may not answer this one — the plain export address works anyway */}
+  return 'https://docs.google.com/spreadsheets/export?id='+encodeURIComponent(id)
+    +'&revision='+encodeURIComponent(revId)+'&exportFormat='+(format==='csv'?'csv':'xlsx');
+}
+async function readVersion(revId){
+  const url=await versionExportUrl(revId,'xlsx');
+  const res=await fetch(url,{headers:{Authorization:'Bearer '+AUTH.token}});     // may be refused by the browser (CORS)
+  if(!res.ok)throw new Error('Google answered HTTP '+res.status+' for that version');
+  const {data,seen}=gridsToData(await xlsxToGrids(await res.arrayBuffer()));
+  if(!seen.length)throw new Error('that version held no Hisab tab');
+  return {data,seen,url};
+}
+function recoveryStatus(html,ok){
+  const el=document.getElementById('recStatus');
+  if(el){el.innerHTML=html;el.className='msg '+(ok===false?'err':'ok');}
+}
+function renderRecoveryVersions(){
+  const list=recoveryCtx.versions,body=document.getElementById('recVersions');
+  if(!body)return;
+  if(!list.length){body.innerHTML='';return;}
+  body.innerHTML='<div class="hint" style="margin-top:8px;">Pick the version from <b>before</b> the wipe (the list is newest first). Reading it does not change anything — the rows are only added after you press the button.</div>'
+    +list.map((v,i)=>`<label style="display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border:1px solid var(--line);border-radius:10px;margin-bottom:6px;cursor:pointer;">
+      <input type="radio" name="recVer" value="${esc(v.id)}" ${recoveryCtx.picked===v.id?'checked':''} onchange="recoveryCtx.picked=this.value">
+      <span><b>${esc(v.when)}</b>${i===0?' <span style="color:var(--muted);">(the newest — usually after the wipe)</span>':''}
+      ${v.who?'<span style="display:block;font-size:.8rem;color:var(--muted);">changed by '+esc(v.who)+'</span>':''}</span></label>`).join('')
+    +'<div class="actions" style="margin-top:8px;">'
+    +'<button class="btn primary sm" onclick="recoveryReadPicked()">👁 Read this version</button>'
+    +'<button class="btn ghost sm" onclick="recoveryDownloadPicked()">⬇ Download it (Excel)</button>'
+    +'</div>';
+}
+function recoveryPickedVersion(){
+  if(recoveryCtx.picked)return recoveryCtx.picked;
+  const el=document.querySelector('input[name=recVer]:checked');
+  return el?el.value:'';
+}
+async function recoveryListVersions(){
+  const btn=document.getElementById('recListBtn');
+  if(btn){btn.disabled=true;btn.textContent='🔄 Asking Google…';}
+  recoveryStatus('Asking Google for the versions of this Sheet…');
+  try{
+    recoveryCtx.versions=await listSheetVersions();
+    if(!recoveryCtx.versions.length){recoveryStatus('Google listed no saved versions for this Sheet yet.',false);}
+    else{
+      recoveryCtx.picked=recoveryCtx.versions.length>1?recoveryCtx.versions[1].id:recoveryCtx.versions[0].id;   // the one before the newest
+      recoveryStatus('✅ '+recoveryCtx.versions.length+' version'+(recoveryCtx.versions.length===1?'':'s')+' found — the newest is from '+esc(recoveryCtx.versions[0].when)+'.',true);
+    }
+    renderRecoveryVersions();
+  }catch(e){
+    const msg=String((e&&e.message)||e);
+    recoveryStatus('❌ Could not read the version list: '+esc(msg)
+      +'<br>If it says the Drive API is not enabled, switch it on once: '
+      +'<a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">console.cloud.google.com → Drive API → Enable</a>, then press the button again.'
+      +'<br>No luck with that? Use <b>⬇ Download a version</b> below or <b>📁 Restore from a file</b>.',false);
+  }
+  if(btn){btn.disabled=false;btn.textContent='🔄 Look up the Sheet’s past versions';}
+}
+async function recoveryReadPicked(){
+  const rev=recoveryPickedVersion();
+  if(!rev)return recoveryStatus('Pick a version first.',false);
+  recoveryStatus('Reading that version of the Sheet…');
+  try{
+    const {data,seen}=await readVersion(rev);
+    recoveryStatus('✅ Read it — '+seen.join(', ')+'.',true);
+    previewRestoreData(data,'the Sheet version from '+((recoveryCtx.versions.find(v=>v.id===rev)||{}).when||('#'+rev)));
+  }catch(e){
+    recoveryStatus('⚠️ The browser would not let the app read that version directly ('+esc(String((e&&e.message)||e))+').'
+      +' No problem: press <b>⬇ Download it (Excel)</b>, then <b>📁 Restore from a file</b> and pick the downloaded file.',false);
+  }
+}
+async function recoveryDownloadPicked(){
+  const rev=recoveryPickedVersion();
+  if(!rev)return recoveryStatus('Pick a version first.',false);
+  recoveryStatus('Opening the download for version #'+esc(rev)+'…');
+  try{
+    const url=await versionExportUrl(rev,'xlsx');
+    const w=window.open(url,'_blank');
+    if(!w)location.href=url;
+    recoveryStatus('The file is downloading (it lands in <b>Downloads</b> as an <b>.xlsx</b>). '
+      +'When it is there, press <b>📁 Restore from a file</b> below and pick it.',true);
+  }catch(e){
+    recoveryStatus('Could not build that download: '+esc(String((e&&e.message)||e)),false);
+  }
+}
+function recoveryDownloadNumber(){
+  const inp=document.getElementById('recRevNo');
+  const n=inp?String(inp.value||'').trim():'';
+  if(!/^\d+$/.test(n))return recoveryStatus('Type the version number as digits only (for example 15098).',false);
+  recoveryCtx.picked=n;
+  recoveryDownloadPicked();
+}
+function openRecoveryDialog(){
+  dlgCtx={kind:'recovery'};
+  document.getElementById('dlgTitle').innerHTML='🕘 Bring back a past version of the Sheet';
+  document.getElementById('dlgHint').innerHTML='If the books disappeared from your Google Sheet, Google still has the <b>version from before that moment</b>. This finds it, reads it on the phone and puts the <b>missing rows</b> back — today’s entries are not thrown away, because nothing is ever deleted or replaced by a restore.';
+  document.getElementById('dlgBody').innerHTML=`
+    <div class="actions">
+      <button class="btn primary sm" id="recListBtn" onclick="recoveryListVersions()">🔄 Look up the Sheet’s past versions</button>
+      <button class="btn ghost sm" onclick="document.getElementById('restoreFile').click()">📁 Restore from a file</button>
+    </div>
+    <div class="msg" id="recStatus"></div>
+    <div id="recVersions"></div>
+    <details class="setupBox" style="margin-top:8px;">
+      <summary>No version list, or no Drive permission? (advanced)</summary>
+      <div class="boxBody">
+        <div class="hint">Google hands out any past version as an Excel file through this address — the number at the end is the version (the first list entry above shows them when the permission is there):</div>
+        <div class="hint" style="word-break:break-all;"><code id="recUrl"></code></div>
+        <div class="field" style="max-width:280px;">
+          <label>Version number</label>
+          <input id="recRevNo" inputmode="numeric" placeholder="e.g. 15098">
+        </div>
+        <div class="actions">
+          <button class="btn ghost sm" onclick="recoveryDownloadNumber()">⬇ Download that version (Excel)</button>
+        </div>
+        <div class="hint">On a computer you can also open the Sheet → <b>File → Version history → See version history</b>, pick the version from before the wipe and press <b>Restore this version</b> — that brings the whole Sheet back in one step.</div>
+      </div>
+    </details>
+    <div class="hint">🔄 Push app data to Sheet is what writes the rows you add here back into your Google Sheet.</div>
+    <div class="actions"><button class="btn ghost sm" onclick="closeDlg()">✕ Close</button></div>`;
+  const u=document.getElementById('recUrl');
+  if(u)u.textContent='https://docs.google.com/spreadsheets/export?id='+(getSheetId()||'<Sheet ID>')+'&revision=<number>&exportFormat=xlsx';
+  showDlg();
+}
+function renderCopiesLine(){
+  const days=safetyCopyDates();
+  const html=days.length
+    ?'🗓 This phone keeps its own dated copies of the books (<b>'+days.length+'</b>, newest '+esc(days[0].split('-').reverse().join('-'))+') — open them any time: <button class="miniBtn blue" onclick="openCopiesDialog()">🗓 Saved copies</button>'
+    :'🗓 From now on this phone keeps a dated copy of its books <b>once a day</b> — <span style="color:var(--muted);">nothing is sent anywhere; it is there to put the books back after a wipe.</span>';
+  ['copiesLine','copiesLine3'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
+}
+function renderSafetyNotice(){
+  const html=sheetSafetyWarning
+    ?'<span style="white-space:pre-wrap;">'+esc(sheetSafetyWarning)+'</span>'
+      +(sheetSafetyRepair?'<br><button class="miniBtn green" onclick="syncAll()">🔄 Put my rows back in the Sheet</button>':'')
+      +'<button class="miniBtn blue" onclick="openRecoveryDialog()">🕘 Bring back a past version</button>'
+    :'';
+  ['safetyNotice2','safetyNotice3'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el)return;
+    el.innerHTML=html;el.className='clearNotice';el.style.display=html?'':'none';
+  });
+}
+
 /* ================= CLEARING THE APP DATA =================
    "Clear" has to mean clear, and Hisab keeps the books in TWO places: this device
    (localStorage) and the Google Sheet the app writes into. The old button emptied
@@ -4494,12 +5130,12 @@ function openClearDialog(){
     <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;cursor:pointer;">
       <input type="radio" name="clearWhat" id="clDev" checked style="margin-top:3px;">
       <span><b>This device only</b>
-        <span style="display:block;font-size:.8rem;color:var(--muted);">Every record, saved receipt image and remembered WhatsApp number on this device. Your Google Sheet keeps all its rows — <b>⬇ Load data FROM Sheet</b> brings the books back any time.</span></span>
+        <span style="display:block;font-size:.8rem;color:var(--muted);">Every record, saved receipt image and remembered WhatsApp number on this device. Your Google Sheet keeps all its rows — <b>⬇ Load data FROM Sheet</b> brings the books back any time. The <b>🗓 dated safety copies</b> this phone keeps are left in place on purpose, so a clear pressed by mistake can be undone (All Records → 🗓 Saved copies → ↩ Put back).</span></span>
     </label>
     <label style="display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #f0c2c2;border-radius:10px;background:#fffafa;cursor:pointer;">
       <input type="radio" name="clearWhat" id="clBoth" style="margin-top:3px;">
       <span><b>This device <u>and</u> the Google Sheet</b>
-        <span style="display:block;font-size:.8rem;color:var(--muted);">Also deletes every row inside the five tabs of the Sheet (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses). The tabs keep only their headings. Recoverable only from Google Sheets → File → Version history.</span></span>
+        <span style="display:block;font-size:.8rem;color:var(--muted);">Also deletes every row inside the five tabs of the Sheet (Employees, DutyLeave, EmployeePayments, ClientReceipts, Expenses). The tabs keep only their headings. A copy is downloaded first if you press <b>⬇ Download backup first</b>, and the version can be brought back afterwards from <b>🕘 Bring back a past version</b> (or Google Sheets → File → Version history).</span></span>
     </label>
     <div class="actions">
       <button class="btn red sm" onclick="doClearAppData()">🗑 Clear app data</button>
@@ -4566,6 +5202,7 @@ document.getElementById('cbTo').value=todayStr();
   setTimeout(()=>toast('🛠 '+r.total+' row'+(r.total===1?'':'s')+' were one column out — corrected. See the Google Sheet tab'),1000);
 })();
 updateSheetStatus();renderAll();
+keepSafetyCopy();          // the books as this phone last had them — before anything is pulled from the Sheet
 maybeAutoOpenReminder();
 autoLoadIncludedDataOnce();
 autoLoadFromSheet();

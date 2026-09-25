@@ -44,6 +44,17 @@ Press **Enable**. (If the button says **Manage**, it is already on — nothing t
 Without this the sign-in succeeds but every read/write fails with
 *"Google Sheets API has not been used in project…"*.
 
+### Step 1b — (optional) Enable the Google Drive API — for “🕘 Bring back a past version”
+
+**Open:** <https://console.cloud.google.com/apis/library/drive.googleapis.com?project=PROJECT_ID>
+
+Press **Enable** — only needed for **🕘 Bring back a past version** / *All Records → 🗓 Saved
+copies*, i.e. reading the Sheet's **version list** so a wiped day can be put back from the phone.
+The app asks for the read-only Drive permission (`…/auth/drive.readonly`) at the moment the button
+is pressed, so nobody is asked for it during normal work. Everything else in Hisab works without
+this — a version can also be restored from Google Sheets → *File → Version history* on a computer,
+or by typing the version number in the app's advanced box (no permission needed for that one).
+
 ---
 
 ## Step 2 — Open the consent screen (it is now called “Google Auth Platform”)
@@ -99,8 +110,10 @@ Check three things on this page:
 
 Optional for this app — the browser requests `https://www.googleapis.com/auth/spreadsheets`
 directly. If you want the scope listed: **Add or remove scopes** →
-`…/auth/spreadsheets` → **Update**. Do **not** add Drive/Gmail scopes; Hisab never
-asks for them and they trigger Google's verification process.
+`…/auth/spreadsheets` → **Update**. The only other scope Hisab can ever ask for is
+`https://www.googleapis.com/auth/drive.readonly`, and only when **🕘 Bring back a past version** is
+pressed (Step 1b) — it is never part of a normal sign-in. Do **not** add Gmail or full-Drive
+scopes; they trigger Google's verification process and Hisab never uses them.
 
 ---
 
@@ -197,5 +210,7 @@ Sheet itself is not reachable: …"* with the numbered fix underneath.
 | `400: origin_mismatch` | Step 5.2 — the web address is not in Authorised JavaScript origins |
 | `400: unauthorized_client` | Step 5.1 — that client is not a Web application client |
 | “Google Sheets API has not been used in project …” | Step 1 |
+| “Google Drive API has not been used in project …” (only when looking up past versions) | Step 1b |
+| “Request had insufficient authentication scopes” while listing a Sheet's versions | Step 1b, then press **🔄 Look up the Sheet’s past versions** again and allow the extra permission |
 | “The caller does not have permission” (403 from Sheets) | Step 7.4 — share the Sheet as **Editor** with that account |
 | Sign-in works but no Sheet / no tabs anywhere | Nothing to fix in Cloud Console: Hisab cannot create a Sheet *file*, and the ID it was given is wrong or not shared | The section above — 🆕 New empty Sheet → paste it in the app's **Google Sheet to write into** box → sign in again |
