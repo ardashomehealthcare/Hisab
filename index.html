@@ -170,11 +170,9 @@
 
   /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
-  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
-  .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
-  .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
-  .stampRcvd{font-size:27px; font-weight:900; letter-spacing:1px; fill:currentColor;}
-  .stampDate{font-size:13px; font-weight:700; letter-spacing:1px; fill:currentColor;}
+  /* no CSS transform here: the -12° tilt is baked into the SVG artwork itself,
+     because html2canvas 1.4.1 mis-places transformed elements on scrolled pages */
+  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; opacity:.92; pointer-events:none;}
   .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:8px 12px; background:var(--soft); border-radius:8px;}
   .payImgWrap{margin-top:12px; text-align:center;}
   .payImgWrap img{max-width:340px; max-height:440px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
@@ -373,16 +371,7 @@
             <tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr>
           </tfoot>
         </table>
-        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
-          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
-          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
-          <path id="stampTop" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
-          <path id="stampBot" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
-          <text class="stampArc"><textPath href="#stampTop" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
-          <text class="stampArc"><textPath href="#stampBot" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
-          <text class="stampRcvd" x="100" y="92" text-anchor="middle">RECEIVED</text>
-          <text class="stampDate" id="invStampDate" x="100" y="120" text-anchor="middle"></text>
-        </svg>
+        <img class="stamp" id="invStampImg" alt="">
       </div>
       <div class="invWords">In words: <b id="invWords">—</b></div>
       <div class="invFoot">Thank you</div>
@@ -494,16 +483,7 @@
           </tbody>
           <tfoot><tr><td class="right"><b id="piBalLbl">Balance to pay</b></td><td class="right money"><b id="piBal">—</b></td></tr></tfoot>
         </table>
-        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
-          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
-          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
-          <path id="stampTop2" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
-          <path id="stampBot2" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
-          <text class="stampArc"><textPath href="#stampTop2" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
-          <text class="stampArc"><textPath href="#stampBot2" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
-          <text class="stampPaid" x="100" y="92" text-anchor="middle">PAID</text>
-          <text class="stampDate" id="piStampDate" x="100" y="120" text-anchor="middle"></text>
-        </svg>
+        <img class="stamp" id="piStampImg" alt="">
       </div>
       <div class="invWords">In words: <b id="piWords">—</b></div>
       <div class="payImgWrap" id="piImgWrap" style="display:none;">
@@ -3011,7 +2991,7 @@ function updateInvoicePreview(force){
   card.style.display='';
   document.getElementById('invNo').textContent=invoiceNoOverride||nextInvoiceNo();
   document.getElementById('invDate').textContent=date||todayStr();
-  document.getElementById('invStampDate').textContent=formatStampDate(date);
+  setStamp('invStampImg','RECEIVED',27,1,formatStampDate(date));
   document.getElementById('invClient').textContent=client||'—';
   document.getElementById('invAddr').textContent=val('rAddr')||'—';
   const emp=val('rEmpSel'),mode=val('rMode');
@@ -3118,13 +3098,73 @@ function waPhoneSkip(){
   if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
   const cb=dlgCtx.cb;closeDlg();cb('');
 }
-/* Render an element (invoice / receipt) to a PNG image. */
+/* Round rubber stamp (company name curved on the border, RECEIVED/PAID + date
+   in the centre) built as a self-contained SVG data-URI. html2canvas 1.4.1
+   renders an INLINE <svg> by copying every computed CSS property into the
+   serialised SVG, and Chromium rasterises that blank — which is why the
+   stamp used to vanish from saved / shared images. A plain <img> goes through
+   html2canvas' normal (working) image pipeline, on screen, in print and in
+   the exported PNG alike. */
+function stampSvgDataUri(word,wordSize,wordGap,dateTxt){
+  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" color="#c53030">'
+    +'<style>text{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;fill:currentColor}</style>'
+    +'<g transform="rotate(-12 100 100)">'
+    +'<circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>'
+    +'<circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+    +'<path id="stT" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>'
+    +'<path id="stB" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>'
+    +'<text font-size="12" font-weight="700" letter-spacing="0.5"><textPath href="#stT" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>'
+    +'<text font-size="12" font-weight="700" letter-spacing="0.5"><textPath href="#stB" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>'
+    +'<text x="100" y="92" text-anchor="middle" font-size="'+wordSize+'" font-weight="900" letter-spacing="'+wordGap+'">'+word+'</text>'
+    +'<text x="100" y="120" text-anchor="middle" font-size="13" font-weight="700" letter-spacing="1">'+(dateTxt||'')+'</text>'
+    +'</g></svg>';
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+}
+function setStamp(imgId,word,wordSize,wordGap,dateTxt){
+  document.getElementById(imgId).src=stampSvgDataUri(word,wordSize,wordGap,dateTxt);
+}
+/* Render an element (invoice / receipt) to a PNG image.
+   The RECEIVED / PAID stamp is hidden during the html2canvas capture and
+   composited onto the canvas afterwards: html2canvas 1.4.1 blanks inline
+   <svg>, and on pages taller than the viewport it mis-clips absolutely
+   positioned <img> elements (the stamp) in its cloned window. Drawing the
+   stamp ourselves at its exact on-screen position sidesteps all of that. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
   if(!node)throw new Error('not ready');
   if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
-  const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
+  const nodeRect=node.getBoundingClientRect();
+  const stamps=node.querySelectorAll('img.stamp');
+  const spots=[].map.call(stamps,function(el){
+    const r=el.getBoundingClientRect();
+    return {el:el,x:r.left-nodeRect.left,y:r.top-nodeRect.top,w:r.width,h:r.height};
+  });
+  const savedVis=[].map.call(stamps,function(el){return el.style.visibility;});
+  [].forEach.call(stamps,function(el){el.style.visibility='hidden';});
+  let canvas;
+  try{
+    canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  }finally{
+    [].forEach.call(stamps,function(el,i){el.style.visibility=savedVis[i];});
+  }
+  const k=canvas.width/nodeRect.width;   // device px per css px (≈ options.scale)
+  /* composite onto a fresh canvas: html2canvas may leave clip/transform state
+     on its own context that would mangle the stamp we draw on top */
+  const out=document.createElement('canvas');
+  out.width=canvas.width;out.height=canvas.height;
+  const ctx=out.getContext('2d');
+  ctx.drawImage(canvas,0,0);
+  spots.forEach(function(s){
+    const img=s.el;
+    if(!img||!img.naturalWidth)return;
+    ctx.save();
+    ctx.globalAlpha=0.92;                // match .stamp opacity on screen
+    /* 5-arg form: scale the WHOLE image (an SVG img's backing raster can
+       differ from naturalWidth, a 9-arg call would sample a corner of it) */
+    ctx.drawImage(img,s.x*k,s.y*k,s.w*k,s.h*k);
+    ctx.restore();
+  });
+  const blob=await new Promise(res=>out.toBlob(res,'image/png'));
   if(!blob)throw new Error('render failed');
   return blob;
 }
@@ -3855,7 +3895,7 @@ function updatePayInvoicePreview(){
   if(!payInvData)return;
   document.getElementById('piNo').textContent=payInvData.no;
   document.getElementById('piDate').textContent=payInvData.date;
-  document.getElementById('piStampDate').textContent=formatStampDate(payInvData.date);
+  setStamp('piStampImg','PAID',36,2,formatStampDate(payInvData.date));
   document.getElementById('piEmp').textContent=payInvData.name;
   document.getElementById('piPeriod').textContent=payInvData.period;
   document.getElementById('piDetails').innerHTML=payInvData.detailsHtml||'';
