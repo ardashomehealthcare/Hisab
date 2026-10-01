@@ -3118,12 +3118,91 @@ function waPhoneSkip(){
   if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
   const cb=dlgCtx.cb;closeDlg();cb('');
 }
-/* Render an element (invoice / receipt) to a PNG image. */
+/* ============== RENDER INVOICE / RECEIPT TO AN IMAGE (stamp included) ==============
+   html2canvas has no SVG painter: for an inline <svg> it builds a data:image/svg+xml
+   copy and draws that as an image. For the round stamp that copy (position / right /
+   bottom / transform all stuffed into the root's style, shapes still saying
+   stroke="currentColor") makes the browser paint NOTHING — which is why the RECEIVED /
+   PAID stamp was missing from every saved image while the print / PDF copy showed it.
+   The stamps are therefore painted by hand onto the finished canvas, at exactly the
+   place, size, angle and opacity they occupy on screen. */
+const STAMP_CSS_PROPS=['color','fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','fill-opacity','stroke-opacity','opacity','font-family','font-size','font-weight','font-style','letter-spacing','text-anchor','paint-order'];
+/* A standalone copy of the stamp SVG: no page CSS, no page layout properties, every
+   value taken from what the browser itself computed — something it can rasterize. */
+function stampSvgDataUri(svg){
+  const clone=svg.cloneNode(true);
+  const src=[svg].concat(Array.prototype.slice.call(svg.querySelectorAll('*')));
+  const dst=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')));
+  src.forEach((el,i)=>{
+    const cs=getComputedStyle(el),st=[];
+    STAMP_CSS_PROPS.forEach(p=>{
+      if(i===0&&p==='opacity')return;          // the root's opacity is applied with globalAlpha
+      const v=cs.getPropertyValue(p);if(v)st.push(p+':'+v);
+    });
+    dst[i].removeAttribute('class');
+    dst[i].setAttribute('style',st.join(';'));
+  });
+  const cs=getComputedStyle(svg),r=svg.getBoundingClientRect();
+  const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+  const w=parseFloat(cs.width)||vb.width||r.width||200;   // un-rotated size
+  const h=parseFloat(cs.height)||vb.height||r.height||200;
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',String(w));
+  clone.setAttribute('height',String(h));
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+}
+/* The angle an element is rotated by, in degrees (from its computed transform) */
+function rotationDegrees(cs){
+  const t=String(cs.transform||cs.webkitTransform||'');
+  const m=t.match(/matrix\(([^)]*)\)/);
+  if(!m)return 0;
+  const p=m[1].split(',').map(Number);
+  return Math.atan2(p[1],p[0])*180/Math.PI;
+}
+function loadStampImage(uri){
+  return new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=()=>rej(new Error('stamp'));img.src=uri;});
+}
+/* Paint every stamp inside `node` onto the canvas html2canvas produced. A default
+   transform-origin rotates an element about its centre, so the rotated box measured
+   on screen is centred on the un-rotated stamp — which is where this draws it.
+   Returns how many stamps were painted; one that cannot be painted is skipped. */
+async function paintStamps(node,canvas){
+  const stamps=Array.prototype.slice.call(node.querySelectorAll('svg.stamp'));
+  if(!stamps.length)return 0;
+  const nr=node.getBoundingClientRect();
+  if(!nr.width||!nr.height)return 0;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return 0;
+  const kx=canvas.width/nr.width,ky=canvas.height/nr.height;
+  let done=0;
+  for(let i=0;i<stamps.length;i++){
+    const svg=stamps[i],r=svg.getBoundingClientRect();
+    if(!r.width||!r.height)continue;
+    const cs=getComputedStyle(svg);
+    const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+    const w=parseFloat(cs.width)||vb.width||r.width;      // un-rotated size
+    const h=parseFloat(cs.height)||vb.height||r.height;
+    let img;
+    try{img=await loadStampImage(stampSvgDataUri(svg));}catch(e){continue;}
+    const cx=(r.left+r.width/2-nr.left)*kx,cy=(r.top+r.height/2-nr.top)*ky;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);            // html2canvas leaves its own scale/offset on the context
+    ctx.globalAlpha=Math.max(0,Math.min(1,parseFloat(cs.opacity)||1));
+    ctx.translate(cx,cy);
+    ctx.rotate(rotationDegrees(cs)*Math.PI/180);
+    ctx.drawImage(img,-w*kx/2,-h*ky/2,w*kx,h*ky);
+    ctx.restore();
+    done++;
+  }
+  return done;
+}
+/* Render an element (invoice / receipt) to a PNG image — the stamp included. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
   if(!node)throw new Error('not ready');
   if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
   const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  try{await paintStamps(node,canvas);}catch(e){/* the invoice itself still saves */}
   const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
   if(!blob)throw new Error('render failed');
   return blob;
@@ -3152,35 +3231,67 @@ function savePayInvoiceImage(){
   const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
   saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
 }
-/* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
-   WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
-   the message already typed (wa.me/<number>). Without a saved number the app
-   asks for one on the spot — type it and their chat still opens by itself —
-   or skip to go through the share sheet (phone) / the WhatsApp chooser. */
+/* Can this browser put a FILE into the share sheet? (Android Chrome / iPhone
+   Safari yes, most desktops no.) Never throws — false on anything unexpected. */
+function canShareFile(file){
+  try{return !!(navigator.canShare&&navigator.canShare({files:[file]}));}catch(e){return false;}
+}
+/* Hand a file to the device's share sheet with the message as its caption.
+   Resolves 'shared' (sent somewhere), 'cancelled' (sheet closed) or
+   'unsupported' (no file sharing here — caller falls back to the chat link). */
+function shareFileToApps(file,text){
+  return new Promise(res=>{
+    let p;
+    try{p=navigator.share({files:[file],text});}
+    catch(e){res('unsupported');return;}
+    if(!p||typeof p.then!=='function'){res('unsupported');return;}
+    p.then(()=>res('shared'),err=>res(err&&err.name==='AbortError'?'cancelled':'unsupported'));
+  });
+}
+/* 📲 Send on WhatsApp. WhatsApp's click-to-chat link (wa.me/…?text=) carries
+   TEXT ONLY — no picture can be attached through it. So on phones that can
+   share files (Android Chrome, iPhone Safari) the app opens the device's share
+   sheet with the invoice / receipt image ALREADY ATTACHED and the message as
+   the caption under it: pick WhatsApp → the person → press Send. A copy of the
+   image is saved to the device as usual, and nothing is sent until Send is
+   pressed. Devices without file sharing (desktop, old browsers) keep the other
+   way: image saved, then WhatsApp opens DIRECTLY on the client's / employee's /
+   substitute's chat with the message already typed. No saved number there? The
+   app asks for one on the spot — type it and their chat still opens by itself —
+   or skip to go through the WhatsApp chooser. */
 async function sendNodeOnWhatsApp(nodeId,text,phone,filename,askName){
   let blob;
   try{blob=await renderNodeToBlob(nodeId);}
   catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  let saved=false;
+  const saveCopy=()=>{if(!saved){downloadBlob(blob,filename);saved=true;}};
+  let file=null;
+  try{file=new File([blob],filename,{type:'image/png'});}catch(e){}
+  if(file&&canShareFile(file)){
+    saveCopy();                               // copy saved to the device first
+    const outcome=await shareFileToApps(file,text);
+    if(outcome==='shared'){
+      toast('✅ Image attached with the message — pick WhatsApp'+(askName?' → '+askName:'')+', then press Send. A copy is saved in Downloads.');
+      return;
+    }
+    if(outcome==='cancelled')return;          // share sheet closed by the user
+    /* 'unsupported' → fall through to the chat link below */
+  }
   if(waNumber(phone)){
-    downloadBlob(blob,filename);              // image saved, ready to attach
+    saveCopy();                               // image saved, ready to attach
     openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
     toast('✅ Image saved — attach it in the chat that just opened');
     return;
   }
   askWhatsAppNumber(askName,chosen=>{
     if(waNumber(chosen)){
-      downloadBlob(blob,filename);            // image saved, ready to attach
+      saveCopy();                             // image saved, ready to attach
       openWhatsAppChat(text,chosen);          // straight to their WhatsApp chat
       toast('✅ Image saved — attach it in the chat that just opened');
       return;
     }
-    const file=new File([blob],filename,{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      navigator.share({files:[file],text}).catch(()=>{/* cancelled */});
-      return;
-    }
-    downloadBlob(blob,filename);
-    openWhatsAppChat(text,'');                // WhatsApp chooser — pick any chat
+    saveCopy();
+    openWhatsAppChat(text+'\n\n(Number not saved — you can type it next)',''); // WhatsApp chooser — pick any chat
   });
 }
 /* Client invoice → WhatsApp image. Number: the field, else the number remembered
@@ -3206,7 +3317,6 @@ async function shareInvoiceWhatsApp(){
   const text='🧾 Invoice '+no+' — Ardas Caretaker Manager\n'
     +'Client: '+client+'\nDate: '+date+'\n'
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Invoice image attached. Thank you! 🙏';
   await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png',client?client+' (client)':'');
 }
@@ -3919,7 +4029,6 @@ async function sharePayInvoiceWhatsApp(){
   const text='🧾 Salary receipt '+payInvData.no+' — Ardas Caretaker Manager\n'
     +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
     +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Receipt image attached. Thank you! 🙏';
   await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png',payInvData.name);
 }
