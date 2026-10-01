@@ -3118,12 +3118,91 @@ function waPhoneSkip(){
   if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
   const cb=dlgCtx.cb;closeDlg();cb('');
 }
-/* Render an element (invoice / receipt) to a PNG image. */
+/* ============== RENDER INVOICE / RECEIPT TO AN IMAGE (stamp included) ==============
+   html2canvas has no SVG painter: for an inline <svg> it builds a data:image/svg+xml
+   copy and draws that as an image. For the round stamp that copy (position / right /
+   bottom / transform all stuffed into the root's style, shapes still saying
+   stroke="currentColor") makes the browser paint NOTHING — which is why the RECEIVED /
+   PAID stamp was missing from every saved image while the print / PDF copy showed it.
+   The stamps are therefore painted by hand onto the finished canvas, at exactly the
+   place, size, angle and opacity they occupy on screen. */
+const STAMP_CSS_PROPS=['color','fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','fill-opacity','stroke-opacity','opacity','font-family','font-size','font-weight','font-style','letter-spacing','text-anchor','paint-order'];
+/* A standalone copy of the stamp SVG: no page CSS, no page layout properties, every
+   value taken from what the browser itself computed — something it can rasterize. */
+function stampSvgDataUri(svg){
+  const clone=svg.cloneNode(true);
+  const src=[svg].concat(Array.prototype.slice.call(svg.querySelectorAll('*')));
+  const dst=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')));
+  src.forEach((el,i)=>{
+    const cs=getComputedStyle(el),st=[];
+    STAMP_CSS_PROPS.forEach(p=>{
+      if(i===0&&p==='opacity')return;          // the root's opacity is applied with globalAlpha
+      const v=cs.getPropertyValue(p);if(v)st.push(p+':'+v);
+    });
+    dst[i].removeAttribute('class');
+    dst[i].setAttribute('style',st.join(';'));
+  });
+  const cs=getComputedStyle(svg),r=svg.getBoundingClientRect();
+  const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+  const w=parseFloat(cs.width)||vb.width||r.width||200;   // un-rotated size
+  const h=parseFloat(cs.height)||vb.height||r.height||200;
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',String(w));
+  clone.setAttribute('height',String(h));
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(clone));
+}
+/* The angle an element is rotated by, in degrees (from its computed transform) */
+function rotationDegrees(cs){
+  const t=String(cs.transform||cs.webkitTransform||'');
+  const m=t.match(/matrix\(([^)]*)\)/);
+  if(!m)return 0;
+  const p=m[1].split(',').map(Number);
+  return Math.atan2(p[1],p[0])*180/Math.PI;
+}
+function loadStampImage(uri){
+  return new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=()=>rej(new Error('stamp'));img.src=uri;});
+}
+/* Paint every stamp inside `node` onto the canvas html2canvas produced. A default
+   transform-origin rotates an element about its centre, so the rotated box measured
+   on screen is centred on the un-rotated stamp — which is where this draws it.
+   Returns how many stamps were painted; one that cannot be painted is skipped. */
+async function paintStamps(node,canvas){
+  const stamps=Array.prototype.slice.call(node.querySelectorAll('svg.stamp'));
+  if(!stamps.length)return 0;
+  const nr=node.getBoundingClientRect();
+  if(!nr.width||!nr.height)return 0;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return 0;
+  const kx=canvas.width/nr.width,ky=canvas.height/nr.height;
+  let done=0;
+  for(let i=0;i<stamps.length;i++){
+    const svg=stamps[i],r=svg.getBoundingClientRect();
+    if(!r.width||!r.height)continue;
+    const cs=getComputedStyle(svg);
+    const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+    const w=parseFloat(cs.width)||vb.width||r.width;      // un-rotated size
+    const h=parseFloat(cs.height)||vb.height||r.height;
+    let img;
+    try{img=await loadStampImage(stampSvgDataUri(svg));}catch(e){continue;}
+    const cx=(r.left+r.width/2-nr.left)*kx,cy=(r.top+r.height/2-nr.top)*ky;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);            // html2canvas leaves its own scale/offset on the context
+    ctx.globalAlpha=Math.max(0,Math.min(1,parseFloat(cs.opacity)||1));
+    ctx.translate(cx,cy);
+    ctx.rotate(rotationDegrees(cs)*Math.PI/180);
+    ctx.drawImage(img,-w*kx/2,-h*ky/2,w*kx,h*ky);
+    ctx.restore();
+    done++;
+  }
+  return done;
+}
+/* Render an element (invoice / receipt) to a PNG image — the stamp included. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
   if(!node)throw new Error('not ready');
   if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
   const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  try{await paintStamps(node,canvas);}catch(e){/* the invoice itself still saves */}
   const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
   if(!blob)throw new Error('render failed');
   return blob;
