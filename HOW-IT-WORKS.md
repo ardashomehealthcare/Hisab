@@ -214,17 +214,34 @@ follows the hours instead of being rounded up to a whole day:
   remembered** from that client's newest receipt, so they only have to be typed once.
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
-* Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → the invoice image is saved
-  and the client's chat opens **directly on the client's number**. A number saved without the
-  country code still opens the right chat — the app adds **91** (or the set `WA_DEFAULT_CC`)
-  itself, because `wa.me` only accepts full international numbers. No number saved? The app asks
-  for it once on the spot (typed numbers are remembered per client), or the share sheet / chooser
-  picks the chat.
+* Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → on a phone that can share
+  files (Android Chrome, iPhone Safari) the **share sheet opens with the invoice image already
+  attached and the message as the caption under it** — pick WhatsApp → the client → **Send**
+  (nothing leaves the phone until Send is pressed, and a copy of the image is saved to the
+  device as well). WhatsApp's own click-to-chat link (`wa.me/…?text=`) carries **text only**, so
+  a device without file sharing (desktop, old browsers) gets the other way: the image is saved
+  and the client's chat opens **directly on the client's number** with the message typed.
+  A number saved without the country code still opens the right chat — the app adds **91** (or
+  the set `WA_DEFAULT_CC`) itself, because `wa.me` only accepts full international numbers. No
+  number saved? The app asks for it once on the spot (typed numbers are remembered per client),
+  or the chooser picks the chat. The salary receipt's 📲 button rides the same two ways.
+* The saved / shared image carries the round **RECEIVED / PAID stamp** as well. html2canvas has
+  no SVG painter — it turned the inline `<svg>` stamp into a `data:image/svg+xml` copy with the
+  page's layout CSS (`position:absolute` / `right` / `bottom` / `transform`) pasted onto the root,
+  and the browser then painted **nothing** (the stamp was missing from every image while the
+  print / PDF copy showed it). `paintStamps()` now draws the stamp onto the finished canvas by
+  itself, at its own screen position, size, −12° angle and opacity; §12.0 tests it.
 
 **Payment given to an employee** → `payments`:
 * `payType`, `mode`, optional `periodFrom`/`periodTo`. When a period is given, the app fills the
   Sheet's **`summary`** (duty days, leave days, the rule used, paid, balance) and **`balance`**
   columns from the same rules as the calculator.
+* **🧾 Generate receipt** builds the same salary payment receipt as the Salary Calculator
+  (`PAY-####`, duty/leave details, salary, paid, balance, PAID stamp) straight from this form —
+  the preview appears right below it and updates as the form is edited. Submit keeps the
+  previewed number; a payment saved without a preview takes the next free number. The paid row
+  reads *Advance paid* / *Bonus paid* for a non-salary type. Every saved payment is re-printable
+  from All Records.
 
 **Expense** → `expenses`. Each block has its own Submit and no compulsory field.
 
@@ -401,6 +418,24 @@ all back**; one row deleted on the other phone still leaves this phone; and ever
 page calls a function that exists. Run the same suite against `git show HEAD:index.html` and
 scenario 1 fails with **5 × `values:clear`** — that is the "whole Sheet went empty" bug this
 engine replaced.
+
+`node tools/stamp-image.test.mjs` runs the real render code out of `index.html` against a stub
+DOM and pins down the stamp fix with 39 assertions: the stamp is drawn onto the canvas **once**,
+at its own on-screen place (both axes checked against the bounding boxes), with the −12° rotation
+and the 0.92 opacity; the context transform html2canvas leaves behind is reset first (without that
+reset the coordinates are scaled twice and the stamp lands off the canvas); the serialized copy
+carries resolved colours, an explicit width/height and the SVG namespace — and **none** of the
+layout properties (`position` / `right` / `bottom` / `transform`) that used to blank it out; a card
+with no stamp is untouched; a stamp that will not load never breaks the image; and both 🖼 and 📲
+go through the painting render. It fails loudly (not silently) if that code is ever removed.
+
+`node tools/whatsapp-share.test.mjs` does the same for the 📲 WhatsApp button: it runs the real
+share code from `index.html` against a **mock share sheet**, and its 31 assertions pin down that a
+phone with file sharing opens the share sheet with the invoice image **attached** and the message
+as its caption (nothing sent until Send, image copy still saved), that closing the sheet sends and
+opens nothing, that a refused share falls back to the `wa.me` chat link, that desktop keeps the old
+"saved image + chat opens on their number" way, and that the "Number not saved" note only ever
+appears in the chat-link path — never in a client's caption.
 
 ### 12.1 Clearing does not undo itself
 The old *Clear all data* emptied the device copy only, so the next open pulled every row back

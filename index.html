@@ -170,9 +170,11 @@
 
   /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
-  /* no CSS transform here: the -12° tilt is baked into the SVG artwork itself,
-     because html2canvas 1.4.1 mis-places transformed elements on scrolled pages */
-  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; opacity:.92; pointer-events:none;}
+  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
+  .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
+  .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
+  .stampRcvd{font-size:27px; font-weight:900; letter-spacing:1px; fill:currentColor;}
+  .stampDate{font-size:13px; font-weight:700; letter-spacing:1px; fill:currentColor;}
   .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:8px 12px; background:var(--soft); border-radius:8px;}
   .payImgWrap{margin-top:12px; text-align:center;}
   .payImgWrap img{max-width:340px; max-height:440px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
@@ -371,7 +373,16 @@
             <tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr>
           </tfoot>
         </table>
-        <img class="stamp" id="invStampImg" alt="">
+        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
+          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path id="stampTop" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
+          <path id="stampBot" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
+          <text class="stampArc"><textPath href="#stampTop" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
+          <text class="stampArc"><textPath href="#stampBot" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
+          <text class="stampRcvd" x="100" y="92" text-anchor="middle">RECEIVED</text>
+          <text class="stampDate" id="invStampDate" x="100" y="120" text-anchor="middle"></text>
+        </svg>
       </div>
       <div class="invWords">In words: <b id="invWords">—</b></div>
       <div class="invFoot">Thank you</div>
@@ -385,23 +396,25 @@
   </div>
 
 
-  <div class="card">
+  <div class="card" id="empPayCard">
     <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
-    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts.</div>
+    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts. Press <b>🧾 Generate receipt</b> for a printable receipt (same as the Salary Calculator) — it appears below and updates as you edit.</div>
     <div class="grid">
-      <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect" onchange="onPaymentEmpChange()"></select></div>
-      <div class="field"><label>Salary period — From</label><input id="pFrom" type="date"></div>
-      <div class="field"><label>Salary period — To</label><input id="pTo" type="date"></div>
-      <div class="field"><label>Amount paid (₹)</label><input id="pAmt" type="number" min="0" placeholder="e.g. 15000"></div>
-      <div class="field"><label>Payment type</label><select id="pType"><option value="">— select —</option><option>Salary</option><option>Advance</option><option>Bonus</option><option>Other</option></select></div>
-      <div class="field"><label>Mode</label><select id="pMode"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+      <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect" onchange="onPaymentEmpChange();refreshMoneyReceiptIfOpen('emp')"></select></div>
+      <div class="field"><label>Salary period — From</label><input id="pFrom" type="date" oninput="refreshMoneyReceiptIfOpen('from')"></div>
+      <div class="field"><label>Salary period — To</label><input id="pTo" type="date" oninput="refreshMoneyReceiptIfOpen('to')"></div>
+      <div class="field"><label>Amount paid (₹)</label><input id="pAmt" type="number" min="0" placeholder="e.g. 15000" oninput="refreshMoneyReceiptIfOpen('amt')"></div>
+      <div class="field"><label>Payment type</label><select id="pType" onchange="refreshMoneyReceiptIfOpen('type')"><option value="">— select —</option><option>Salary</option><option>Advance</option><option>Bonus</option><option>Other</option></select></div>
+      <div class="field"><label>Mode</label><select id="pMode" onchange="refreshMoneyReceiptIfOpen('mode')"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
     </div>
     <div class="actions">
-      <button class="btn red" onclick="savePayment()">✔ Submit employee payment</button><span class="msg" id="pMsg"></span>
+      <button class="btn red" onclick="savePayment()">✔ Submit employee payment</button>
+      <button class="btn primary" onclick="openPayInvoiceFromMoneyEntry()">🧾 Generate receipt</button>
+      <span class="msg" id="pMsg"></span>
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="expenseCard">
     <h2>Other expense <span class="badge amber">Money OUT</span></h2>
     <div class="hint">Office rent, travel, phone, commission — anything else spent from company money.</div>
     <div class="grid">
@@ -447,7 +460,7 @@
 
   <div class="card" id="payInvCard" style="display:none;">
     <h2>Payment receipt preview <span class="badge blue">Auto-generated</span></h2>
-    <div class="hint">Receipt number, date, duty &amp; leave details (same as the copy message), salary, amount paid &amp; balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.</div>
+    <div class="hint" id="payInvHint">Receipt number, date, duty &amp; leave details (same as the copy message), salary, amount paid &amp; balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.</div>
     <div class="grid" style="max-width:620px;">
       <div class="field"><label>Payment mode</label><select id="piMode" onchange="updatePayInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
       <div class="field" id="piUploadField" style="display:none;"><label>Online payment screenshot</label><input type="file" id="piImg" accept="image/*" onchange="onPayImgUpload(this)"></div>
@@ -483,7 +496,16 @@
           </tbody>
           <tfoot><tr><td class="right"><b id="piBalLbl">Balance to pay</b></td><td class="right money"><b id="piBal">—</b></td></tr></tfoot>
         </table>
-        <img class="stamp" id="piStampImg" alt="">
+        <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
+          <circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>
+          <circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>
+          <path id="stampTop2" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>
+          <path id="stampBot2" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>
+          <text class="stampArc"><textPath href="#stampTop2" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>
+          <text class="stampArc"><textPath href="#stampBot2" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>
+          <text class="stampPaid" x="100" y="92" text-anchor="middle">PAID</text>
+          <text class="stampDate" id="piStampDate" x="100" y="120" text-anchor="middle"></text>
+        </svg>
       </div>
       <div class="invWords">In words: <b id="piWords">—</b></div>
       <div class="payImgWrap" id="piImgWrap" style="display:none;">
@@ -500,7 +522,7 @@
     </div>
   </div>
 
-  <div class="card">
+  <div class="card" id="clientBillCard">
     <h2>Client billing calculator <span class="badge green">Mid-month deal</span></h2>
     <div class="hint">
       If a client <b>starts or discontinues service in the middle of a month</b>, pick the client and the service period (From → To).
@@ -2991,7 +3013,7 @@ function updateInvoicePreview(force){
   card.style.display='';
   document.getElementById('invNo').textContent=invoiceNoOverride||nextInvoiceNo();
   document.getElementById('invDate').textContent=date||todayStr();
-  setStamp('invStampImg','RECEIVED',27,1,formatStampDate(date));
+  document.getElementById('invStampDate').textContent=formatStampDate(date);
   document.getElementById('invClient').textContent=client||'—';
   document.getElementById('invAddr').textContent=val('rAddr')||'—';
   const emp=val('rEmpSel'),mode=val('rMode');
@@ -3098,73 +3120,92 @@ function waPhoneSkip(){
   if(!dlgCtx||dlgCtx.kind!=='waPhone')return;
   const cb=dlgCtx.cb;closeDlg();cb('');
 }
-/* Round rubber stamp (company name curved on the border, RECEIVED/PAID + date
-   in the centre) built as a self-contained SVG data-URI. html2canvas 1.4.1
-   renders an INLINE <svg> by copying every computed CSS property into the
-   serialised SVG, and Chromium rasterises that blank — which is why the
-   stamp used to vanish from saved / shared images. A plain <img> goes through
-   html2canvas' normal (working) image pipeline, on screen, in print and in
-   the exported PNG alike. */
-function stampSvgDataUri(word,wordSize,wordGap,dateTxt){
-  const svg='<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" color="#c53030">'
-    +'<style>text{font-family:"Segoe UI",system-ui,-apple-system,Arial,sans-serif;fill:currentColor}</style>'
-    +'<g transform="rotate(-12 100 100)">'
-    +'<circle cx="100" cy="100" r="97" fill="none" stroke="currentColor" stroke-width="4"/>'
-    +'<circle cx="100" cy="100" r="88" fill="none" stroke="currentColor" stroke-width="1.6"/>'
-    +'<path id="stT" d="M 26,100 A 74,74 0 0 1 174,100" fill="none"/>'
-    +'<path id="stB" d="M 26,100 A 74,74 0 0 0 174,100" fill="none"/>'
-    +'<text font-size="12" font-weight="700" letter-spacing="0.5"><textPath href="#stT" startOffset="50%" text-anchor="middle">★ ARDAAS HOME HEALTH CARE ★</textPath></text>'
-    +'<text font-size="12" font-weight="700" letter-spacing="0.5"><textPath href="#stB" startOffset="50%" text-anchor="middle">★ CARETAKER SERVICES ★</textPath></text>'
-    +'<text x="100" y="92" text-anchor="middle" font-size="'+wordSize+'" font-weight="900" letter-spacing="'+wordGap+'">'+word+'</text>'
-    +'<text x="100" y="120" text-anchor="middle" font-size="13" font-weight="700" letter-spacing="1">'+(dateTxt||'')+'</text>'
-    +'</g></svg>';
-  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+/* ============== RENDER INVOICE / RECEIPT TO AN IMAGE (stamp included) ==============
+   html2canvas has no SVG painter: for an inline <svg> it builds a data:image/svg+xml
+   copy and draws that as an image. For the round stamp that copy (position / right /
+   bottom / transform all stuffed into the root's style, shapes still saying
+   stroke="currentColor") makes the browser paint NOTHING — which is why the RECEIVED /
+   PAID stamp was missing from every saved image while the print / PDF copy showed it.
+   The stamps are therefore painted by hand onto the finished canvas, at exactly the
+   place, size, angle and opacity they occupy on screen. */
+const STAMP_CSS_PROPS=['color','fill','stroke','stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','fill-opacity','stroke-opacity','opacity','font-family','font-size','font-weight','font-style','letter-spacing','text-anchor','paint-order'];
+/* A standalone copy of the stamp SVG: no page CSS, no page layout properties, every
+   value taken from what the browser itself computed — something it can rasterize. */
+function stampSvgDataUri(svg){
+  const clone=svg.cloneNode(true);
+  const src=[svg].concat(Array.prototype.slice.call(svg.querySelectorAll('*')));
+  const dst=[clone].concat(Array.prototype.slice.call(clone.querySelectorAll('*')));
+  src.forEach((el,i)=>{
+    const cs=getComputedStyle(el),st=[];
+    STAMP_CSS_PROPS.forEach(p=>{
+      if(i===0&&p==='opacity')return;          // the root's opacity is applied with globalAlpha
+      const v=cs.getPropertyValue(p);if(v)st.push(p+':'+v);
+    });
+    dst[i].removeAttribute('class');
+    dst[i].setAttribute('style',st.join(';'));
+  });
+  const cs=getComputedStyle(svg),r=svg.getBoundingClientRect();
+  const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+  const w=parseFloat(cs.width)||vb.width||r.width||200;   // un-rotated size
+  const h=parseFloat(cs.height)||vb.height||r.height||200;
+  clone.setAttribute('xmlns','http://www.w3.org/2000/svg');
+  clone.setAttribute('width',String(w));
+  clone.setAttribute('height',String(h));
+  return 'data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(clone));
 }
-function setStamp(imgId,word,wordSize,wordGap,dateTxt){
-  document.getElementById(imgId).src=stampSvgDataUri(word,wordSize,wordGap,dateTxt);
+/* The angle an element is rotated by, in degrees (from its computed transform) */
+function rotationDegrees(cs){
+  const t=String(cs.transform||cs.webkitTransform||'');
+  const m=t.match(/matrix\(([^)]*)\)/);
+  if(!m)return 0;
+  const p=m[1].split(',').map(Number);
+  return Math.atan2(p[1],p[0])*180/Math.PI;
 }
-/* Render an element (invoice / receipt) to a PNG image.
-   The RECEIVED / PAID stamp is hidden during the html2canvas capture and
-   composited onto the canvas afterwards: html2canvas 1.4.1 blanks inline
-   <svg>, and on pages taller than the viewport it mis-clips absolutely
-   positioned <img> elements (the stamp) in its cloned window. Drawing the
-   stamp ourselves at its exact on-screen position sidesteps all of that. */
+function loadStampImage(uri){
+  return new Promise((res,rej)=>{const img=new Image();img.onload=()=>res(img);img.onerror=()=>rej(new Error('stamp'));img.src=uri;});
+}
+/* Paint every stamp inside `node` onto the canvas html2canvas produced. A default
+   transform-origin rotates an element about its centre, so the rotated box measured
+   on screen is centred on the un-rotated stamp — which is where this draws it.
+   Returns how many stamps were painted; one that cannot be painted is skipped. */
+async function paintStamps(node,canvas){
+  const stamps=Array.prototype.slice.call(node.querySelectorAll('svg.stamp'));
+  if(!stamps.length)return 0;
+  const nr=node.getBoundingClientRect();
+  if(!nr.width||!nr.height)return 0;
+  const ctx=canvas.getContext('2d');
+  if(!ctx)return 0;
+  const kx=canvas.width/nr.width,ky=canvas.height/nr.height;
+  let done=0;
+  for(let i=0;i<stamps.length;i++){
+    const svg=stamps[i],r=svg.getBoundingClientRect();
+    if(!r.width||!r.height)continue;
+    const cs=getComputedStyle(svg);
+    const vb=svg.viewBox&&svg.viewBox.baseVal?svg.viewBox.baseVal:{};
+    const w=parseFloat(cs.width)||vb.width||r.width;      // un-rotated size
+    const h=parseFloat(cs.height)||vb.height||r.height;
+    let img;
+    try{img=await loadStampImage(stampSvgDataUri(svg));}catch(e){continue;}
+    const cx=(r.left+r.width/2-nr.left)*kx,cy=(r.top+r.height/2-nr.top)*ky;
+    ctx.save();
+    ctx.setTransform(1,0,0,1,0,0);            // html2canvas leaves its own scale/offset on the context
+    ctx.globalAlpha=Math.max(0,Math.min(1,parseFloat(cs.opacity)||1));
+    ctx.translate(cx,cy);
+    ctx.rotate(rotationDegrees(cs)*Math.PI/180);
+    ctx.drawImage(img,-w*kx/2,-h*ky/2,w*kx,h*ky);
+    ctx.restore();
+    done++;
+  }
+  return done;
+}
+/* Render an element (invoice / receipt) to a PNG image — the stamp included. */
 async function renderNodeToBlob(nodeId){
   const node=document.getElementById(nodeId);
   if(!node)throw new Error('not ready');
   if(!window.html2canvas)throw new Error(window._h2cFailed?'noload':'loading');
-  const nodeRect=node.getBoundingClientRect();
-  const stamps=node.querySelectorAll('img.stamp');
-  const spots=[].map.call(stamps,function(el){
-    const r=el.getBoundingClientRect();
-    return {el:el,x:r.left-nodeRect.left,y:r.top-nodeRect.top,w:r.width,h:r.height};
-  });
-  const savedVis=[].map.call(stamps,function(el){return el.style.visibility;});
-  [].forEach.call(stamps,function(el){el.style.visibility='hidden';});
-  let canvas;
-  try{
-    canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
-  }finally{
-    [].forEach.call(stamps,function(el,i){el.style.visibility=savedVis[i];});
-  }
-  const k=canvas.width/nodeRect.width;   // device px per css px (≈ options.scale)
-  /* composite onto a fresh canvas: html2canvas may leave clip/transform state
-     on its own context that would mangle the stamp we draw on top */
-  const out=document.createElement('canvas');
-  out.width=canvas.width;out.height=canvas.height;
-  const ctx=out.getContext('2d');
-  ctx.drawImage(canvas,0,0);
-  spots.forEach(function(s){
-    const img=s.el;
-    if(!img||!img.naturalWidth)return;
-    ctx.save();
-    ctx.globalAlpha=0.92;                // match .stamp opacity on screen
-    /* 5-arg form: scale the WHOLE image (an SVG img's backing raster can
-       differ from naturalWidth, a 9-arg call would sample a corner of it) */
-    ctx.drawImage(img,s.x*k,s.y*k,s.w*k,s.h*k);
-    ctx.restore();
-  });
-  const blob=await new Promise(res=>out.toBlob(res,'image/png'));
+  const canvas=await window.html2canvas(node,{scale:2,backgroundColor:'#ffffff',useCORS:true});
+  try{await paintStamps(node,canvas);}catch(e){/* the invoice itself still saves */}
+  const blob=await new Promise(res=>canvas.toBlob(res,'image/png'));
   if(!blob)throw new Error('render failed');
   return blob;
 }
@@ -3192,35 +3233,67 @@ function savePayInvoiceImage(){
   const no=String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'');
   saveNodeImage('payInvoicePrintArea','Salary-receipt-'+no+'.png');
 }
-/* 📲 Send on WhatsApp — the image is saved first (ready to attach), then
-   WhatsApp opens DIRECTLY on the client's / employee's / substitute's chat with
-   the message already typed (wa.me/<number>). Without a saved number the app
-   asks for one on the spot — type it and their chat still opens by itself —
-   or skip to go through the share sheet (phone) / the WhatsApp chooser. */
+/* Can this browser put a FILE into the share sheet? (Android Chrome / iPhone
+   Safari yes, most desktops no.) Never throws — false on anything unexpected. */
+function canShareFile(file){
+  try{return !!(navigator.canShare&&navigator.canShare({files:[file]}));}catch(e){return false;}
+}
+/* Hand a file to the device's share sheet with the message as its caption.
+   Resolves 'shared' (sent somewhere), 'cancelled' (sheet closed) or
+   'unsupported' (no file sharing here — caller falls back to the chat link). */
+function shareFileToApps(file,text){
+  return new Promise(res=>{
+    let p;
+    try{p=navigator.share({files:[file],text});}
+    catch(e){res('unsupported');return;}
+    if(!p||typeof p.then!=='function'){res('unsupported');return;}
+    p.then(()=>res('shared'),err=>res(err&&err.name==='AbortError'?'cancelled':'unsupported'));
+  });
+}
+/* 📲 Send on WhatsApp. WhatsApp's click-to-chat link (wa.me/…?text=) carries
+   TEXT ONLY — no picture can be attached through it. So on phones that can
+   share files (Android Chrome, iPhone Safari) the app opens the device's share
+   sheet with the invoice / receipt image ALREADY ATTACHED and the message as
+   the caption under it: pick WhatsApp → the person → press Send. A copy of the
+   image is saved to the device as usual, and nothing is sent until Send is
+   pressed. Devices without file sharing (desktop, old browsers) keep the other
+   way: image saved, then WhatsApp opens DIRECTLY on the client's / employee's /
+   substitute's chat with the message already typed. No saved number there? The
+   app asks for one on the spot — type it and their chat still opens by itself —
+   or skip to go through the WhatsApp chooser. */
 async function sendNodeOnWhatsApp(nodeId,text,phone,filename,askName){
   let blob;
   try{blob=await renderNodeToBlob(nodeId);}
   catch(e){toast(e.message==='not ready'?'Generate the invoice / receipt first.':(e.message==='loading'?'⏳ Image engine still loading — try again in a second.':'❌ Could not prepare the image.'));return;}
+  let saved=false;
+  const saveCopy=()=>{if(!saved){downloadBlob(blob,filename);saved=true;}};
+  let file=null;
+  try{file=new File([blob],filename,{type:'image/png'});}catch(e){}
+  if(file&&canShareFile(file)){
+    saveCopy();                               // copy saved to the device first
+    const outcome=await shareFileToApps(file,text);
+    if(outcome==='shared'){
+      toast('✅ Image attached with the message — pick WhatsApp'+(askName?' → '+askName:'')+', then press Send. A copy is saved in Downloads.');
+      return;
+    }
+    if(outcome==='cancelled')return;          // share sheet closed by the user
+    /* 'unsupported' → fall through to the chat link below */
+  }
   if(waNumber(phone)){
-    downloadBlob(blob,filename);              // image saved, ready to attach
+    saveCopy();                               // image saved, ready to attach
     openWhatsAppChat(text,phone);             // straight to their WhatsApp chat
     toast('✅ Image saved — attach it in the chat that just opened');
     return;
   }
   askWhatsAppNumber(askName,chosen=>{
     if(waNumber(chosen)){
-      downloadBlob(blob,filename);            // image saved, ready to attach
+      saveCopy();                             // image saved, ready to attach
       openWhatsAppChat(text,chosen);          // straight to their WhatsApp chat
       toast('✅ Image saved — attach it in the chat that just opened');
       return;
     }
-    const file=new File([blob],filename,{type:'image/png'});
-    if(navigator.canShare&&navigator.canShare({files:[file]})){
-      navigator.share({files:[file],text}).catch(()=>{/* cancelled */});
-      return;
-    }
-    downloadBlob(blob,filename);
-    openWhatsAppChat(text,'');                // WhatsApp chooser — pick any chat
+    saveCopy();
+    openWhatsAppChat(text+'\n\n(Number not saved — you can type it next)',''); // WhatsApp chooser — pick any chat
   });
 }
 /* Client invoice → WhatsApp image. Number: the field, else the number remembered
@@ -3246,7 +3319,6 @@ async function shareInvoiceWhatsApp(){
   const text='🧾 Invoice '+no+' — Ardas Caretaker Manager\n'
     +'Client: '+client+'\nDate: '+date+'\n'
     +'Amount received: '+amt+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Number not saved — you can type it next)\n')
     +'Invoice image attached. Thank you! 🙏';
   await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png',client?client+' (client)':'');
 }
@@ -3321,22 +3393,37 @@ function salarySummaryFor(name,from,to){
   const paid=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
   return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,rule:parts.join(' + '),windowTxt,twentyFour};
 }
+/* Duty/leave/salary summary for a Money-Entry employee payment — the same rules as
+   salarySummaryFor. Shared by savePayment() and the receipt preview, so the preview
+   and the saved (re-printable) receipt always show the same numbers. */
+function moneyPaymentSummary(empName,from,to,amount,payType){
+  if(!(empName&&from&&to))return {summary:'',balance:null,salary:null};
+  const sm=salarySummaryFor(empName,from,to);
+  const amt=Number(amount||0),after=sm.bal-amt;
+  const typeLine=(payType&&!/^salary/i.test(payType))?('Payment type: '+payType+'\n'):'';
+  const summary=typeLine+'Duty '+dayWord(sm.dutyDays)+' • Leave '+dayWord(sm.leaveDays)
+    +'\nPeriod '+from+' → '+to+sm.windowTxt
+    +(sm.wage?('\nSalary '+fmt(sm.salary)+(sm.rule?' ('+sm.rule+')':'')):'')
+    +'\nPaid '+fmt(sm.paid+amt)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'');
+  return {summary,balance:after,salary:sm.wage?sm.salary:null};
+}
 function savePayment(){
   const rec={id:uid(),empName:val('pEmpSel'),date:todayStr(),amount:val('pAmt'),payType:val('pType'),mode:val('pMode'),periodFrom:val('pFrom'),periodTo:val('pTo'),savedAt:new Date().toLocaleString()};
   if(rec.periodFrom&&rec.periodTo&&rec.periodFrom>rec.periodTo){flash('pMsg','Salary period From date must be before the To date.',false);return;}
   if(!anyFilled([rec.empName,rec.amount,rec.payType,rec.mode,rec.periodFrom,rec.periodTo])){flash('pMsg','Fill at least one field.',false);return;}
-  /* the Sheet has summary + balance columns — fill them from the same rules as the
-     Salary Calculator, so the tab explains itself without opening the app */
-  if(rec.empName&&rec.periodFrom&&rec.periodTo){
-    const sm=salarySummaryFor(rec.empName,rec.periodFrom,rec.periodTo);
-    const amt=Number(rec.amount||0),after=sm.bal-amt;
-    rec.summary='Duty '+dayWord(sm.dutyDays)+' • Leave '+dayWord(sm.leaveDays)
-      +'\nPeriod '+rec.periodFrom+' → '+rec.periodTo+sm.windowTxt
-      +(sm.wage?('\nSalary '+fmt(sm.salary)+(sm.rule?' ('+sm.rule+')':'')):'')
-      +'\nPaid '+fmt(sm.paid+amt)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'');
-    rec.balance=after;
-  }
-  DB.payments.push(rec);persist();flash('pMsg','Employee payment saved.');
+  /* the Sheet has summary + balance + receipt-number columns — fill them like the
+     Salary Calculator, so the tab explains itself without opening the app. A receipt
+     previewed just above keeps its number; otherwise take the next free one. */
+  const sm=moneyPaymentSummary(rec.empName,rec.periodFrom,rec.periodTo,rec.amount,rec.payType);
+  if(sm.summary){rec.summary=sm.summary;rec.balance=sm.balance;}
+  let no=payInvNoOverrideMoney||nextPayInvoiceNo();
+  const used=new Set(DB.payments.map(r=>String(r.invoiceNo||'')));
+  while(used.has(no))no=nextPayNoAfter(no);
+  rec.invoiceNo=no;
+  DB.payments.push(rec);persist();flash('pMsg','Employee payment saved — receipt '+rec.invoiceNo+'.');
+  if(payInvSource==='money'&&payInvImg)savePayImg(rec.id,payInvImg);
+  payInvNoOverrideMoney='';
+  if(payInvSource==='money')closePayInvoice();
   sendRecord('EmployeePayments',rec);
   clear('pEmpSel','pFrom','pTo','pAmt','pType','pMode');renderAll();
 }
@@ -3783,10 +3870,14 @@ function calcSalary(){
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
-  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:val('piMode'),periodFrom:lastSalary.from,periodTo:lastSalary.to,invoiceNo:(payInvData&&payInvData.no)||nextPayInvoiceNo(),summary:lastSalary.copyText,balance:lastSalary.bal,savedAt:new Date().toLocaleString()};
+  /* reuse the previewed number only when the open preview IS this salary calculation —
+     a Money-Entry preview (or an old re-printed receipt) must never lend its number */
+  let no=(payInvSource==='salary'&&payInvData&&payInvData.no)||nextPayInvoiceNo();
+  if(payInvNoOverrideMoney&&String(no)===String(payInvNoOverrideMoney))no=nextPayNoAfter(no);
+  const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:val('piMode'),periodFrom:lastSalary.from,periodTo:lastSalary.to,invoiceNo:no,summary:lastSalary.copyText,balance:lastSalary.bal,savedAt:new Date().toLocaleString()};
   DB.payments.push(rec);persist();
   if(payInvImg)savePayImg(rec.id,payInvImg);
-  flash('sMsg','Recorded as payment given today — receipt '+(payInvData?payInvData.no:rec.invoiceNo)+'.');
+  flash('sMsg','Recorded as payment given today — receipt '+rec.invoiceNo+'.');
   sendRecord('EmployeePayments',rec);renderAll();
 }
 
@@ -3796,6 +3887,37 @@ function nextPayInvoiceNo(){
   let max=0;
   DB.payments.forEach(r=>{const m=String(r.invoiceNo||'').match(/(\d+)\s*$/);if(m)max=Math.max(max,parseInt(m[1],10));});
   return 'PAY-'+String(max+1).padStart(4,'0');
+}
+/* PAY-0007 → PAY-0008 (keeps the zero-padding) */
+function nextPayNoAfter(no){
+  const m=String(no||'').match(/^(.*?)(\d+)\s*$/);
+  if(!m)return nextPayInvoiceNo();
+  return m[1]+String(parseInt(m[2],10)+1).padStart(m[2].length,'0');
+}
+let payInvSource=null;        // which form the open preview came from: 'money' | 'salary' | 'record'
+let payInvNoOverrideMoney=''; // Money-Entry preview holds its number until Submit (like the client invoice)
+const PAY_INV_HINT_SALARY='Receipt number, date, duty & leave details (same as the copy message), salary, amount paid & balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
+const PAY_INV_HINT_MONEY='Receipt number, date, duty & leave details, salary, amount paid & balance are filled automatically from the employee payment form above — edit the form and this preview updates. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print (or press Submit to save).';
+/* The single receipt preview card moves between the Salary tab and the Money tab,
+   so the preview always appears right under the form it was generated from. */
+function placePayInvCard(where){
+  const card=document.getElementById('payInvCard');if(!card)return;
+  if(where==='money'){
+    const money=document.getElementById('tab-money');
+    if(money&&card.parentElement!==money)money.insertBefore(card,document.getElementById('expenseCard')||null);
+  }else{
+    const sal=document.getElementById('tab-salary');
+    if(sal&&card.parentElement!==sal)sal.insertBefore(card,document.getElementById('clientBillCard')||null);
+  }
+}
+function setPayInvHint(where){
+  const h=document.getElementById('payInvHint');
+  if(h)h.textContent=(where==='money')?PAY_INV_HINT_MONEY:PAY_INV_HINT_SALARY;
+}
+/* "Amount paid" — or "Advance paid" / "Bonus paid" for a non-salary payment type */
+function payInvPaidLabel(){
+  const t=payInvData&&payInvData.payType;
+  return (t&&!/salary/i.test(String(t)))?(t+' paid'):'Amount paid';
 }
 /* Duty/leave detail lines for the receipt — same content as the copy message */
 function buildPayDetailsHtml(dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,from,to){
@@ -3873,35 +3995,94 @@ function salaryDetailsFor(name,from,to){
 function openPayInvoice(){
   if(!lastSalary){toast('Calculate salary first.');return;}
   const paid=lastSalary.bal>0?lastSalary.bal:0;
+  let no=nextPayInvoiceNo();
+  /* a Money-Entry preview may already hold this number (not saved yet) — skip past it */
+  if(payInvNoOverrideMoney&&String(no)===String(payInvNoOverrideMoney))no=nextPayNoAfter(no);
   payInvData={
-    no:nextPayInvoiceNo(),
+    no,
     date:todayStr(),
     name:lastSalary.name,
+    payType:'Salary',
     period:lastSalary.rangeLabel,
     detailsHtml:buildPayDetailsHtml(lastSalary.dutyRecs||[],lastSalary.leaveRecs||[],lastSalary.dutyDays||0,lastSalary.leaveDays||0,lastSalary.assumed,lastSalary.from,lastSalary.to),
     salary:lastSalary.fullSalary,
     paid,
     bal:lastSalary.bal
   };
+  payInvSource='salary';
   payInvImg='';
   document.getElementById('piMode').value='';
   document.getElementById('piImg').value='';
+  placePayInvCard('salary');setPayInvHint('salary');
   document.getElementById('payInvCard').style.display='';
   updatePayInvoicePreview();
   document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
+}
+/* Build the receipt data straight from the Money-Entry employee payment form, so a
+   salary / advance / bonus paid there gets the same printable receipt as the Salary
+   Calculator. keepNo preserves the number across live refreshes. */
+function buildMoneyPayInvData(keepNo){
+  const name=val('pEmpSel'),from=val('pFrom'),to=val('pTo'),amt=val('pAmt'),payType=val('pType');
+  if(!name||!(Number(amt)>0))return null;
+  const sm=moneyPaymentSummary(name,from,to,amt,payType);
+  const typeLine=(payType&&!/^salary/i.test(payType))?('<b>Payment type:</b> '+esc(payType)+'<br>'):'';
+  const detailsHtml=sm.summary
+    ?(typeLine+'<div style="white-space:pre-wrap;">'+esc(sm.summary)+'</div>')
+    :(typeLine+'<div style="white-space:pre-wrap;">'+esc('Payment to '+name+(payType?(' • '+payType):''))+'</div>');
+  return {
+    no:keepNo||payInvNoOverrideMoney||nextPayInvoiceNo(),
+    date:todayStr(),
+    name,
+    payType:payType||'Salary',
+    period:(from||'—')+' → '+(to||'—'),
+    detailsHtml,
+    salary:sm.salary,
+    paid:Number(amt||0),
+    bal:sm.summary?sm.balance:null
+  };
+}
+/* 🧾 Generate receipt — the Money-Entry employee payment gets its own preview,
+   right under the form (the card moves here from the Salary tab). */
+function openPayInvoiceFromMoneyEntry(){
+  const from=val('pFrom'),to=val('pTo');
+  if(from&&to&&from>to){flash('pMsg','Salary period From date must be before the To date.',false);return;}
+  const d=buildMoneyPayInvData('');
+  if(!d){toast('Choose the employee and the amount first — the receipt builds from this form.');return;}
+  payInvData=d;
+  payInvNoOverrideMoney=d.no;   /* Submit keeps this number, like the client invoice */
+  payInvSource='money';
+  payInvImg='';
+  document.getElementById('piMode').value=val('pMode');
+  document.getElementById('piImg').value='';
+  placePayInvCard('money');setPayInvHint('money');
+  document.getElementById('payInvCard').style.display='';
+  updatePayInvoicePreview();
+  document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
+}
+/* The Money-Entry form edits the open receipt live (same as the client invoice).
+   Only a mode change touches the preview's mode — other edits leave a mode picked
+   on the preview itself alone. */
+function refreshMoneyReceiptIfOpen(field){
+  if(payInvSource!=='money')return;
+  if(!payInvData||document.getElementById('payInvCard').style.display==='none')return;
+  const d=buildMoneyPayInvData(payInvData.no);
+  if(!d){closePayInvoice();return;}
+  payInvData=d;
+  if(field==='mode')document.getElementById('piMode').value=val('pMode');
+  updatePayInvoicePreview();
 }
 /* Refresh the receipt preview from payInvData + mode + screenshot */
 function updatePayInvoicePreview(){
   if(!payInvData)return;
   document.getElementById('piNo').textContent=payInvData.no;
   document.getElementById('piDate').textContent=payInvData.date;
-  setStamp('piStampImg','PAID',36,2,formatStampDate(payInvData.date));
+  document.getElementById('piStampDate').textContent=formatStampDate(payInvData.date);
   document.getElementById('piEmp').textContent=payInvData.name;
   document.getElementById('piPeriod').textContent=payInvData.period;
   document.getElementById('piDetails').innerHTML=payInvData.detailsHtml||'';
   document.getElementById('piDescSalary').textContent='Salary — '+payInvData.period;
   document.getElementById('piSalary').textContent=payInvData.salary?fmt(payInvData.salary):'—';
-  document.getElementById('piDescPaid').textContent='Amount paid ('+payInvData.date+')';
+  document.getElementById('piDescPaid').textContent=payInvPaidLabel()+' ('+payInvData.date+')';
   document.getElementById('piPaid').textContent=payInvData.paid?fmt(payInvData.paid):'—';
   const balLbl=document.getElementById('piBalLbl'),balEl=document.getElementById('piBal');
   if(payInvData.bal===null||payInvData.bal===undefined){balLbl.textContent='Balance';balEl.textContent='—';}
@@ -3909,6 +4090,9 @@ function updatePayInvoicePreview(){
   else{balLbl.textContent='Overpaid / advance';balEl.textContent=fmt(Math.abs(payInvData.bal));}
   document.getElementById('piWords').textContent=payInvData.paid?amountInWords(payInvData.paid):'—';
   const mode=val('piMode')||'—';
+  /* a mode picked on a Money-Entry preview writes back to the payment form, so the
+     saved row matches the receipt (programmatic sets fire no events — no loop) */
+  if(payInvSource==='money'){const pm=document.getElementById('pMode');if(pm)pm.value=val('piMode');}
   document.getElementById('piModeTxt').textContent=mode;
   document.getElementById('piUploadField').style.display=(mode!=='—'&&mode!=='Cash')?'':'none';
   const wrap=document.getElementById('piImgWrap');
@@ -3946,7 +4130,7 @@ function printPayInvoice(){
   window.print();
   setTimeout(()=>document.body.classList.remove('printPay'),300);
 }
-function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;}
+function closePayInvoice(){document.getElementById('payInvCard').style.display='none';payInvData=null;payInvSource=null;}
 /* Salary receipt → WhatsApp image. Number: the employee's saved phone.
    A substitute not in Employees (no saved number) is asked for one on the spot —
    type it and their chat opens directly — or the share sheet / chooser picks. */
@@ -3956,10 +4140,10 @@ async function sharePayInvoiceWhatsApp(){
   const phone=(emp&&emp.phone)||'';
   const paid=document.getElementById('piPaid').textContent;
   const mode=document.getElementById('piModeTxt').textContent;
-  const text='🧾 Salary receipt '+payInvData.no+' — Ardas Caretaker Manager\n'
+  const kind=(payInvData.payType&&!/salary/i.test(String(payInvData.payType)))?(payInvData.payType+' receipt '):'Salary receipt ';
+  const text='🧾 '+kind+payInvData.no+' — Ardas Caretaker Manager\n'
     +'Employee: '+payInvData.name+'\nPeriod: '+payInvData.period+'\n'
-    +'Amount paid: '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
-    +(phone?'':'(Number not saved — you can type it next)\n')
+    +payInvPaidLabel()+': '+paid+(mode&&mode!=='—'?' ('+mode+')':'')+'\n\n'
     +'Receipt image attached. Thank you! 🙏';
   await sendNodeOnWhatsApp('payInvoicePrintArea',text,phone,'Salary-receipt-'+String(payInvData.no).replace(/[^A-Za-z0-9-]/g,'')+'.png',payInvData.name);
 }
@@ -3977,15 +4161,18 @@ function openPayInvoiceFromRecord(id){
     no:r.invoiceNo||nextPayInvoiceNo(),
     date:r.date||todayStr(),
     name:r.empName,
+    payType:r.payType||'Salary',
     period:(r.periodFrom||'—')+' → '+(r.periodTo||'—'),
     detailsHtml,
     salary:d.salary||null,
     paid:Number(r.amount||0),
     bal:(r.balance!==undefined&&r.balance!==null&&String(r.balance).trim()!=='')?Number(r.balance):null
   };
+  payInvSource='record';
   payInvImg=getPayImg(r.id);
   document.getElementById('piMode').value=r.mode||'';
   document.getElementById('piImg').value='';
+  placePayInvCard('salary');setPayInvHint('salary');
   document.getElementById('payInvCard').style.display='';
   updatePayInvoicePreview();
   document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
