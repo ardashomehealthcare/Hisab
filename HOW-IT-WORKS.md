@@ -236,6 +236,12 @@ follows the hours instead of being rounded up to a whole day:
 * `payType`, `mode`, optional `periodFrom`/`periodTo`. When a period is given, the app fills the
   Sheet's **`summary`** (duty days, leave days, the rule used, paid, balance) and **`balance`**
   columns from the same rules as the calculator.
+* **🧾 Generate receipt** builds the same salary payment receipt as the Salary Calculator
+  (`PAY-####`, duty/leave details, salary, paid, balance, PAID stamp) straight from this form —
+  the preview appears right below it and updates as the form is edited. Submit keeps the
+  previewed number; a payment saved without a preview takes the next free number. The paid row
+  reads *Advance paid* / *Bonus paid* for a non-salary type. Every saved payment is re-printable
+  from All Records.
 
 **Expense** → `expenses`. Each block has its own Submit and no compulsory field.
 
