@@ -236,7 +236,7 @@
 <section class="tab" id="tab-emp">
   <div class="card">
     <h2>Add employee <span class="badge blue">Database</span></h2>
-    <div class="hint">Fill only what you know — no field is compulsory. Press <b>✎</b> on any row to edit it, or add again with the same name. The last three boxes are the client columns of your Google Sheet (client duty start date, client phone, client deal).</div>
+    <div class="hint">Fill only what you know — no field is compulsory. Each submit adds a new employee record, even when the name or client already exists. Press <b>✎</b> on a row to edit that specific record. The last three boxes are the client columns of your Google Sheet (client duty start date, client phone, client deal).</div>
     <div class="grid">
       <div class="field"><label>Employee name</label><input id="eName" placeholder="e.g. Ramesh Kumar"></div>
       <div class="field"><label>Phone</label><input id="ePhone" placeholder="Mobile no."></div>
@@ -255,7 +255,8 @@
       <div class="field"><label>Client deal (₹)</label><input id="eClientDeal" type="number" min="0" placeholder="e.g. 25000 / month"></div>
     </div>
     <div class="actions">
-      <button class="btn primary" onclick="saveEmployee()">✔ Submit employee</button>
+      <button class="btn primary" id="eSubmitBtn" onclick="saveEmployee()">✔ Add employee</button>
+      <button class="btn ghost" id="eCancelEditBtn" style="display:none;" onclick="cancelEmployeeEdit()">Cancel edit</button>
       <span class="msg" id="eMsg"></span>
     </div>
   </div>
@@ -582,7 +583,7 @@
       <button class="btn ghost" id="btnLoad2" style="display:none;" onclick="loadFromSheet()">⬇ Load from Google Sheet</button>
       <button class="btn ghost" onclick="document.getElementById('importFile').click()">⬆ Import backup (JSON)</button>
       <span class="msg" id="bkMsg"></span>
-      <div class="hint" style="margin-top:8px;">📥 <b>Add missing records</b> takes a Hisab file from this device (for example a <b>⬇ backup</b>) and adds <b>only what is missing</b>. It reads your Google Sheet first: anything already there — the same entry, even under another id (same person or client, date and amount) — is skipped, and nothing is replaced or deleted. The added records go to your Sheet when you press <b>🔄 Push app data to Sheet</b>. <b>⬆ Import backup</b> is different: it <b>replaces</b> everything on this device with the file.</div>
+      <div class="hint" style="margin-top:8px;">📥 <b>Add missing records</b> takes a Hisab file from this device (for example a <b>⬇ backup</b>) and adds <b>only what is missing</b>. It reads your Google Sheet first: employee rows with different IDs stay separate even when their name or client repeats; older employee rows without IDs are matched by name. Other entries are checked by person/client, date and amount. Nothing is replaced or deleted. The added records go to your Sheet when you press <b>🔄 Push app data to Sheet</b>. <b>⬆ Import backup</b> is different: it <b>replaces</b> everything on this device with the file.</div>
       <button class="btn red" onclick="openClearDialog()">🗑 Clear app data</button>
       <span class="msg" id="clearMsg"></span>
       <div class="clearNotice" id="clearNotice2" style="display:none;"></div>
@@ -717,7 +718,7 @@ let BACKUP_SPREADSHEET_ID=String(window.HISAB_BACKUP_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-09-25 (safe sync • upload-only second Google Sheet backup • backup is never imported automatically • a wipe cannot take a phone’s rows with it)';
+const APP_BUILD='2026-10-12 (separate employee assignments by ID • targeted end-duty reactivation • safe sync)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -795,9 +796,9 @@ const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'p
 
      Employees        id | name | phone | wageType | wageAmount | dutyHours | dutyTime |
                       joinDate | clientDutyStartDate | client | clientPhone | clientDeal | savedAt |
-                      updatedAt
+                      createdAt | updatedAt
      DutyLeave        id | empName | type | from | fromTime | to | toTime | days | client | savedAt |
-                      forEmp | wageType | wageAmount | reason | notes | updatedAt
+                      forEmp | wageType | wageAmount | reason | notes | employeeIds | createdAt | updatedAt
      EmployeePayments id | empName | date | amount | payType | mode | savedAt | periodFrom |
                       periodTo | invoiceNo | summary | balance | updatedAt
      ClientReceipts   id | client | clientPhone | date | amount | empName | mode | savedAt |
@@ -815,15 +816,15 @@ const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'p
    column is inserted or moved in the Sheet, values still land in the right column,
    and a column the app needs but the Sheet lacks is reported, never guessed. */
 const SHEET_COLS={
-  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt','updatedAt'],
-  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes','updatedAt'],
+  Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt','createdAt','updatedAt'],
+  DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes','employeeIds','createdAt','updatedAt'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance','updatedAt'],
   ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','updatedAt'],
   Expenses:['id','item','date','amount','savedAt','updatedAt']
 };
 /* columns the app writes but never complains about: a Sheet that does not have them yet
    is not "an old arrangement" — they are added by the app itself on the first write. */
-const OPTIONAL_SYNC_COLS=new Set(['updatedAt']);
+const OPTIONAL_SYNC_COLS=new Set(['updatedAt','createdAt','employeeIds']);
 /* ids of rows deleted on THIS device that may still be sitting in the Sheet. They are
    removed from the Sheet one row at a time (never by clearing the tab), and until that
    has happened the row is not read back in — so a delete cannot undo itself. */
@@ -922,6 +923,7 @@ function sheetValues(sheet,rec,cols){
       clientDeal:rec.clientDeal||receiptFieldForClient(rec.client,'dealAmount'),
       dutyShift:rec.dutyShift||'',      /* only written while a Sheet still has that column */
       savedAt:rec.savedAt,
+      createdAt:rec.createdAt||'',
       updatedAt:rec.updatedAt||''
     };
   }
@@ -936,6 +938,8 @@ function sheetValues(sheet,rec,cols){
       wageAmount:rec.wageAmount||rec.subWage||'',
       reason:rec.reason||(end?end.reason:''),
       notes:rec.notes||(end?end.notes:''),
+      employeeIds:Array.isArray(rec.employeeIds)?JSON.stringify(rec.employeeIds):String(rec.employeeIds||''),
+      createdAt:rec.createdAt||'',
       /* only written while a Sheet still has the old columns */
       byShifts:rec.byShifts?true:'',
       subWage:rec.subWage||'',
@@ -1709,16 +1713,18 @@ async function ensureHeaders(sheet){
   }catch(e){}
   return SHEET_HEADERS[sheet];
 }
-/* The arrangement a write must follow — the Sheet's own header row, with the sync
-   column (`updatedAt`) added to the Sheet when it is not there yet. A column is only
-   ever ADDED at the end; nothing else in the Sheet's order is ever touched. */
+/* The arrangement a write follows is the Sheet's own header row. New sync metadata
+   columns are appended when an older Sheet first receives a write; existing columns
+   are never moved. */
 async function sheetColsForWrite(sheet){
   const h=(await ensureHeaders(sheet))||SHEET_COLS[sheet].slice();
-  if(h.indexOf('updatedAt')!==-1)return h;
-  const at=colLetter(h.length)+'1';
-  await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!'+at+'?valueInputOption=RAW',{method:'PUT',body:{values:[['updatedAt']]}});
-  h.push('updatedAt');
-  SHEET_HEADERS[sheet]=h.slice();
+  const missing=(SHEET_COLS[sheet]||[]).filter(c=>OPTIONAL_SYNC_COLS.has(c)&&h.indexOf(c)===-1);
+  if(missing.length){
+    const at=colLetter(h.length)+'1';
+    await sheetJSON(GS_BASE+'/values/'+encodeURIComponent(sheet)+'!'+at+'?valueInputOption=RAW',{method:'PUT',body:{values:[missing]}});
+    h.push(...missing);
+    SHEET_HEADERS[sheet]=h.slice();
+  }
   return h;
 }
 async function appendRow(sheet,row){
@@ -2519,31 +2525,56 @@ function daysInMonth(ym){const [y,m]=ym.split('-').map(Number);return new Date(y
 function anyFilled(vals){return vals.some(v=>String(v||'').trim()!=='');}
 
 /* ================= EMPLOYEE ================= */
+let editingEmployeeId='';
+function setEmployeeFormMode(editing){
+  const submit=document.getElementById('eSubmitBtn'),cancel=document.getElementById('eCancelEditBtn');
+  if(submit)submit.textContent=editing?'✔ Save employee changes':'✔ Add employee';
+  if(cancel)cancel.style.display=editing?'':'none';
+}
+function clearEmployeeForm(){
+  clear('eName','ePhone','eWageType','eWage','eDuty','eTime','eJoin','eClient','eClientStart','eClientPhone','eClientDeal');
+  toggleDutyField();
+}
+function cancelEmployeeEdit(){
+  editingEmployeeId='';
+  clearEmployeeForm();
+  setEmployeeFormMode(false);
+  flash('eMsg','Edit cancelled — the next submit will add a new employee record.',true);
+}
 function saveEmployee(){
-  const rec={id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
+  const stamp=new Date();
+  const existing=editingEmployeeId?DB.employees.find(e=>String(e.id)===String(editingEmployeeId)):null;
+  if(editingEmployeeId&&!existing){
+    flash('eMsg','This employee record is no longer on this device. Nothing was changed.',false);return;
+  }
+  const rec={id:existing?existing.id:uid(),name:val('eName'),phone:val('ePhone'),wageType:val('eWageType'),
     wageAmount:val('eWage'),dutyHours:val('eWageType')==='daily'?'':val('eDuty'),
     dutyTime:(val('eWageType')!=='daily'&&val('eDuty')==='24')?val('eTime'):'',
     dutyShift:(val('eWageType')!=='daily'&&val('eDuty')==='12')?val('eShift'):'',
     joinDate:val('eJoin'),client:val('eClient'),
     /* these three are the Sheet's own client columns for this employee */
     clientDutyStartDate:val('eClientStart'),clientPhone:val('eClientPhone'),clientDeal:val('eClientDeal'),
-    savedAt:new Date().toLocaleString()};
-  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.dutyShift,rec.joinDate,rec.client])){flash('eMsg','Fill at least one field.',false);return;}
-  // If same name exists, update it instead of duplicating
-  const existing=rec.name?DB.employees.find(e=>e.name.trim().toLowerCase()===rec.name.trim().toLowerCase()):null;
+    savedAt:existing?String(existing.savedAt||''):stamp.toLocaleString()};
+  if(!existing)rec.createdAt=stamp.toISOString();
+  if(!anyFilled([rec.name,rec.phone,rec.wageType,rec.wageAmount,rec.dutyHours,rec.dutyTime,rec.dutyShift,rec.joinDate,rec.client,rec.clientDutyStartDate,rec.clientPhone,rec.clientDeal])){
+    flash('eMsg','Fill at least one field.',false);return;
+  }
   if(existing){
-    ['phone','wageType','wageAmount','dutyHours','dutyTime','dutyShift','joinDate','client','clientDutyStartDate','clientPhone','clientDeal'].forEach(k=>{if(String(rec[k]||'').trim()!=='')existing[k]=rec[k];});
-    if(rec.wageType==='daily'){existing.dutyHours='';existing.dutyTime='';existing.dutyShift='';}
-    existing.savedAt=rec.savedAt;touchRec(existing);persist();   // newer than the Sheet's copy of this row
-    flash('eMsg','Updated existing employee "'+existing.name+'".');
-    sendRecord('Employees',existing);
+    /* ✎ edits this exact row. Same-name submissions outside edit mode are always new rows. */
+    Object.assign(existing,rec);
+    touchRec(existing);persist();
+    flash('eMsg','Updated employee record for "'+existing.name+'".');
+    if(isGoogleConnected())syncAll();
+    else{updateSheetStatus();toast('💾 Employee updated on this device — sign in and push to update the Google Sheet.');}
   }else{
+    touchRec(rec);
     DB.employees.push(rec);persist();
-    flash('eMsg','Employee saved.');
+    flash('eMsg','New employee record added.');
     sendRecord('Employees',rec);
   }
-  clear('eName','ePhone','eWageType','eWage','eDuty','eTime','eJoin','eClient','eClientStart','eClientPhone','eClientDeal');
-  toggleDutyField();
+  editingEmployeeId='';
+  setEmployeeFormMode(false);
+  clearEmployeeForm();
   renderAll();
 }
 /* The Sheet keeps the client's phone and the agreed deal on the employee's row —
@@ -2556,10 +2587,10 @@ function prefillClientExtras(){
   if(ph&&!ph.value){const p=receiptFieldForClient(client,'clientPhone');if(p)ph.value=p;}
   if(dl&&!dl.value){const d=receiptFieldForClient(client,'dealAmount');if(d)dl.value=d;}
 }
-/* ✎ on an employee row → load the whole record (client columns included) into the
-   form; submitting the same name updates that employee instead of adding a new one. */
+/* ✎ loads one employee row by its id; submit edits only that row, regardless of name. */
 function editEmployee(id){
   const e=DB.employees.find(x=>x.id===id);if(!e)return;
+  editingEmployeeId=e.id;
   const set=(el,v)=>{const n=document.getElementById(el);if(n)n.value=v||'';};
   set('eName',e.name);set('ePhone',e.phone);set('eWageType',e.wageType);set('eWage',e.wageAmount);
   set('eDuty',e.dutyHours);
@@ -2568,10 +2599,11 @@ function editEmployee(id){
   set('eJoin',e.joinDate);set('eClient',e.client);
   set('eClientStart',e.clientDutyStartDate);set('eClientPhone',e.clientPhone);set('eClientDeal',e.clientDeal);
   toggleDutyField();
+  setEmployeeFormMode(true);
   showTab('emp');
   const box=document.querySelector('#tab-emp .card');
   if(box&&box.scrollIntoView)box.scrollIntoView({block:'start',behavior:'smooth'});
-  flash('eMsg','✎ Editing '+e.name+' — press ✔ Submit employee to save the changes.',true);
+  flash('eMsg','✎ Editing '+e.name+' — save changes to this record, or Cancel edit to add a new one.',true);
 }
 function toggleDutyField(){
   const daily=val('eWageType')==='daily';
@@ -2600,11 +2632,18 @@ function saveDutyLeave(type){
   renderAll();
 }
 /* ---- Leave entry: one form — employee on leave + optional substitute below ---- */
-/* Case-insensitive employee lookup (typed names like “ramesh” still match “Ramesh”) */
-function findEmpByName(name){const k=String(name||'').trim().toLowerCase();return DB.employees.find(e=>String(e.name||'').trim().toLowerCase()===k);}
+/* A person's name can have several posting rows. Name-based screens use the newest
+   active row for that person; if all are ended, use the newest historical row. */
+function findEmpByName(name){
+  const k=keyOf(name);if(!k)return null;
+  const matches=DB.employees.filter(e=>keyOf(e.name)===k);
+  const active=matches.filter(e=>!isEmployeeEnded(e));
+  const candidates=active.length?active:matches;
+  return candidates.reduce((best,e)=>!best||employeeCreatedAtMillis(e)>=employeeCreatedAtMillis(best)?e:best,null);
+}
 function onLeaveEmpChange(){
   const name=val('lEmpSel');
-  const emp=DB.employees.find(e=>e.name===name);
+  const emp=findEmpByName(name);
   const is24=!!(emp&&emp.dutyHours==='24');
   document.getElementById('lTimeFields').style.display=is24?'contents':'none';
   if(!val('lFrom'))document.getElementById('lFrom').value=todayStr();
@@ -2744,7 +2783,7 @@ function effSubRec(r,end){
    is used (wageType + wageAmount); the per-day wage typed in the form is the
    app's own subWage column, kept for older Sheets. */
 function substitutePay(sub){
-  const emp=DB.employees.find(e=>e.name===sub.empName);
+  const emp=findEmpByName(sub.empName);
   /* a row with a time is 24-hr duty → days come from the hours actually covered
      (18 h = 0.75 day); a saved days value wins, else calendar days */
   const empTime=(emp&&emp.dutyHours==='24')?(emp.dutyTime||''):'';
@@ -2780,7 +2819,7 @@ function saveLeaveStart(){
   if(!name||!from){flash('lMsg','Choose the employee and the leave start date.',false);return;}
   const open=ongoingLeaveOf(name);
   if(open){flash('lMsg',name+' is already on leave since '+open.from+(open.fromTime?' '+open.fromTime:'')+' — press "Join duty" for them first.',false);return;}
-  const emp=DB.employees.find(e=>e.name===name);
+  const emp=findEmpByName(name);
   const rec={id:uid(),empName:name,type:'leave',from,fromTime,to:'',toTime:'',days:'',
     client:(emp&&emp.client)||'',notes:val('lNote'),
     savedAt:new Date().toLocaleString()};
@@ -2818,7 +2857,7 @@ function saveLeaveStart(){
 let dlgCtx=null;
 function openJoinDuty(id){
   const r=DB.dutyLeave.find(x=>x.id===id);if(!r||!isOnLeaveRec(r))return;
-  const emp=DB.employees.find(e=>e.name===r.empName);
+  const emp=findEmpByName(r.empName);
   const is24=!!(emp&&emp.dutyHours==='24');
   dlgCtx={kind:'join',id,is24};
   document.getElementById('dlgTitle').innerHTML='🤝 Join duty — '+esc(r.empName);
@@ -2853,7 +2892,7 @@ function confirmJoinDuty(){
   if(!d||d<r.from){toast('Check the join duty date.');return;}
   /* the duty time saved on the employee's row (24-hr duty) — used for both the
      employee's own leave days and the substitute covering them */
-  const lvEmp=DB.employees.find(e=>e.name===r.empName);
+  const lvEmp=findEmpByName(r.empName);
   const et=(lvEmp&&lvEmp.dutyTime)||r.fromTime||'';
   r.to=d;r.toTime=t;
   r.days=dlgCtx.is24
@@ -3354,7 +3393,7 @@ function setSelectValue(sel,val){
   const o=document.createElement('option');o.value=val;o.textContent=val;sel.appendChild(o);sel.value=val;
 }
 function onPaymentEmpChange(){
-  const name=val('pEmpSel'),emp=DB.employees.find(e=>e.name===name);
+  const name=val('pEmpSel'),emp=findEmpByName(name);
   document.getElementById('pFrom').value=salaryFromDate(name,emp);
   document.getElementById('pTo').value=todayStr();
 }
@@ -3362,7 +3401,7 @@ function onPaymentEmpChange(){
    rules as the Salary Calculator, read from the columns: Employees.wageType /
    wageAmount, DutyLeave.type / from / to / days, EmployeePayments.amount. */
 function salarySummaryFor(name,from,to){
-  const emp=DB.employees.find(e=>e.name===name)||null;
+  const emp=findEmpByName(name);
   const wage=Number((emp&&emp.wageAmount)||0),wt=String((emp&&emp.wageType)||'');
   const dutySet=new Set(),leaveSet=new Set();
   DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute'||r.type==='leave')&&overlaps(r,from,to))
@@ -3579,7 +3618,7 @@ function addSubstituteToEmployees(name){
 /* Toggle 24-hr time fields + auto-fill From date when employee changes in salary calc */
 function onSalaryEmpChange(){
   const name=val('sEmpSel');
-  const emp=DB.employees.find(e=>e.name===name);
+  const emp=findEmpByName(name);
   const is24=!!(emp&&emp.dutyHours==='24');
   document.getElementById('sTimeFields').style.display=is24?'contents':'none';
   if(!is24){clear('sFromT','sToT');}
@@ -3669,11 +3708,10 @@ function dutyWindowStart(name,emp,from,to){
 /* When did it stop? The endEmployeeDuty row of that person, or the endClientDuty
    row of the client they were posted at (the date lives in the \"to\" column). */
 function dutyWindowEnd(name,emp,to){
-  const key=String((emp&&emp.client)||'').trim().toLowerCase();
+  const person=emp||{name};
   const list=[];
   DB.dutyLeave.forEach(r=>{
-    if(r.empName===name&&r.type==='endEmployeeDuty')list.push(r.to||r.from);
-    if(key&&r.type==='endClientDuty'&&String(r.client||'').trim().toLowerCase()===key)list.push(r.to||r.from);
+    if((r.type==='endEmployeeDuty'||r.type==='endClientDuty')&&employeeEndApplies(r,person))list.push(r.to||r.from);
   });
   const e=list.filter(Boolean).sort().slice(-1)[0]||'';
   return (e&&e<to)?e:to;
@@ -3681,13 +3719,11 @@ function dutyWindowEnd(name,emp,to){
 /* The time that duty ended at (the toTime of that same end row) — so the last
    partial shift of a 24-hr duty is paid for the hours worked. */
 function dutyWindowEndTime(name,emp){
-  const key=String((emp&&emp.client)||'').trim().toLowerCase();
+  const person=emp||{name};
   let best=null;
   DB.dutyLeave.forEach(r=>{
     const d=r.to||r.from;
-    if(!d)return;
-    const mine=(r.empName===name&&r.type==='endEmployeeDuty')||(key&&r.type==='endClientDuty'&&String(r.client||'').trim().toLowerCase()===key);
-    if(!mine)return;
+    if(!d||!employeeEndApplies(r,person))return;
     if(!best||d>=best.d)best={d,time:r.toTime||r.fromTime||''};
   });
   return best?best.time:'';
@@ -3732,7 +3768,7 @@ function calcSalary(){
   lastSalary=null;saveRow.style.display='none';
   if(!name||!from||!to){box.style.display='block';box.innerHTML='Please choose an employee, a from date and a to date.';return;}
   if(from>to){box.style.display='block';box.innerHTML='From date must be before (or same as) the To date.';return;}
-  const emp=DB.employees.find(e=>e.name===name);
+  const emp=findEmpByName(name);
   const is24=!!(emp&&emp.dutyHours==='24');
   const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute')&&overlaps(r,from,to))
     .map(r=>effSubRec(r,to));
@@ -3961,7 +3997,7 @@ function buildPayDetailsHtml(dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,from,
 }
 /* Recompute salary pieces for a saved payment (used when re-printing old receipts) */
 function salaryDetailsFor(name,from,to){
-  const emp=DB.employees.find(e=>e.name===name);
+  const emp=findEmpByName(name);
   const dutyRecs=DB.dutyLeave.filter(r=>r.empName===name&&(r.type==='duty'||r.type==='substitute')&&overlaps(r,from,to))
     .map(r=>effSubRec(r,to));
   const leaveRecs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to))
@@ -4534,27 +4570,62 @@ function renderPLTable(){
 
 /* ================= END DUTY (active / ended) ================= */
 /* "End duty" is saved as a normal Duty/Leave record of type
-   'endEmployeeDuty' or 'endClientDuty'. Those records already sync to the
-   Google Sheet in the existing DutyLeave tab, so no change to the sheet
-   layout is needed — and the ended state survives refresh, auto-load from Sheet, and
-   other devices. Nothing is ever deleted: the records, salary history,
-   invoices and accounts are all left untouched. */
-function endedState(){
-  const endedClients={},endedEmployees={};
-  DB.dutyLeave.forEach(r=>{
-    const date=r.to||r.from||'';
-    if(r.type==='endClientDuty'&&r.client)endedClients[String(r.client).trim().toLowerCase()]=date;
-    if(r.type==='endEmployeeDuty'&&r.empName)endedEmployees[String(r.empName).trim().toLowerCase()]=date;
-  });
-  return {endedClients,endedEmployees};
+   'endEmployeeDuty' or 'endClientDuty'. New rows snapshot the affected employee IDs
+   in the existing DutyLeave tab, so repeated names and later postings remain separate;
+   the ended state survives refresh, Sheet sync and other devices. */
+/* End-duty rows carry employee row IDs for new records, so ending one posting does
+   not end every same-name entry. Older rows have no snapshot; use their saved time to
+   keep later hires/assignments active when they reuse the same name or client. */
+function employeeIdsSnapshot(rec){
+  if(!rec||!Object.prototype.hasOwnProperty.call(rec,'employeeIds'))return null;
+  if(Array.isArray(rec.employeeIds))return rec.employeeIds.map(String);
+  const raw=String(rec.employeeIds||'').trim();
+  if(!raw)return null;
+  try{const ids=JSON.parse(raw);return Array.isArray(ids)?ids.map(String):null;}catch(e){return null;}
 }
-function isClientEnded(name){return !!endedState().endedClients[String(name||'').trim().toLowerCase()];}
+function timestampMillis(value){
+  const raw=String(value||'').trim();if(!raw)return 0;
+  if(/^\d{4}-\d{2}-\d{2}(?:T|$)/.test(raw)){
+    const iso=Date.parse(raw);return Number.isFinite(iso)?iso:0;
+  }
+  const m=raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?)?$/i);
+  if(m){
+    const a=Number(m[1]),b=Number(m[2]),year=Number(m[3]);
+    let lang='';try{lang=String((navigator&&navigator.language)||(Intl.DateTimeFormat().resolvedOptions().locale)||'').toLowerCase();}catch(e){}
+    let dayFirst=/(^|[-_])(in|gb|au|nz|za|ie|sg|my)([-_]|$)/.test(lang);
+    if(a>12)dayFirst=true;else if(b>12)dayFirst=false;
+    const day=dayFirst?a:b,month=dayFirst?b:a;
+    let hour=Number(m[4]||0);const minute=Number(m[5]||0),second=Number(m[6]||0),ampm=String(m[7]||'').toLowerCase();
+    if(ampm==='pm'&&hour<12)hour+=12;if(ampm==='am'&&hour===12)hour=0;
+    const ms=new Date(year,month-1,day,hour,minute,second).getTime();return Number.isFinite(ms)?ms:0;
+  }
+  const parsed=Date.parse(raw);return Number.isFinite(parsed)?parsed:0;
+}
+function employeeCreatedAtMillis(e){return timestampMillis(e&&e.createdAt)||timestampMillis(e&&e.savedAt);}
+function endEventMillis(r){return timestampMillis(r&&r.createdAt)||timestampMillis(r&&r.savedAt)||timestampMillis(r&&(r.to||r.from));}
+function legacyEndApplies(r,e){
+  if(!r||!e||(r.type!=='endEmployeeDuty'&&r.type!=='endClientDuty'))return false;
+  const created=employeeCreatedAtMillis(e),ended=endEventMillis(r);
+  if(created&&ended&&created>ended)return false;
+  if(r.type==='endEmployeeDuty')return keyOf(r.empName)===keyOf(e.name);
+  return !!(e.client&&keyOf(r.client)===keyOf(e.client));
+}
+function employeeEndApplies(r,e){
+  if(!r||!e)return false;
+  const ids=employeeIdsSnapshot(r);
+  if(ids!==null)return !!e.id&&ids.includes(String(e.id));
+  return legacyEndApplies(r,e);
+}
+function isClientEnded(name){
+  const key=keyOf(name);if(!key)return false;
+  const hasEnd=DB.dutyLeave.some(r=>r.type==='endClientDuty'&&keyOf(r.client)===key);
+  if(!hasEnd)return false;
+  /* A later new posting, or a reactivated employee, makes the client active again. */
+  return !DB.employees.some(e=>e.name&&keyOf(e.client)===key&&!isEmployeeEnded(e));
+}
 function isEmployeeEnded(e){
   if(!e)return false;
-  const {endedClients,endedEmployees}=endedState();
-  if(endedEmployees[String(e.name||'').trim().toLowerCase()])return true;
-  if(e.client&&endedClients[String(e.client).trim().toLowerCase()])return true;
-  return false;
+  return DB.dutyLeave.some(r=>employeeEndApplies(r,e));
 }
 function activeEmployees(){return DB.employees.filter(e=>e.name&&!isEmployeeEnded(e));}
 /* Reason for ending a duty — stored in the DutyLeave reason column (with the
@@ -4570,7 +4641,8 @@ function askEndReason(def){
    duty ended. Blank (or a full shift) keeps the usual duty time = whole day. */
 function askEndTime(empNames){
   const list=String(empNames||'').split('|').map(x=>x.trim().toLowerCase()).filter(Boolean);
-  const is24=list.some(n=>{const e=DB.employees.find(x=>String(x.name||'').trim().toLowerCase()===n);return e&&String(e.dutyHours)==='24';});
+  const people=Array.isArray(empNames)?empNames:(empNames&&typeof empNames==='object'?[empNames]:list.map(findEmpByName).filter(Boolean));
+  const is24=people.some(e=>e&&String(e.dutyHours)==='24');
   if(!is24)return '';
   let t='';
   try{t=prompt('24-hour duty — what time did it end?\nExample 14:00 or 2 pm. Leave blank for the normal duty time.\n\n(If it ended part-way, that shift is paid by its hours.)','')||'';}catch(e){t='';}
@@ -4585,43 +4657,61 @@ function askEndTime(empNames){
   return String(h).padStart(2,'0')+':'+mi;
 }
 function endEmployeeDuty(){
-  const empName=val('cbEmpSel');
-  if(!empName){toast('Choose an employee first to end their duty.');return;}
-  const emp=DB.employees.find(e=>e.name===empName);
-  const client=(emp&&emp.client)||val('cbClient')||'';
-  if(!confirm('End duty for employee "'+empName+'" as of today?\n\nThey will be hidden from all active lists, but every record, salary and invoice is kept. Bring them back anytime by deleting the "End employee duty" row in Duty & Leave records.'))return;
-  const rec={id:uid(),empName:empName,type:'endEmployeeDuty',from:'',to:todayStr(),client:client,
+  const empId=val('cbEmpSel');
+  const emp=DB.employees.find(e=>String(e.id)===String(empId));
+  if(!emp){toast('Choose an employee first to end their duty.');return;}
+  const empName=emp.name;
+  const client=emp.client||val('cbClient')||'';
+  if(!confirm('End duty for employee "'+empName+'"'+(client?' at '+client:'')+' as of today?\n\nThey will be hidden from active lists, but every record, salary and invoice is kept.'))return;
+  const stamp=new Date();
+  const rec={id:uid(),empName,type:'endEmployeeDuty',from:'',to:todayStr(),client,
+    employeeIds:[String(emp.id)],createdAt:stamp.toISOString(),
     reason:askEndReason('Assignment completed'),notes:'Employee duty ended',
-    toTime:askEndTime(empName),
-    savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
+    toTime:askEndTime(emp),savedAt:stamp.toLocaleString()};
+  touchRec(rec);DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   renderAll();toast('⏹ Employee duty ended — '+empName);
 }
 function endClientDuty(){
   const client=val('cbClient');
   if(!client){toast('Choose a client first to end their duty.');return;}
-  const emps=DB.employees.filter(e=>e.client&&String(e.client).trim().toLowerCase()===client.trim().toLowerCase());
-  const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name).join('\n• ')):'';
-  if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring them back anytime by deleting the "End client duty" row in Duty & Leave records.'))return;
+  const clientKey=keyOf(client);
+  const emps=DB.employees.filter(e=>e.client&&keyOf(e.client)===clientKey);
+  const extra=emps.length?('\n\nThis also ends duty for:\n• '+emps.map(e=>e.name+(e.client?' — '+e.client:'')).join('\n• ')):'';
+  if(!confirm('End duty for client "'+client+'" as of today? Records, invoices and accounts stay untouched.'+extra+'\n\nBring employees back from their row in Employees.'))return;
+  const stamp=new Date();
   const rec={id:uid(),empName:'',type:'endClientDuty',from:'',to:todayStr(),client:client,
+    employeeIds:emps.map(e=>String(e.id)).filter(Boolean),createdAt:stamp.toISOString(),
     reason:askEndReason('Assignment completed'),notes:'Client service ended',
-    toTime:askEndTime(emps.map(e=>e.name).join('|')),
-    savedAt:new Date().toLocaleString()};
-  DB.dutyLeave.push(rec);persist();
+    toTime:askEndTime(emps.filter(e=>!isEmployeeEnded(e))),savedAt:stamp.toLocaleString()};
+  touchRec(rec);DB.dutyLeave.push(rec);persist();
   sendRecord('DutyLeave',rec);
   renderAll();toast('🛑 Client duty ended — '+client);
 }
 function reactivateEmployee(id){
-  const e=DB.employees.find(x=>x.id===id);
+  const e=DB.employees.find(x=>String(x.id)===String(id));
   if(!e)return;
-  const key=String(e.name||'').trim().toLowerCase();
-  if(!confirm('Re-activate employee "'+e.name+'"?'))return;
-  const gone=DB.dutyLeave.filter(r=>r.type==='endEmployeeDuty'&&String(r.empName||'').trim().toLowerCase()===key).map(r=>r.id);
-  removeRecords('dutyLeave',gone);
-  persist();renderAll();
-  if(isGoogleConnected()){toast('↩ Re-activated — updating Google Sheet…');syncAll();}
-  else toast('↩ Employee re-activated.');
+  if(!confirm('Re-activate employee "'+e.name+'"'+(e.client?' at '+e.client:'')+'?'))return;
+  const gone=[],changed=[];
+  DB.dutyLeave.forEach(r=>{
+    if(r.type!=='endEmployeeDuty'&&r.type!=='endClientDuty')return;
+    let ids=employeeIdsSnapshot(r);
+    if(ids===null){
+      if(!legacyEndApplies(r,e))return;
+      ids=DB.employees.filter(x=>legacyEndApplies(r,x)).map(x=>String(x.id)).filter(Boolean);
+    }
+    if(!ids.includes(String(e.id)))return;
+    const remaining=ids.filter(x=>x!==String(e.id));
+    if(r.type==='endEmployeeDuty'&&!remaining.length)gone.push(r.id);
+    else{r.employeeIds=remaining;touchRec(r);changed.push(r);}
+  });
+  if(gone.length)removeRecords('dutyLeave',gone);
+  if(changed.length)persist();
+  renderAll();
+  if(isGoogleConnected()){
+    toast('↩ Re-activated — updating Google Sheet…');syncAll();
+  }else if(gone.length||changed.length)toast('↩ Re-activated on this device.');
+  else toast('No matching end-duty record was found for this employee.');
 }
 function dutyTypeBadge(r){
   if(r.type==='duty')return '<span class="badge green">DUTY</span>';
@@ -4635,23 +4725,39 @@ function dutyTypeBadge(r){
 /* ================= RENDER ================= */
 function val(id){return document.getElementById(id).value.trim();}
 function clear(...ids){ids.forEach(i=>document.getElementById(i).value='');}
+function employeeOptionLabel(e,duplicateCount,forEndDuty){
+  const name=esc(e.name||'—'),client=String(e.client||'').trim();
+  if(forEndDuty)return name+(client?' — '+esc(client):'')+(duplicateCount>1?' ['+esc(String(e.id||'').slice(-4))+']':'');
+  return name+(duplicateCount>1?' — '+(client?esc(client):'no client')+' ['+esc(String(e.id||'').slice(-4))+']':'');
+}
 function fillEmpSelects(){
-  const actives=activeEmployees();
+  const actives=activeEmployees(),activeByName=[],activeKeys=new Set();
+  const counts={};DB.employees.forEach(e=>{const k=keyOf(e.name);if(k)counts[k]=(counts[k]||0)+1;});
+  actives.forEach(e=>{
+    const k=keyOf(e.name);if(!k||activeKeys.has(k))return;
+    activeKeys.add(k);activeByName.push(findEmpByName(e.name)||e);
+  });
   document.querySelectorAll('.empSelect').forEach(sel=>{
-    const cur=sel.value;
-    sel.innerHTML='<option value="">— select employee —</option>'+actives.map(e=>`<option value="${esc(e.name)}">${esc(e.name)}</option>`).join('');
+    const cur=sel.value,forEndDuty=sel.id==='cbEmpSel',listed=forEndDuty?actives:activeByName;
+    sel.innerHTML='<option value="">— select employee —</option>'+listed.map(e=>{
+      const value=forEndDuty?e.id:e.name;
+      return `<option value="${esc(value)}">${employeeOptionLabel(e,counts[keyOf(e.name)]||1,forEndDuty)}</option>`;
+    }).join('');
     /* Salary Calculator + All Records filter list EVERYONE that is on the app —
        employees whose duty ended too (their past salary stays calculable), and
        every person who appears in Duty & Leave only (a substitute, or someone
        with just a leave row). The leave form keeps active employees only. */
     if(sel.id==='sEmpSel'||sel.id==='fEmp'){
-      const known=new Set(actives.map(e=>e.name));
-      const ended=DB.employees.filter(e=>e.name&&isEmployeeEnded(e)&&!known.has(e.name));
-      if(ended.length)sel.insertAdjacentHTML('beforeend',ended.map(e=>`<option value="${esc(e.name)}">${esc(e.name)} — duty ended</option>`).join(''));
+      const known=activeKeys,endedKeys=new Set(),ended=[];
+      DB.employees.forEach(e=>{
+        const k=keyOf(e.name);if(!k||known.has(k)||endedKeys.has(k)||!isEmployeeEnded(e))return;
+        endedKeys.add(k);ended.push(findEmpByName(e.name)||e);
+      });
+      if(ended.length)sel.insertAdjacentHTML('beforeend',ended.map(e=>`<option value="${esc(e.name)}">${employeeOptionLabel(e,counts[keyOf(e.name)]||1,false)} — duty ended</option>`).join(''));
       const others=[];
       DB.dutyLeave.forEach(r=>{
-        const n=String(r.empName||'').trim();
-        if(!n||known.has(n)||ended.some(e=>e.name===n))return;
+        const n=String(r.empName||'').trim(),k=keyOf(n);
+        if(!k||known.has(k)||endedKeys.has(k))return;
         if(r.type!=='substitute'&&r.type!=='leave'&&r.type!=='duty')return;
         if(!others.includes(n))others.push(n);
       });
@@ -4808,11 +4914,13 @@ const DB_TABS=[['employees','employees'],['dutyLeave','dutyLeave'],['payments','
 const DB_LABEL={employees:'Employees',dutyLeave:'Duty / Leave',payments:'Payments',receipts:'Client receipts',expenses:'Expenses'};
 function sameDay(a,b){return String(a||'')===String(b||'');}
 const keyOf=v=>String(v==null?'':v).trim().toLowerCase();
-/* The same real-world entry, whatever id it carries: an employee by name, the
-   rest by person/client + date + amount. This is what stops an import from
-   doubling entries that are already in the books. */
+/* Backups with IDs represent distinct employee records even when their name or
+   client is repeated. Older employee rows without IDs still fall back to name. */
 function naturalKey(tab,r){
-  if(tab==='employees')return keyOf(r.name)&&('emp:'+keyOf(r.name));
+  if(tab==='employees'){
+    const name=keyOf(r.name);if(!name)return '';
+    return r.id?('emp-id:'+String(r.id)):('emp:'+name);
+  }
   if(tab==='dutyLeave')return keyOf(r.empName)&&('dl:'+keyOf(r.empName)+'|'+keyOf(r.type)+'|'+String(r.from||'')+'|'+String(r.to||''));
   if(tab==='payments')return keyOf(r.empName)&&('pay:'+keyOf(r.empName)+'|'+String(r.date||'')+'|'+String(r.amount||''));
   if(tab==='receipts')return keyOf(r.client)&&('rec:'+keyOf(r.client)+'|'+String(r.date||'')+'|'+String(r.amount||''));
@@ -4827,19 +4935,21 @@ function naturalKey(tab,r){
 function dbSnapshot(){
   const snap={},gone=pendingDeletes();
   DB_TABS.forEach(([k])=>{
-    const ids=new Set((gone[DB_TO_TAB[k]]||[]).map(String)),keys=new Set();
+    const ids=new Set((gone[DB_TO_TAB[k]]||[]).map(String)),keys=new Set(),names=new Set();
     (DB[k]||[]).forEach(r=>{
       if(r&&r.id)ids.add(String(r.id));
+      if(k==='employees'&&keyOf(r&&r.name))names.add(keyOf(r.name));
       const nk=r?naturalKey(k,r):'';
       if(nk)keys.add(nk);
     });
-    snap[k]={ids,keys};
+    snap[k]={ids,keys,names};
   });
   return snap;
 }
 function alreadyIn(snap,tab,r){
   const s=snap[tab];if(!s)return false;
   if(r.id&&s.ids.has(String(r.id)))return true;
+  if(tab==='employees'&&!r.id)return !!(keyOf(r.name)&&s.names&&s.names.has(keyOf(r.name)));
   const nk=naturalKey(tab,r);
   return !!(nk&&s.keys.has(nk));
 }
@@ -4931,8 +5041,8 @@ function addRecordsFromFile(inp){
       copy of a row the Sheet has is then skipped instead of being sent over the Sheet's
       newer one on the next push);
    2) a row already here is skipped — the same id, the same entry under another id
-      (an employee by name, the rest by person/client + date + amount), or a row deleted
-      here that is still waiting to leave the Sheet;
+      (legacy employees without IDs by name; other tabs by person/client + date + amount),
+      or a row deleted here that is still waiting to leave the Sheet;
    3) the rest is added, marked "not sent yet", for the next 🔄 Push app data to Sheet.
    Nothing is replaced or deleted. If the Sheet cannot be read, nothing is added at all. */
 async function addMissingRecords(data,from){

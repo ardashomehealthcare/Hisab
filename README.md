@@ -35,7 +35,7 @@ Hisab carries **`data/hisab-data.json`** — the employees, duty & leave rows, e
 
 * **The data comes from the Sheet.** Sign in with Google and the Sheet's rows are added on the device (pulled automatically on every start; **⬇ Load from Google Sheet** takes the Sheet as-is). While the file is empty there is nothing bundled to load — a new phone starts clean and fills from the Sheet.
 * **📥 Add missing records** (*All Records*) — while this file is empty (as now) it asks for a Hisab file on the phone: a *⬇ backup*, or an older copy of this records file. It **reads your Google Sheet first**, shows how many records are missing per tab, asks, and adds **only those**. Nothing is replaced or deleted, nothing the Sheet already has is added twice, and an old copy never goes over a newer one. If the Sheet cannot be read, nothing is added at all. (If this file carries records again, 📥 offers those the same way.)
-* **Duplicates are skipped** — an employee is matched by name, everything else by person/client + date + amount — so importing twice cannot double the books. A row deleted on the phone that has not left the Sheet yet is not brought back either.
+* **Employee entries are separate by ID** — adding the same name on the same or a different client creates a new row; ✎ edits the selected row. Name-based screens default to the newest active assignment. Backup imports match employee IDs (legacy ID-less employees fall back to name), so distinct IDs with the same name are kept. Other transactions still dedupe by person/client + date + amount when importing.
 * **One thing it cannot know:** a record deleted *after* the file was made, whose deletion has already reached the Sheet, comes back when the file is added — delete it again.
 * Added records are marked *not sent yet*, so **🔄 Push app data to Sheet** writes them into your own Sheet when you are ready.
 * The file is a plain Hisab backup (the same shape as *⬇ Download backup (JSON)*), so you can also edit it, or add it on a phone with **📥 Add missing records**. (*⬆ Import backup (JSON)* is different: it **replaces** everything on the phone, so records changed since go back to the file's version when you push, and entries typed in again are sent twice.)
@@ -114,27 +114,27 @@ This is the **arrangement the app writes into** — the column order of every ta
 * **Every write touches ONE row — a tab is never cleared.** A new entry is appended as one row, an edited entry rewrites its own row (`values:batchUpdate` on `<Tab>!A<row>`), a deleted entry removes its own row (`deleteDimension`). `values:clear` is not used by the sync at all any more — the one place it still exists is **🗑 Clear app data → *this device and the Google Sheet***, which is a deliberate wipe with two confirmations. The row to delete is found **by its own `id`** in the Sheet right before the delete, so rows that moved in the meantime cannot make the app delete the wrong one.
 * **A push reads and merges first, then writes only what differs.** Press **🔄 Push app data to Sheet** (on the *Google Sheet* tab and in *All Records*) and it reads all five tabs, merges them with this device by `id` — this device wins for its unsent changes, the Sheet's copy wins for anything newer there, rows only the Sheet has are kept, rows only this device has are added — and then writes just those rows. A phone that holds 3 rows can no longer delete the 500 it has never seen. One push runs at a time, and a push whose books already match writes nothing at all.
 * **An empty Sheet never empties a device, and a cleared device never writes.** If a tab comes back empty while this device holds rows, the rows are kept, marked *not sent yet* and the app says so — pressing the push puts them back. A device that was deliberately **cleared** refuses to push instead of overwriting the Sheet with nothing.
-* **Each row carries `updatedAt`** (ISO stamp, a column of its own at the end of every tab, added to an older Sheet the first time the app writes there). When both phones hold the same row, the newer stamp wins — the last write wins *per row*, not per Sheet.
+* **Each row carries `updatedAt`** (an ISO stamp used for per-row conflict resolution). The app appends missing optional metadata columns to older Sheets without moving existing columns. When both phones hold the same row, the newer stamp wins — the last write wins *per row*, not per Sheet.
 * **Rows in an older column order are repaired by the same push.** The app reads them with the arrangement they really hold (see below) *and* rewrites those rows in the Sheet's own current order when you press 🔄 Push — one row at a time, nothing deleted. The app tells you on the *Google Sheet* tab when a tab is still in the old arrangement or has rows in an older order.
 * If the Sheet does not have a column the app needs at all, the app says which one — it never guesses and never shifts values into the wrong column.
 
 | Tab | Columns (A → …) |
 |---|---|
-| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` • `updatedAt` |
-| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` • `updatedAt` |
+| **Employees** | `id` • `name` • `phone` • `wageType` • `wageAmount` • `dutyHours` • `dutyTime` • `joinDate` • `clientDutyStartDate` • `client` • `clientPhone` • `clientDeal` • `savedAt` • `createdAt` • `updatedAt` |
+| **DutyLeave** | `id` • `empName` • `type` • `from` • `fromTime` • `to` • `toTime` • `days` • `client` • `savedAt` • `forEmp` • `wageType` • `wageAmount` • `reason` • `notes` • `employeeIds` • `createdAt` • `updatedAt` |
 | **EmployeePayments** | `id` • `empName` • `date` • `amount` • `payType` • `mode` • `savedAt` • `periodFrom` • `periodTo` • `invoiceNo` • `summary` • `balance` • `updatedAt` |
 | **ClientReceipts** | `id` • `client` • `clientPhone` • `date` • `amount` • `empName` • `mode` • `savedAt` • `clientAddress` • `invoiceNo` • `dealAmount` • `updatedAt` |
 | **Expenses** | `id` • `item` • `date` • `amount` • `savedAt` • `updatedAt` |
 
 Where each value comes from:
 
-* **`updatedAt`** is the last column of every tab: an ISO stamp (`2026-09-25T09:12:33.114Z`) the app
-  writes on every change to that row. It is what makes two partners safe on one Sheet — when both
-  phones hold the same row, the newer stamp wins. A Sheet that does not have the column yet gets it
-  at the end of row 1 the first time the app writes there; nothing else in the Sheet's order changes.
+* **`updatedAt`** is an ISO stamp (`2026-09-25T09:12:33.114Z`) the app writes on every change to a
+  row. It is what makes two partners safe on one Sheet — when both phones hold the same row, the
+  newer stamp wins. New optional metadata columns (`createdAt`, `employeeIds`) are appended to older
+  Sheets on first write; existing columns are never moved.
 
-* **Employees** — the last three client boxes of the *Add employee* form are the Sheet's `clientDutyStartDate`, `clientPhone` and `clientDeal` columns. Typing a client name fills the phone and the deal automatically from Money Entry (the client's last receipt); press **✎** on any row to edit it later.
-* **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries `Assignment completed` in `reason` plus `Employee duty ended` / `Client service ended` in `notes`.
+* **Employees** — every *Add employee* submit makes a separate row, even for a repeated name/client; **✎** edits the selected row by ID. The last three client boxes are `clientDutyStartDate`, `clientPhone` and `clientDeal`; typing a client name can fill its phone/deal from the latest receipt. `createdAt` records when that assignment row was added.
+* **DutyLeave** — a substitute row carries the covering person in `empName`, the person on leave in `forEmp`, `daily` in `wageType` and the substitute's wage in `wageAmount`; an **End employee duty / End client duty** row carries affected employee row IDs in `employeeIds`, plus `Assignment completed` in `reason` and the corresponding end-duty text in `notes`.
 * **12-hour duty has no day/night column in the new layout** — the ☀️ day / 🌙 night choice travels in `dutyTime` (that column only holds a start time for 24-hour duty) and comes back as day/night duty on every device. While a Sheet still has the older `dutyShift` column, that column keeps being filled as well.
 * Nothing is dropped while your Sheet is still in the older arrangement: the app also keeps filling the old `dutyShift` (Employees) and `byShifts` / `subWage` (DutyLeave) columns until the tabs are rewritten.
 * Amounts and dates are written as **plain text** (`RAW`), so nothing is re-typed by Google Sheets and what you entered is what comes back.
