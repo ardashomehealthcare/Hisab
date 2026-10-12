@@ -24,8 +24,8 @@ const CODE = (HTML.match(/<script(?![^>]*src=)[^>]*>([\s\S]*?)<\/script>/g) || [
 
 const TABS = ['Employees', 'DutyLeave', 'EmployeePayments', 'ClientReceipts', 'Expenses'];
 const HEADERS = {
-  Employees: ['id', 'name', 'phone', 'wageType', 'wageAmount', 'dutyHours', 'dutyTime', 'joinDate', 'clientDutyStartDate', 'client', 'clientPhone', 'clientDeal', 'savedAt', 'updatedAt'],
-  DutyLeave: ['id', 'empName', 'type', 'from', 'fromTime', 'to', 'toTime', 'days', 'client', 'savedAt', 'forEmp', 'wageType', 'wageAmount', 'reason', 'notes', 'updatedAt'],
+  Employees: ['id', 'name', 'phone', 'wageType', 'wageAmount', 'dutyHours', 'dutyTime', 'joinDate', 'clientDutyStartDate', 'client', 'clientPhone', 'clientDeal', 'savedAt', 'createdAt', 'updatedAt'],
+  DutyLeave: ['id', 'empName', 'type', 'from', 'fromTime', 'to', 'toTime', 'days', 'client', 'savedAt', 'forEmp', 'wageType', 'wageAmount', 'reason', 'notes', 'employeeIds', 'createdAt', 'updatedAt'],
   EmployeePayments: ['id', 'empName', 'date', 'amount', 'payType', 'mode', 'savedAt', 'periodFrom', 'periodTo', 'invoiceNo', 'summary', 'balance', 'updatedAt'],
   ClientReceipts: ['id', 'client', 'clientPhone', 'date', 'amount', 'empName', 'mode', 'savedAt', 'clientAddress', 'invoiceNo', 'dealAmount', 'updatedAt'],
   Expenses: ['id', 'item', 'date', 'amount', 'savedAt', 'updatedAt']
@@ -44,9 +44,9 @@ function rowFor(tab, id, extra = {}) {
 function colsToRow(tab, values) {           // values: {id, amount…} → a full row in header order
   return HEADERS[tab].map(h => (values[h] === undefined || values[h] === null) ? '' : String(values[h]));
 }
-function rowToObj(tab, row) {
+function rowToObj(tab, row, headers = HEADERS[tab]) {
   const o = {};
-  HEADERS[tab].forEach((h, i) => { o[h] = row[i] === undefined ? '' : String(row[i]); });
+  headers.forEach((h, i) => { o[h] = row[i] === undefined ? '' : String(row[i]); });
   return o;
 }
 
@@ -173,12 +173,15 @@ function makeDom() {
   const el = () => new Proxy({ _t: 0, value: '', checked: false, textContent: '', innerHTML: '', options: [], dataset: {}, style: {}, classList: { toggle() { }, add() { }, remove() { } } }, {
     get(t, k) {
       if (k in t) return t[k];
+      if (k === 'insertAdjacentHTML') return (_where, html) => { t.innerHTML += String(html || ''); };
       if (k === Symbol.iterator) return [][Symbol.iterator].bind([]);
       if (typeof k === 'string' && /^on/.test(k)) return null;
       return (...a) => el();
     },
     set(t, k, v) { t[k] = v; return true; }
   });
+  const elements = new Map();
+  const cached = key => { if (!elements.has(key)) elements.set(key, el()); return elements.get(key); };
   const store = {};
   const localStorage = {
     getItem: k => (k in store ? store[k] : null),
@@ -188,14 +191,14 @@ function makeDom() {
   };
   Object.defineProperty(localStorage, '_store', { value: store, enumerable: false });
   const document = {
-    getElementById: () => el(),
-    querySelector: () => el(),
+    getElementById: id => cached('id:'+id),
+    querySelector: selector => cached('selector:'+selector),
     querySelectorAll: () => [],
     createElement: () => el(),
     body: el(),
     addEventListener() { }
   };
-  return { document, localStorage, store, el };
+  return { document, localStorage, store, el, elements };
 }
 
 /* ------------------------------------------------------------------ boot the app */
@@ -250,7 +253,7 @@ const eq = (a, b, msg) => ok(JSON.stringify(a) === JSON.stringify(b), msg + (JSO
 const objFromHeads = (heads, row) => { const o = {}; heads.forEach((h, i) => { o[h] = String(row[i] ?? ''); }); return o; };
 const dataRows = (sh, tab) => {
   const g = sh.grid.slice(1).filter(r => r.some(v => String(v ?? '').trim() !== ''));
-  return g.map(r => rowToObj(tab, r));
+  return g.map(r => rowToObj(tab, r, sh.grid[0] || HEADERS[tab]));
 };
 const idsOf = (sh, tab) => dataRows(sh, tab).map(r => r.id);
 const writes = (calls) => calls.filter(c => c.method !== 'GET');
@@ -700,6 +703,184 @@ console.log('\n20. An optional second Sheet receives a complete backup snapshot 
   await t.$(`backupToSheet({interactive:false})`);
   ok(idsOf(t.sheet('ClientReceipts'), 'ClientReceipts').includes('NEW'), 'the backup snapshot writes a local row to the second Sheet');
   ok(t.$('DB.receipts.some(r=>r.id==="NEW" && r.synced===false)'), 'making a backup does not mark a primary row as synced');
+}
+
+console.log('\n21. Adding the same employee name on the same or another client creates separate rows; pencil edits only its chosen ID');
+{
+  const oldEmp = { id: 'OLD-RAVI', name: 'Ravi Kumar', client: 'Client A', savedAt: '2025-01-01, 9:00:00 am', synced: true };
+  const oldEnd = { id: 'OLD-END', empName: 'Ravi Kumar', client: 'Client A', type: 'endEmployeeDuty', to: '2025-02-01', createdAt: '2025-02-01T09:00:00.000Z', savedAt: '2025-02-01, 9:00:00 am', synced: true };
+  const t = boot({ token: false, device: { employees: [oldEmp], dutyLeave: [oldEnd] } });
+  await sleep(30);
+  const setForm = ({ name, client }) => {
+    const d = t.ctx.document;
+    d.getElementById('eName').value = name;
+    d.getElementById('ePhone').value = '9876543210';
+    d.getElementById('eWageType').value = 'daily';
+    d.getElementById('eWage').value = '700';
+    d.getElementById('eDuty').value = '';
+    d.getElementById('eTime').value = '';
+    d.getElementById('eJoin').value = '2026-10-12';
+    d.getElementById('eClient').value = client;
+    d.getElementById('eClientStart').value = '';
+    d.getElementById('eClientPhone').value = '';
+    d.getElementById('eClientDeal').value = '';
+    t.$('saveEmployee()');
+  };
+  setForm({ name: 'Ravi Kumar', client: 'Client A' });
+  setForm({ name: 'Ravi Kumar', client: 'Client A' });
+  setForm({ name: 'Ravi Kumar', client: 'Client B' });
+  const added = t.$('DB.employees.filter(e=>e.id!=="OLD-RAVI")');
+  eq(t.$('DB.employees.length'), 4, 'three submits made three new records despite repeated name/client');
+  eq(new Set(added.map(e => e.id)).size, 3, 'each repeated-name employee record has a different ID');
+  eq(added.map(e => e.client).join('|'), 'Client A|Client A|Client B', 'the new rows retain same-client and other-client assignments');
+  eq(t.$('findEmpByName("Ravi Kumar").client'), 'Client B', 'name-based screens use the newest active assignment');
+  eq(t.$('DB.employees.filter(e=>!isEmployeeEnded(e)).length'), 3, 'the earlier ended employee does not hide the new assignments');
+  const tbody = t.ctx.document.querySelector('#empTable tbody').innerHTML;
+  eq((tbody.match(/<tr/g) || []).length, 3, 'all three new records render in Employees while the old ended record stays hidden');
+
+  const chosen = added[1];
+  t.$(`editEmployee('${chosen.id}')`);
+  t.ctx.document.getElementById('eName').value = 'Ravi Kumar Updated';
+  t.ctx.document.getElementById('eClient').value = 'Client C';
+  t.$('saveEmployee()');
+  eq(t.$('DB.employees.length'), 4, 'editing by pencil does not create a fifth row');
+  eq(t.$(`DB.employees.find(e=>e.id==="${chosen.id}").name`), 'Ravi Kumar Updated', 'the pencil updates the selected record even if its name changes');
+  eq(t.$(`DB.employees.find(e=>e.id==="${chosen.id}").client`), 'Client C', 'the pencil edits the chosen record’s client');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="OLD-RAVI"))'), true, 'editing another row does not reactivate the old ended record');
+}
+
+console.log('\n22. End duty and reactivation apply to one employee row; later same-client postings remain active');
+{
+  const employees = [
+    { id: 'DUP-A1', name: 'Same Name', client: 'Client A', wageType: 'monthly', wageAmount: '18000', createdAt: '2025-01-01T00:00:00.000Z', synced: true },
+    { id: 'DUP-A2', name: 'Same Name', client: 'Client A', wageType: 'daily', wageAmount: '700', createdAt: '2025-02-01T00:00:00.000Z', synced: true },
+    { id: 'DUP-B1', name: 'Same Name', client: 'Client B', wageType: 'daily', wageAmount: '650', createdAt: '2025-03-01T00:00:00.000Z', synced: true }
+  ];
+  const t = boot({ token: false, device: { employees } });
+  await sleep(25);
+  t.ctx.document.getElementById('cbEmpSel').value = 'DUP-A1';
+  t.$('endEmployeeDuty()');
+  eq(t.$('DB.dutyLeave.find(r=>r.type==="endEmployeeDuty").employeeIds.join()'), 'DUP-A1', 'an end-duty row records the selected employee ID');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A1"))'), true, 'the selected employee is ended');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A2"))'), false, 'a duplicate name on the same client is not ended');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-B1"))'), false, 'the same name on another client is not ended');
+
+  t.$(`reactivateEmployee('DUP-A1')`);
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A1"))'), false, 'reactivating the selected row makes it active again');
+
+  t.ctx.document.getElementById('cbClient').value = 'Client A';
+  t.$('endClientDuty()');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A1"))'), true, 'ending the client marks its current assignments ended');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A2"))'), true, 'all existing entries at that client are in the client-end snapshot');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-B1"))'), false, 'client end does not affect another client');
+  t.$(`reactivateEmployee('DUP-A1')`);
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A1"))'), false, 'reactivating a row removes only its ID from the client-end snapshot');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="DUP-A2"))'), true, 'the other employee entry at the client remains ended');
+  eq(t.$('isClientEnded("Client A")'), false, 'reactivating an employee makes their client available again');
+
+  const d = t.ctx.document;
+  d.getElementById('eName').value = 'Same Name';
+  d.getElementById('ePhone').value = '';
+  d.getElementById('eWageType').value = 'daily';
+  d.getElementById('eWage').value = '700';
+  d.getElementById('eDuty').value = '';
+  d.getElementById('eTime').value = '';
+  d.getElementById('eJoin').value = '2026-10-12';
+  d.getElementById('eClient').value = 'Client A';
+  d.getElementById('eClientStart').value = '';
+  d.getElementById('eClientPhone').value = '';
+  d.getElementById('eClientDeal').value = '';
+  t.$('saveEmployee()');
+  const newest = t.$('DB.employees[DB.employees.length-1]');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="'+newest.id+'"))'), false, 'a new same-client assignment added after the end event is active');
+  eq(t.$('DB.employees.length'), 4, 'the new same-client posting is stored as a distinct employee row');
+}
+
+console.log('\n23. Backup merge uses employee IDs so repeated names in a file are kept as separate records');
+{
+  const t = boot({ token: false, device: { employees: [{ id: 'FILE-E1', name: 'Ravi Kumar', client: 'Client A' }] } });
+  t.$(`mergeIncludedData({employees:[{id:'FILE-E2',name:'Ravi Kumar',client:'Client A'},{id:'FILE-E3',name:'Ravi Kumar',client:'Client B'}]})`);
+  eq(t.$('DB.employees.length'), 3, 'two distinct backup IDs with the same name are both added');
+  eq(t.$('DB.employees.map(e=>e.client).join("|")'), 'Client A|Client A|Client B', 'same-client and other-client employee rows remain distinct');
+  t.$(`mergeIncludedData({employees:[{name:'Ravi Kumar',client:'Client Z'}]})`);
+  eq(t.$('DB.employees.length'), 3, 'an older ID-less import still deduplicates by name against current rows');
+}
+
+console.log('\n24. Older Google Sheets get the assignment identity columns appended without reordering existing columns');
+{
+  const employeeHeaders = HEADERS.Employees.filter(h => h !== 'createdAt');
+  const dutyHeaders = HEADERS.DutyLeave.filter(h => h !== 'employeeIds' && h !== 'createdAt');
+  const t = boot({
+    token: true,
+    headers: { Employees: employeeHeaders, DutyLeave: dutyHeaders },
+    device: {
+      employees: [{ id: 'MIG-E1', name: 'Same Name', client: 'Client A', createdAt: '2026-10-12T08:00:00.000Z', updatedAt: '2026-10-12T08:00:00.000Z', synced: false }],
+      dutyLeave: [{ id: 'MIG-D1', empName: 'Same Name', type: 'endEmployeeDuty', employeeIds: ['MIG-E1'], createdAt: '2026-10-12T09:00:00.000Z', updatedAt: '2026-10-12T09:00:00.000Z', synced: false }]
+    }
+  });
+  await sleep(30);
+  await t.ctx.syncAll();
+  const empHeads = t.sheet('Employees').grid[0];
+  const dutyHeads = t.sheet('DutyLeave').grid[0];
+  eq(empHeads.slice(0, employeeHeaders.length).join('|'), employeeHeaders.join('|'), 'existing Employees columns stay in their original order');
+  ok(empHeads.includes('createdAt'), 'createdAt is added to the Employees tab');
+  eq(dutyHeads.slice(0, dutyHeaders.length).join('|'), dutyHeaders.join('|'), 'existing DutyLeave columns stay in their original order');
+  ok(dutyHeads.includes('employeeIds') && dutyHeads.includes('createdAt'), 'employeeIds and createdAt are added to DutyLeave');
+  eq(dataRows(t.sheet('Employees'), 'Employees').find(r => r.id === 'MIG-E1').createdAt, '2026-10-12T08:00:00.000Z', 'employee assignment creation time reaches the Sheet');
+  eq(JSON.parse(dataRows(t.sheet('DutyLeave'), 'DutyLeave').find(r => r.id === 'MIG-D1').employeeIds).join(), 'MIG-E1', 'the end-duty row keeps its employee ID snapshot');
+}
+
+console.log('\n25. A legacy client-end row can be reactivated for one employee without restoring every posting');
+{
+  const t = boot({ token: false, device: {
+    employees: [
+      { id: 'LEG-E1', name: 'Legacy Name', client: 'Legacy Client', savedAt: '2024-01-01T09:00:00.000Z', synced: true },
+      { id: 'LEG-E2', name: 'Legacy Name', client: 'Legacy Client', savedAt: '2024-03-01T09:00:00.000Z', synced: true }
+    ],
+    dutyLeave: [{ id: 'LEG-C1', type: 'endClientDuty', client: 'Legacy Client', to: '2024-04-01', savedAt: '2024-04-01T10:00:00.000Z', synced: true }]
+  } });
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="LEG-E1"))'), true, 'the old client-end row marks its prior assignments ended');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="LEG-E2"))'), true, 'all legacy postings at that client start as ended');
+  t.$(`reactivateEmployee('LEG-E1')`);
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="LEG-E1"))'), false, 'reactivation converts the old client-end row to an ID snapshot and restores the chosen record');
+  eq(t.$('isEmployeeEnded(DB.employees.find(e=>e.id==="LEG-E2"))'), true, 'the other legacy posting remains ended');
+  eq(t.$('isClientEnded("Legacy Client")'), false, 'the client is available because one employee was reactivated');
+}
+
+console.log('\n26. Repeated-name employee rows sync separately, and editing one rewrites only its own Sheet row');
+{
+  const t = boot({ token: true });
+  await sleep(50);
+  const add = client => {
+    const d = t.ctx.document;
+    d.getElementById('eName').value = 'Cloud Duplicate';
+    d.getElementById('ePhone').value = '';
+    d.getElementById('eWageType').value = 'daily';
+    d.getElementById('eWage').value = '700';
+    d.getElementById('eDuty').value = '';
+    d.getElementById('eTime').value = '';
+    d.getElementById('eJoin').value = '2026-10-12';
+    d.getElementById('eClient').value = client;
+    d.getElementById('eClientStart').value = '';
+    d.getElementById('eClientPhone').value = '';
+    d.getElementById('eClientDeal').value = '';
+    t.$('saveEmployee()');
+  };
+  add('Client A'); await sleep(30);
+  add('Client A'); await sleep(30);
+  let rows = dataRows(t.sheet('Employees'), 'Employees').filter(r => r.name === 'Cloud Duplicate');
+  eq(rows.length, 2, 'both same-name submissions are appended to the Sheet');
+  eq(new Set(rows.map(r => r.id)).size, 2, 'the Sheet rows have distinct IDs');
+  const chosen = t.$('DB.employees[0].id');
+  t.$(`editEmployee('${chosen}')`);
+  t.ctx.document.getElementById('eWage').value = '900';
+  t.$('saveEmployee()');
+  const push = t.$('pushPromise');
+  if (push) await push;
+  rows = dataRows(t.sheet('Employees'), 'Employees').filter(r => r.name === 'Cloud Duplicate');
+  eq(rows.length, 2, 'editing does not append a third Sheet row');
+  eq(rows.find(r => r.id === chosen).wageAmount, '900', 'the selected row is updated in place');
+  eq(rows.find(r => r.id !== chosen).wageAmount, '700', 'the other same-name row is unchanged');
 }
 
 console.log(`\n${pass} passed, ${fail} failed\n`);

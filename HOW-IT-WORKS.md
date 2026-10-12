@@ -33,14 +33,15 @@ server — the rules below run in the browser each time the screen is drawn.
 
 | Table (local) | Tab | Columns |
 |---|---|---|
-| `employees` | **Employees** | `id` `name` `phone` `wageType` `wageAmount` `dutyHours` `dutyTime` `joinDate` `clientDutyStartDate` `client` `clientPhone` `clientDeal` `savedAt` `updatedAt` |
-| `dutyLeave` | **DutyLeave** | `id` `empName` `type` `from` `fromTime` `to` `toTime` `days` `client` `savedAt` `forEmp` `wageType` `wageAmount` `reason` `notes` `updatedAt` |
+| `employees` | **Employees** | `id` `name` `phone` `wageType` `wageAmount` `dutyHours` `dutyTime` `joinDate` `clientDutyStartDate` `client` `clientPhone` `clientDeal` `savedAt` `createdAt` `updatedAt` |
+| `dutyLeave` | **DutyLeave** | `id` `empName` `type` `from` `fromTime` `to` `toTime` `days` `client` `savedAt` `forEmp` `wageType` `wageAmount` `reason` `notes` `employeeIds` `createdAt` `updatedAt` |
 | `payments` | **EmployeePayments** | `id` `empName` `date` `amount` `payType` `mode` `savedAt` `periodFrom` `periodTo` `invoiceNo` `summary` `balance` `updatedAt` |
 | `receipts` | **ClientReceipts** | `id` `client` `clientPhone` `date` `amount` `empName` `mode` `savedAt` `clientAddress` `invoiceNo` `dealAmount` `updatedAt` |
 | `expenses` | **Expenses** | `id` `item` `date` `amount` `savedAt` `updatedAt` |
 
-`updatedAt` is the last column of every tab: an ISO stamp (`2026-09-25T09:12:33.114Z`) written on
-every change to that row. It decides which copy of a row wins when two devices hold it — see §12.
+`updatedAt` is the row-sync stamp: an ISO value (`2026-09-25T09:12:33.114Z`) written on every
+change. It decides which copy wins when two devices hold the same row — see §12. Older Sheets keep
+their existing column order; the app appends the new optional metadata columns when needed.
 
 `dutyLeave.type` is the state machine of the business:
 
@@ -80,9 +81,10 @@ written into the Sheet as **text** (`valueInputOption=RAW`) so Google never re-t
 
 ## 4. Employees tab
 
-* **Add** — type a name; if that name already exists (case-insensitive) the record is
-  **updated** instead of duplicated, so re-submitting is the edit path. **✎** on a row loads
-  the whole record back into the form.
+* **Add** — every submit creates a new employee/posting record, even if the name and client
+  already appear. Each row has its own ID and `createdAt`, so the same person can be entered
+  again for the same or a different client. **✎** loads one row; submitting in edit mode updates
+  only that row by ID (including a name change).
 * **Duty fields** — `daily` wage → hourly fields hidden. `monthly` + `24 hour` → duty start
   time. `monthly` + `12 hour` → ☀️ day / 🌙 night.
 * **Day/night storage** — the new arrangement has no day/night column, so a 12-hour duty
@@ -92,7 +94,8 @@ written into the Sheet as **text** (`valueInputOption=RAW`) so Google never re-t
   client name auto-fills phone + deal from that client's newest receipt, so the client's
   details live on the employee row as well.
 * **Where employees are used** — salary calculator, leave/substitute pickers, billing
-  calculator, duty windows.
+  calculator, duty windows. These name-based screens default to the newest active employee row
+  when a person has multiple postings.
 
 ---
 
@@ -130,17 +133,19 @@ On-leave card / join box:
 
 | Action | Writes | Effect |
 |---|---|---|
-| ⏹ End employee duty | `type:'endEmployeeDuty'`, `to:<today>`, `toTime` (asked only for 24-hr employees — blank = normal duty time), `reason` (asked, default `Assignment completed`), `notes:'Employee duty ended'` | The employee disappears from active lists and pickers; the **salary window closes** on that date, at that hour |
-| 🛑 End client duty | `type:'endClientDuty'`, `to:<today>`, `client`, same `reason`/`notes` wording | The client and everyone posted there become inactive |
-| ↩ Re-activate (row button) | Deletes that end-duty row | They come back; the sheet is re-pushed |
+| ⏹ End employee duty | `type:'endEmployeeDuty'`, `employeeIds:[<employee row id>]`, `to:<today>`, `toTime` (asked only for 24-hr employees), `createdAt`, `reason`, `notes` | Only that row becomes inactive; the **salary window closes** for it |
+| 🛑 End client duty | `type:'endClientDuty'`, `employeeIds:[<current employee row ids>]`, `client`, `to:<today>`, `createdAt`, `reason`, `notes` | Current postings at that client become inactive; later new postings are separate and active |
+| ↩ Re-activate (row button) | Removes that employee ID from the end snapshot (or deletes its individual end row) | That row comes back without reactivating other same-name entries; sync updates the Sheet |
 
 For a 24-hour employee the dialog first asks the reason and then the **time the duty ended**
 (blank, or a full shift, keeps the usual duty time = a whole day). That time lands in the
 `toTime` column of the DutyLeave row, so the last part shift is paid by its hours.
 
-“Ended” is derived, never stored: `endedState()` scans the DutyLeave rows and any employee
-whose name — or whose client — has an end row is treated as inactive. Showing them again is a
-checkbox (*Show ended employees*), and no record, invoice or salary is touched.
+“Ended” is derived from the `employeeIds` snapshot in each DutyLeave end row. A later posting
+has a new employee-row ID and its `createdAt`, so an older end event does not hide it even when
+name and client repeat. Old end rows without IDs are read compatibly using their saved time and
+name/client. The *Show ended employees* checkbox reveals ended rows; reactivation preserves the
+other postings and their history.
 
 ---
 
@@ -362,10 +367,11 @@ Two extra safety rules fall out of that:
 One push runs at a time (`pushPromise`): a button pressed twice, or a delete that also syncs, joins
 the push already running instead of racing it.
 
-**Every row carries `updatedAt`** — an ISO stamp written by the app on every change, in a column of
-its own at the end of each tab. A Sheet that does not have that column yet gets it the first time
-the app writes there (one cell, `…!<col>1`), and `missingSheetCols()` never reports it as a missing
-column. Submits append one row straight away with the same stamp.
+**Every row carries `updatedAt`** — an ISO stamp written by the app on every change. A Sheet that
+does not have it yet gets it on the first write, and `missingSheetCols()` never reports it as
+missing. `createdAt` and `employeeIds` are optional metadata columns added at the end of older
+Sheets when needed; existing columns are never moved. Submits append one row straight away with the
+same sync stamp.
 
 * Missing tabs are created on sign-in (`ensureTabs`), with their header row; the same call records
   each tab's `sheetId`, which is what a single-row delete needs.
@@ -405,8 +411,7 @@ use and where it came from, and the last error.
 ### 12.0 How this is tested (no Google account needed)
 `node tools/sync-engine.test.mjs` extracts the `<script>` out of `index.html`, runs it in a Node VM
 with a stubbed DOM/localStorage, and talks to an **in-memory mock of the Sheets API** that logs
-every request. 78 assertions cover: a push from a
-device holding fewer rows deletes nothing; the
+every request. **141 assertions** cover: a push from a device holding fewer rows deletes nothing; the
 10 rows another phone added meanwhile survive; deleting one entry removes exactly its own row;
 a cleared device's push writes nothing at all; a Sheet that comes back empty keeps the device's
 rows and puts them back; one `sendRecord` appends one row and adds the `updatedAt` column; the
@@ -414,9 +419,12 @@ newer `updatedAt` wins in both directions; a row in the old column order is repa
 a Sheet in the older arrangement is never re-ordered; phone A → phone B handoff writes nothing
 twice; an entry saved while a push runs lands once; a push that fails half-way does not duplicate
 on retry; **a Sheet that lost most of a tab takes nothing from the phone, and one push puts it
-all back**; one row deleted on the other phone still leaves this phone; and every button on the
-page calls a function that exists. Run the same suite against `git show HEAD:index.html` and
-scenario 1 fails with **5 × `values:clear`** — that is the "whole Sheet went empty" bug this
+all back**; one row deleted on the other phone still leaves this phone; repeated employee names
+create separate local and Sheet rows; name-based screens use the newest active assignment; pencil
+edits update only the selected row; end-duty and reactivation affect only the targeted assignment;
+legacy client-end rows remain reactivatable; and every button on the page calls a function that
+exists. Run the same suite against `git show HEAD:index.html` and scenario 1 fails with **5 ×
+`values:clear`** — that is the "whole Sheet went empty" bug this
 engine replaced.
 
 `node tools/stamp-image.test.mjs` runs the real render code out of `index.html` against a stub
@@ -545,14 +553,15 @@ tables.
   4. they are sent by the next 🔄 Push app data to Sheet.
   Reading the Sheet first is what makes an old file safe: a row the Sheet still has is skipped
   instead of being queued, so the file's older copy can never be written over a newer one.
-* **Duplicates are skipped** against a snapshot taken *before* the merge: employees by name,
-  everything else by person/client + date + amount. Two identical rows that really are two rows
-  are both kept; importing twice cannot double the books. A row deleted on this device that is still
-  waiting to leave the Sheet (`hisabPendingDeletes_v1`) counts as there and is not brought back.
+* **Duplicates are skipped** against a snapshot taken *before* the merge: employee rows with IDs
+  are matched by ID (so different IDs with the same name/client remain separate); legacy employee
+  rows without IDs fall back to name. Other tabs match by person/client + date + amount. Importing
+  the same backup twice cannot double the books. A row deleted on this device that is still waiting
+  to leave the Sheet (`hisabPendingDeletes_v1`) counts as there and is not brought back.
 * **Limits.** A record deleted *after* the file was made, whose deletion already reached the Sheet,
-  comes back when the file is added (nothing remembers it any more) — delete it again. And when a
-  file holds two identical rows but the Sheet kept only one, the second is taken for the same
-  entry and not added.
+  comes back when the file is added (nothing remembers it any more) — delete it again. For non-employee
+  transactions, if a file holds two identical entries but the Sheet kept only one, the duplicate is
+  treated as the same entry and is not added.
 * Added rows are marked **unsent**, so 🔄 Push app data to Sheet sends them to the Sheet when you
   are ready.
 
