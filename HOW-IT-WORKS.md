@@ -36,7 +36,7 @@ server — the rules below run in the browser each time the screen is drawn.
 | `employees` | **Employees** | `id` `name` `phone` `wageType` `wageAmount` `dutyHours` `dutyTime` `joinDate` `clientDutyStartDate` `client` `clientPhone` `clientDeal` `savedAt` `createdAt` `updatedAt` |
 | `dutyLeave` | **DutyLeave** | `id` `empName` `type` `from` `fromTime` `to` `toTime` `days` `client` `savedAt` `forEmp` `wageType` `wageAmount` `reason` `notes` `employeeIds` `createdAt` `updatedAt` |
 | `payments` | **EmployeePayments** | `id` `empName` `date` `amount` `payType` `mode` `savedAt` `periodFrom` `periodTo` `invoiceNo` `summary` `balance` `updatedAt` |
-| `receipts` | **ClientReceipts** | `id` `client` `clientPhone` `date` `amount` `empName` `mode` `savedAt` `clientAddress` `invoiceNo` `dealAmount` `updatedAt` |
+| `receipts` | **ClientReceipts** | `id` `client` `clientPhone` `date` `amount` `empName` `mode` `savedAt` `clientAddress` `invoiceNo` `dealAmount` `updatedAt` `periodFrom` `periodTo` `serviceDays` `serviceHours` `billAmount` `balance` `summary` |
 | `expenses` | **Expenses** | `id` `item` `date` `amount` `savedAt` `updatedAt` |
 
 `updatedAt` is the row-sync stamp: an ISO value (`2026-09-25T09:12:33.114Z`) written on every
@@ -70,7 +70,8 @@ also written into the Sheet **while that column exists there**, so an older Shee
 | Split over months | `splitAcrossMonths(from,to,total)` | Proportional to calendar days, last month absorbs rounding |
 | Days per month | `groupByMonth(dateSet)` | Simple count of dated days per `yyyy-mm` |
 | Pro-rata wage | in the calculators | `wage ÷ days-in-month × duty-days`, **month by month**, then summed |
-| Client deal proration | `proRateDeal(deal,from,to)` | Same rule against the monthly deal |
+| Client deal proration | `proRateDeal(deal,from,to[,dayMap])` | Same rule against the monthly deal; with a 24-hour duty the `dayMap` (hours ÷ 24 per month) is used |
+| 24-hr client duty | `client24For(client,from,to)` / `clientBillFor()` | The client's service window in hours, `days = hours ÷ 24`, month by month — see §9 |
 | Amount in words | `amountInWords` | Indian numbering (Thousand / Lakh / Crore) + “Rupees Only” |
 | Invoice numbers | `nextInvoiceNo` / `nextPayInvoiceNo` | Highest saved number + 1 → `INV-0001…`, `PAY-0001…` |
 
@@ -219,6 +220,14 @@ follows the hours instead of being rounded up to a whole day:
   remembered** from that client's newest receipt, so they only have to be typed once.
 * Invoice preview: `INV-####`, date, amount, amount-in-words, employee, mode — plus the round
   **RECEIVED** stamp carrying the company name on the border and the date. Bottom line: **Thank you**.
+* **Service period (`periodFrom` → `periodTo`)** is optional, but for a 24-hour client it is what
+  makes the invoice a *bill*: the app prints the same duty block the salary receipt has —
+  `Duty (24-hour): 2026-08-01 08:00 → 2026-08-15 14:00 (Raj)` / `Total duty days: 14.25 days
+  (342 hrs)` / `Leave: …` — then `Monthly deal / package`, `Caretaker services — 14.25 of 31 days
+  (342 hrs)` = the pro-rata bill, `Amount received this period`, and `Balance due` / `Advance`.
+  The period, the days, the hours, the bill, the balance and the duty summary text are saved on the
+  receipt (`periodFrom` `periodTo` `serviceDays` `serviceHours` `billAmount` `balance` `summary`),
+  so the Sheet row explains itself and the invoice re-prints with the same numbers.
 * Print / save as PDF; 🖼 save as PNG (html2canvas); 📲 WhatsApp → on a phone that can share
   files (Android Chrome, iPhone Safari) the **share sheet opens with the invoice image already
   attached and the message as the caption under it** — pick WhatsApp → the client → **Send**
@@ -259,8 +268,40 @@ follows the hours instead of being rounded up to a whole day:
 * Per month: `deal ÷ days-in-month × service days` = bill; **receipts dated in that month offset
   that month's bill** (so part-payments land in the right month); the difference is *due* or
   *advance*; totals are summed and a copy-message is generated.
-* *Record balance in Money Entry* prefills the receipt (`dealAmount` + balance), so the invoice
-  matches the bill.
+* *Record balance in Money Entry* prefills the receipt (`dealAmount`, the service period and the
+  balance), so the invoice matches the bill.
+
+### A 24-hour client duty is billed according to hours
+
+When the caregiver posted at that client is on a **24-hour duty**, the service days are no longer
+calendar days — they are hours, with the same arithmetic as the salary:
+
+```
+days = hours ÷ 24          8 AM → next 8 AM = 1 day, 8 AM → 2 PM = 0.25 day, 18 hrs = 0.75 day
+bill = deal ÷ days-in-month × days        (each month separately, then summed)
+```
+
+`client24For(client, from, to)` builds the client's service window from the columns:
+
+| Part | Read from |
+|---|---|
+| Start | the earliest `clientDutyStartDate` / `joinDate` of that client's Employees rows |
+| Start time | `dutyTime` of the 24-hour caregiver (or the **Duty start time** typed on the form) |
+| End | the newest `endClientDuty` / `endEmployeeDuty` (`to`); no end row = the period is still running |
+| End time | that end row's `toTime` (or the **Duty end time** typed on the form) |
+| Leave | `leave` rows of that caregiver — taken out of the served hours |
+| Substitute | `substitute` rows at that client — put the covered hours back, so a covered leave never cuts the bill |
+
+* **A shift belongs to the month it starts in** (`shiftDaysByMonth`), so 1 Aug 08:00 → 1 Sep 08:00 is
+  **31 August days = exactly one month's deal**, not 30.67 + 0.33 spread over two months.
+* A period that crosses a month is split by its shifts: 28 Jul 08:00 → 3 Aug 14:00 = **150 hrs =
+  6.25 days** → 4 July days (₹4,000 of a ₹31,000 deal) + 2.25 August days (₹2,250).
+* Part days always print with their hours — *“14.25 days (342 hrs)”*, *“day 15 = 0.25 day”*.
+* The same numbers are used by the salary receipt, the client invoice, the copy message and the
+  15-day collection reminder (`clientBillFor`), so no screen disagrees with another.
+* **No 24-hour duty time anywhere?** Nothing changes: the old calendar-day rule is used, and the
+  calculator says so on screen. A 12-hour duty (`dutyTime` = `day` / `night`) never enters the
+  hours rule.
 
 ---
 
@@ -426,6 +467,16 @@ legacy client-end rows remain reactivatable; and every button on the page calls 
 exists. Run the same suite against `git show HEAD:index.html` and scenario 1 fails with **5 ×
 `values:clear`** — that is the "whole Sheet went empty" bug this
 engine replaced.
+
+`node tools/client-billing.test.mjs` runs the same script against the same stub DOM and pins the
+client 24-hour rule with **51 assertions**: a client served 1 Aug 08:00 → 15 Aug 14:00 is billed
+**14.25 days (₹14,250)** instead of 15 calendar days (₹15,000); a duty with no end row bills whole
+shifts (30 × ₹1,000); a period crossing a month splits by the month each shift **starts** in
+(July 4 days ₹4,000 + August 2.25 days ₹2,250); a 6-hour leave takes exactly ₹250 off and a
+substitute covering it puts it back; a 12-hour duty and a missing duty time both stay on the
+calendar rule; the calculator, the invoice duty block and the saved receipt all carry the same
+numbers; and the seven new `ClientReceipts` columns are optional, so an older Sheet is upgraded
+on the next write instead of being reported as an old arrangement.
 
 `node tools/stamp-image.test.mjs` runs the real render code out of `index.html` against a stub
 DOM and pins down the stamp fix with 39 assertions: the stamp is drawn onto the canvas **once**,
@@ -619,6 +670,8 @@ repairs the Sheet row by row, so nothing is ever lost either way.
 * Money is counted by the **date the money moved**, duty is counted by **dates and times of duty**.
 * A 24-hour duty is one day when it runs the full shift; any part shift, late joining or early
   ending is paid by its hours (`hours ÷ 24`), and a part day always shows its hours next to it.
+* A **client** on a 24-hour duty is billed by exactly the same rule (`client24For` / `clientBillFor`),
+  and their invoice carries the same duty block as the salary receipt (§9).
 * A monthly wage is always `wage ÷ days-in-month × days actually served`, month by month.
 * A duty starts at the earlier of joining date / client duty start, and stops at an end-duty row.
 * Leave removes days from duty; a substitute adds its own paid days, priced from its row.

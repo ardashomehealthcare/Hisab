@@ -320,7 +320,7 @@
 <section class="tab" id="tab-money">
   <div class="card">
     <h2>Client payment received <span class="badge green">Money IN</span></h2>
-    <div class="hint">Type or choose a client, add the address if you have it — the invoice below auto-generates from this form. The <b>Deal amount</b> is the client's agreed monthly package; it is remembered per client and used by the client-billing calculator (Salary Calculator tab) if a client leaves mid-month. Client name &amp; address are editable.</div>
+    <div class="hint">Type or choose a client, add the address if you have it — the invoice below auto-generates from this form. The <b>Deal amount</b> is the client's agreed monthly package; it is remembered per client and used by the client-billing calculator (Salary Calculator tab) if a client leaves mid-month. For a <b>24-hour duty</b>, fill the <b>Service period</b> (From → To): the invoice then shows the duty hours and bills <b>deal ÷ days in month × (hours ÷ 24)</b>, exactly like the employee salary receipt.</div>
     <div class="grid">
       <div class="field"><label>Client name (editable)</label><input id="rClient" list="clientList" placeholder="Type or choose client" oninput="onClientNameChange();updateInvoicePreview()"></div>
       <div class="field"><label>Client address (editable)</label><input id="rAddr" placeholder="House no, street, city, PIN" oninput="updateInvoicePreview()"></div>
@@ -328,6 +328,8 @@
       <div class="field"><label>Date</label><input id="rDate" type="date" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Deal amount — monthly package (₹)</label><input id="rDeal" type="number" min="0" placeholder="e.g. 25000 / month" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>Amount received (₹)</label><input id="rAmt" type="number" min="0" placeholder="e.g. 25000" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Service period — From (24-hr duty)</label><input id="rFrom" type="date" oninput="updateInvoicePreview()"></div>
+      <div class="field"><label>Service period — To (24-hr duty)</label><input id="rTo" type="date" oninput="updateInvoicePreview()"></div>
       <div class="field"><label>For employee (optional)</label><select id="rEmpSel" class="empSelect" onchange="updateInvoicePreview()"></select></div>
       <div class="field"><label>Mode</label><select id="rMode" onchange="updateInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
     </div>
@@ -340,7 +342,7 @@
 
   <div class="card" id="invoiceCard" style="display:none;">
     <h2>Invoice preview <span class="badge blue">Auto-generated</span></h2>
-    <div class="hint">Invoice number, date, amount, amount-in-words, employee &amp; mode are filled automatically — only client name and address are editable (above).</div>
+    <div class="hint">Invoice number, date, amount, amount-in-words, employee &amp; mode are filled automatically — only client name and address are editable (above). With a <b>Service period</b> filled, the invoice also carries the duty block (<b>Total duty days: 14.25 days (342 hrs)</b>) and the pro-rata bill, the same way the employee salary receipt does.</div>
     <div id="invoicePrintArea" class="invoiceBox">
       <div class="invHead">
         <div>
@@ -360,18 +362,21 @@
           <div class="invRow">Bill To:</div>
           <b id="invClient">—</b>
           <div class="invAddr" id="invAddr">—</div>
+          <div class="invRow" id="invPeriodRow">Service period: <b id="invPeriod">—</b></div>
         </div>
       </div>
+      <div class="payDetail" id="invDetails" style="display:none;"></div>
       <div class="invTableWrap">
         <table class="invTable">
           <thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
           <tbody>
             <tr id="invDealRow" style="display:none;"><td id="invDealLabel">Monthly deal / package</td><td class="right money" id="invDealAmt">—</td></tr>
-            <tr><td id="invDesc">Caretaker services</td><td class="right money" id="invAmt">—</td></tr>
+            <tr id="invBillRow"><td id="invDesc">Caretaker services</td><td class="right money" id="invBillAmt">—</td></tr>
+            <tr id="invAmtRow" style="display:none;"><td id="invAmtLabel">Amount received this period</td><td class="right money" id="invAmt">—</td></tr>
           </tbody>
           <tfoot>
             <tr id="invBalRow" style="display:none;"><td class="right"><b id="invBalLabel">Balance due</b></td><td class="right money"><b id="invBal">—</b></td></tr>
-            <tr><td class="right"><b>Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr>
+            <tr><td class="right"><b id="invTotalLabel">Total</b></td><td class="right money"><b id="invTotal">—</b></td></tr>
           </tfoot>
         </table>
         <svg class="stamp" viewBox="0 0 200 200" aria-hidden="true">
@@ -529,6 +534,9 @@
       If a client <b>starts or discontinues service in the middle of a month</b>, pick the client and the service period (From → To).
       For <b>each calendar month</b> in the range the bill is <b>deal amount ÷ days in that month × service days</b>.
       Whatever the client <b>already paid in that same month</b> is subtracted from that month's bill, so each month shows its own balance; the balances are then totalled.
+      <br><b>24-hour duty:</b> when the caregiver posted at that client is on a 24-hr duty, the service days are counted in <b>hours</b> —
+      <b>days = hours ÷ 24</b> (8 AM → 2 PM = 0.25 day), the same rule as the employee salary. The duty time comes from the Employees row;
+      the closing time comes from the end-duty record, or type it below.
       The deal amount is the client's agreed monthly package — set it once in Money Entry and it is remembered here.
     </div>
     <div class="grid">
@@ -536,6 +544,8 @@
       <div class="field"><label>Monthly deal amount (₹)</label><input id="cbDeal" type="number" min="0" placeholder="Auto from last payment — edit if needed"></div>
       <div class="field"><label>Service from</label><input id="cbFrom" type="date"></div>
       <div class="field"><label>Service to</label><input id="cbTo" type="date"></div>
+      <div class="field" id="cbFromTField"><label>Duty start time (24 hr)</label><input id="cbFromT" type="time" placeholder="auto from Employees"></div>
+      <div class="field" id="cbToTField"><label>Duty end time (24 hr)</label><input id="cbToT" type="time" placeholder="auto from end-duty"></div>
       <div class="field"><label>Employee (to end that employee's duty)</label><select id="cbEmpSel" class="empSelect"></select></div>
     </div>
     <div class="actions">
@@ -718,7 +728,7 @@ let BACKUP_SPREADSHEET_ID=String(window.HISAB_BACKUP_SPREADSHEET_ID||'').trim();
    app itself (it is shown on the Google Sheet tab and in the 🩺 setup check), so two
    phones can be compared: a phone showing an older version is still serving a cached
    copy of index.html and has to reload before it presses anything that writes. */
-const APP_BUILD='2026-10-12 (separate employee assignments by ID • targeted end-duty reactivation • safe sync)';
+const APP_BUILD='2026-10-29 (24-hour client billing by hours • client invoice duty block • safe sync)';
 const KEY='hisabData_v1';
 let DB=load();
 function load(){
@@ -802,7 +812,8 @@ const TAB_TO_DB={Employees:'employees',DutyLeave:'dutyLeave',EmployeePayments:'p
      EmployeePayments id | empName | date | amount | payType | mode | savedAt | periodFrom |
                       periodTo | invoiceNo | summary | balance | updatedAt
      ClientReceipts   id | client | clientPhone | date | amount | empName | mode | savedAt |
-                      clientAddress | invoiceNo | dealAmount | updatedAt
+                      clientAddress | invoiceNo | dealAmount | updatedAt | periodFrom | periodTo |
+                      serviceDays | serviceHours | billAmount | balance | summary
      Expenses         id | item | date | amount | savedAt | updatedAt
 
    `updatedAt` is written by the app on every change (an ISO stamp, e.g. 2026-09-25T09:12:33.114Z).
@@ -819,12 +830,14 @@ const SHEET_COLS={
   Employees:['id','name','phone','wageType','wageAmount','dutyHours','dutyTime','joinDate','clientDutyStartDate','client','clientPhone','clientDeal','savedAt','createdAt','updatedAt'],
   DutyLeave:['id','empName','type','from','fromTime','to','toTime','days','client','savedAt','forEmp','wageType','wageAmount','reason','notes','employeeIds','createdAt','updatedAt'],
   EmployeePayments:['id','empName','date','amount','payType','mode','savedAt','periodFrom','periodTo','invoiceNo','summary','balance','updatedAt'],
-  ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','updatedAt'],
+  ClientReceipts:['id','client','clientPhone','date','amount','empName','mode','savedAt','clientAddress','invoiceNo','dealAmount','updatedAt',
+                   'periodFrom','periodTo','serviceDays','serviceHours','billAmount','balance','summary'],
   Expenses:['id','item','date','amount','savedAt','updatedAt']
 };
 /* columns the app writes but never complains about: a Sheet that does not have them yet
    is not "an old arrangement" — they are added by the app itself on the first write. */
-const OPTIONAL_SYNC_COLS=new Set(['updatedAt','createdAt','employeeIds']);
+const OPTIONAL_SYNC_COLS=new Set(['updatedAt','createdAt','employeeIds',
+  'periodFrom','periodTo','serviceDays','serviceHours','billAmount','balance','summary']);
 /* ids of rows deleted on THIS device that may still be sitting in the Sheet. They are
    removed from the Sheet one row at a time (never by clearing the tab), and until that
    has happened the row is not read back in — so a delete cannot undo itself. */
@@ -2018,7 +2031,7 @@ async function runPush(){
    from the API as serial numbers. Convert them back to yyyy-MM-dd / HH:mm. Rows written
    by this app go in as plain text (valueInputOption=RAW) and round-trip
    exactly as typed — which also kills the old "1899-12-30" time bug. */
-const DATE_COLS={Employees:['joinDate','clientDutyStartDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date'],Expenses:['date']};
+const DATE_COLS={Employees:['joinDate','clientDutyStartDate'],DutyLeave:['from','to'],EmployeePayments:['date','periodFrom','periodTo'],ClientReceipts:['date','periodFrom','periodTo'],Expenses:['date']};
 const TIME_COLS=new Set(['dutyTime','fromTime','toTime']);
 const SHEET_EPOCH=Date.UTC(1899,11,30); // Google Sheets serial 0
 const serialToDate=v=>new Date(SHEET_EPOCH+Math.round(v*86400000)).toISOString().slice(0,10);
@@ -3026,7 +3039,27 @@ function onClientNameChange(){
       if(prev.clientAddress&&!val('rAddr'))document.getElementById('rAddr').value=prev.clientAddress;
       if(prev.clientPhone&&!val('rPhone'))document.getElementById('rPhone').value=prev.clientPhone;
     }
+    /* a known client: the service period continues from the last receipt (or starts
+       on the duty start for a first payment), so a 24-hour duty is billed by its
+       hours for exactly the stretch this payment covers. Both dates stay editable. */
+    if(!val('rFrom')&&!val('rTo')&&(prev||DB.employees.some(e=>e.client&&keyOf(e.client)===k))){
+      const st=clientServiceResume(client)||clientDutyStartFor(client);
+      if(st)document.getElementById('rFrom').value=st;
+      document.getElementById('rTo').value=todayStr();
+    }
   }
+}
+/* The day a client's next service period starts: the day after the last receipt's
+   service period ended (else the day after that receipt), so every invoice bills the
+   stretch it is actually for. Empty when the client has never paid. */
+function clientServiceResume(client){
+  const key=keyOf(client);
+  if(!key)return '';
+  const mine=DB.receipts.filter(r=>keyOf(r.client)===key&&(r.periodTo||r.date))
+    .sort((a,b)=>String(b.periodTo||b.date).localeCompare(String(a.periodTo||a.date)));
+  if(!mine.length)return '';
+  const last=mine[0].periodTo||mine[0].date;
+  return last?addDaysStr(last,1):'';
 }
 /* The agreed monthly deal for a client: the newest dealAmount in ClientReceipts,
    else the clientDeal saved on that client's Employees row. */
@@ -3055,41 +3088,126 @@ function updateInvoicePreview(force){
   document.getElementById('invStampDate').textContent=formatStampDate(date);
   document.getElementById('invClient').textContent=client||'—';
   document.getElementById('invAddr').textContent=val('rAddr')||'—';
+  const cFrom=val('rFrom'),cTo=val('rTo');
+  document.getElementById('invPeriod').textContent=(cFrom||cTo)?((cFrom||'—')+' → '+(cTo||'—')):'—';
   const emp=val('rEmpSel'),mode=val('rMode');
-  const descEl=document.getElementById('invDesc');
-  let desc='Caretaker services'+(emp?' — attendant: '+emp:'');
-  if(deal)desc+=' — payment against monthly deal';
-  descEl.textContent=desc;
-
-  const dealRow=document.getElementById('invDealRow'),dealAmtEl=document.getElementById('invDealAmt');
-  const balRow=document.getElementById('invBalRow'),balEl=document.getElementById('invBal'),balLbl=document.getElementById('invBalLabel');
   const nDeal=Number(deal)||0,nAmt=Number(amt)||0;
-  if(nDeal>0){
-    dealRow.style.display='';
-    dealAmtEl.textContent=fmt(nDeal);
-    if(nAmt>0 && nAmt<nDeal){
+  const bill=clientBillSummary(client,cFrom,cTo,nDeal);
+
+  const descEl=document.getElementById('invDesc'),billAmtEl=document.getElementById('invBillAmt');
+  const dealRow=document.getElementById('invDealRow'),dealAmtEl=document.getElementById('invDealAmt');
+  const amtRow=document.getElementById('invAmtRow'),amtEl=document.getElementById('invAmt');
+  const balRow=document.getElementById('invBalRow'),balEl=document.getElementById('invBal'),balLbl=document.getElementById('invBalLabel');
+  const detailsEl=document.getElementById('invDetails'),totalLbl=document.getElementById('invTotalLabel');
+
+  if(bill){
+    /* 24-hour duty: the invoice states what was served and bills it by its hours,
+       exactly like the employee salary receipt */
+    descEl.textContent='Caretaker services — '+bill.svcTxt+(emp?' — attendant: '+emp:'');
+    billAmtEl.textContent=fmt(bill.bill);
+    amtRow.style.display='';
+    amtEl.textContent=nAmt?fmt(nAmt):'—';
+    if(nAmt!==bill.bill){
+      const diff=bill.bill-nAmt;
       balRow.style.display='';
-      balLbl.textContent='Balance due';
-      balEl.textContent=fmt(nDeal-nAmt);
-      balEl.className='right money neg';
-    }else if(nAmt>nDeal){
-      balRow.style.display='';
-      balLbl.textContent='Advance / overpayment';
-      balEl.textContent=fmt(nAmt-nDeal);
-      balEl.className='right money pos';
+      balLbl.textContent=diff>0?'Balance due':'Advance / overpayment';
+      balEl.textContent=fmt(Math.abs(diff));
+      balEl.className='right money '+(diff>0?'neg':'pos');
+    }else balRow.style.display='none';
+    detailsEl.style.display='';
+    detailsEl.innerHTML=bill.html;
+    totalLbl.textContent='Total received';
+  }else{
+    let desc='Caretaker services'+(emp?' — attendant: '+emp:'');
+    if(deal)desc+=' — payment against monthly deal';
+    descEl.textContent=desc;
+    billAmtEl.textContent=amt?fmt(amt):'—';
+    amtRow.style.display='none';
+    detailsEl.style.display='none';
+    detailsEl.innerHTML='';
+    totalLbl.textContent='Total';
+    if(nDeal>0){
+      dealRow.style.display='';
+      dealAmtEl.textContent=fmt(nDeal);
+      if(nAmt>0 && nAmt<nDeal){
+        balRow.style.display='';
+        balLbl.textContent='Balance due';
+        balEl.textContent=fmt(nDeal-nAmt);
+        balEl.className='right money neg';
+      }else if(nAmt>nDeal){
+        balRow.style.display='';
+        balLbl.textContent='Advance / overpayment';
+        balEl.textContent=fmt(nAmt-nDeal);
+        balEl.className='right money pos';
+      }else{
+        balRow.style.display='none';
+      }
     }else{
+      dealRow.style.display='none';
       balRow.style.display='none';
     }
-  }else{
-    dealRow.style.display='none';
-    balRow.style.display='none';
   }
+  if(bill&&nDeal>0){dealRow.style.display='';dealAmtEl.textContent=fmt(nDeal);}
 
   const amtTxt=amt?fmt(amt):'—';
-  document.getElementById('invAmt').textContent=amtTxt;
   document.getElementById('invTotal').textContent=amtTxt;
   document.getElementById('invWords').textContent=amt?amountInWords(amt):'—';
   document.getElementById('invMode').textContent=mode||'—';
+}
+/* ---- A client receipt's duty block (same shape as the salary receipt) ----
+   Returns null when the period is empty, the deal is missing, or the client has no
+   24-hour duty time — the invoice then stays on the plain (calendar) layout. */
+function clientBillSummary(client,from,to,deal){
+  const d=Number(deal)||0;
+  if(!client||!from||!to||from>to||!(d>0))return null;
+  const b=clientBillFor(client,d,from,to);
+  if(!b.h24)return null;
+  const h=b.h24;
+  const sameMonth=monthOf(from)===monthOf(to);
+  const svcTxt=sameMonth
+    ?(round2(h.days)+' of '+daysInMonth(monthOf(from))+' days ('+hrsTxt(h.hours)+')')
+    :(round2(h.days)+' duty days ('+hrsTxt(h.hours)+')');
+  return {h24:h,bill:b.total,days:h.days,hours:h.hours,svcTxt,sameMonth,
+    html:clientDutyHtml(h),text:clientDutyText(h)};
+}
+function dutySpanTxt(date,time,endDate,endTime){
+  let s=date+(time?' '+time:'');
+  if(endDate&&(endDate!==date||(endTime&&endTime!==time)))s+=' → '+endDate+(endTime?' '+endTime:'');
+  return s;
+}
+function clientDutyHtml(h){
+  const L=[];
+  L.push('<b>Duty (24-hour):</b>');
+  L.push('&nbsp;&nbsp;• '+esc(dutySpanTxt(h.startDate,h.startTime,h.endDate,h.endTime))
+    +(h.people.length?' <i>('+esc(h.people.join(', '))+')</i>':''));
+  if(h.subRows&&h.subRows.length){
+    h.subRows.forEach(r=>{
+      const hrs=round2((rowDaysInRange(r,h.startDate,h.endDate,h.base)||0)*24);
+      L.push('&nbsp;&nbsp;• substitute '+esc(r.empName||'')+' '+esc(dutySpanTxt(r.from,r.fromTime,r.to,r.toTime))+' ('+hrsTxt(hrs)+')');
+    });
+  }
+  L.push('Total duty days: <b>'+dayWord(h.days)+'</b> <span style="color:var(--muted);">('+hrsTxt(h.hours)+' ÷ 24)</span><br>');
+  L.push('<b>Leave:</b>');
+  if(h.leaveRows&&h.leaveRows.length){
+    h.leaveRows.forEach(r=>{
+      const hrs=round2((rowDaysInRange(r,h.startDate,h.endDate,h.base)||0)*24);
+      L.push('&nbsp;&nbsp;• '+esc(dutySpanTxt(r.from,r.fromTime,r.to,r.toTime))+' ('+hrsTxt(hrs)+')');
+    });
+  }else{
+    L.push('&nbsp;&nbsp;• none');
+  }
+  return L.join('<br>');
+}
+function clientDutyText(h){
+  const lines=[];
+  lines.push('Duty (24-hour):');
+  lines.push('- '+dutySpanTxt(h.startDate,h.startTime,h.endDate,h.endTime)+(h.people.length?' ('+h.people.join(', ')+')':''));
+  lines.push('Total duty days: '+dayWord(h.days)+' ('+hrsTxt(h.hours)+' ÷ 24)');
+  lines.push('Leave:');
+  if(h.leaveRows&&h.leaveRows.length){
+    h.leaveRows.forEach(r=>lines.push('- '+dutySpanTxt(r.from,r.fromTime,r.to,r.toTime)));
+  }else lines.push('- none');
+  return lines.join('\n');
 }
 function printInvoice(){
   const card=document.getElementById('invoiceCard');
@@ -3362,12 +3480,21 @@ async function shareInvoiceWhatsApp(){
   await sendNodeOnWhatsApp('invoicePrintArea',text,phone,'Invoice-'+String(no).replace(/[^A-Za-z0-9-]/g,'')+'.png',client?client+' (client)':'');
 }
 function saveReceipt(){
-  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),savedAt:new Date().toLocaleString()};
+  const rec={id:uid(),client:val('rClient'),date:val('rDate'),amount:val('rAmt'),empName:val('rEmpSel'),mode:val('rMode'),clientAddress:val('rAddr'),clientPhone:val('rPhone'),dealAmount:val('rDeal'),invoiceNo:invoiceNoOverride||nextInvoiceNo(),periodFrom:val('rFrom'),periodTo:val('rTo'),savedAt:new Date().toLocaleString()};
+  if(rec.periodFrom&&rec.periodTo&&rec.periodFrom>rec.periodTo){flash('rMsg','Service period From must be before (or same as) the To date.',false);return;}
   if(!anyFilled([rec.client,rec.date,rec.amount,rec.empName,rec.mode,rec.clientAddress,rec.dealAmount])){flash('rMsg','Fill at least one field.',false);return;}
   if(rec.amount&&!rec.date)rec.date=todayStr();
+  /* a 24-hour duty period is stored with the receipt, so the saved sheet explains
+     itself and the invoice can be re-printed with the same duty block */
+  const bill=clientBillSummary(rec.client,rec.periodFrom,rec.periodTo,Number(rec.dealAmount)||0);
+  if(bill){
+    rec.serviceDays=round2(bill.days);rec.serviceHours=round2(bill.hours);
+    rec.billAmount=bill.bill;rec.balance=round2(bill.bill-Number(rec.amount||0));
+    rec.summary=bill.text;
+  }
   DB.receipts.push(rec);persist();flash('rMsg','Client payment saved — invoice '+rec.invoiceNo+'.');
   sendRecord('ClientReceipts',rec);
-  clear('rClient','rAddr','rPhone','rDate','rAmt','rDeal','rEmpSel','rMode');invoiceNoOverride='';
+  clear('rClient','rAddr','rPhone','rDate','rAmt','rDeal','rFrom','rTo','rEmpSel','rMode');invoiceNoOverride='';
   closeInvoice();renderAll();
 }
 /* Re-open a saved receipt's invoice from All Records (data as stored in the sheet) */
@@ -3381,10 +3508,27 @@ function openInvoiceFromRecord(id){
   document.getElementById('rDate').value=r.date||'';
   document.getElementById('rAmt').value=r.amount||'';
   document.getElementById('rDeal').value=r.dealAmount||lastDealForClient(r.client)||'';
+  document.getElementById('rFrom').value=r.periodFrom||'';
+  document.getElementById('rTo').value=r.periodTo||'';
   setSelectValue(document.getElementById('rEmpSel'),r.empName||'');
   setSelectValue(document.getElementById('rMode'),r.mode||'');
   invoiceNoOverride=r.invoiceNo||'';
   updateInvoicePreview(true);
+  /* a receipt saved with a 24-hour bill is re-printed with the numbers it was
+     saved with (the duty block above is recomputed, the money is not) */
+  if(r.billAmount!==undefined&&String(r.billAmount).trim()!==''){
+    const bill=Number(r.billAmount)||0,diff=round2(bill-Number(r.amount||0));
+    const billEl=document.getElementById('invBillAmt');
+    if(billEl)billEl.textContent=fmt(bill);
+    const balRow=document.getElementById('invBalRow');
+    if(balRow&&diff!==0){
+      balRow.style.display='';
+      document.getElementById('invBalLabel').textContent=diff>0?'Balance due':'Advance / overpayment';
+      const bal=document.getElementById('invBal');
+      bal.textContent=fmt(Math.abs(diff));
+      bal.className='right money '+(diff>0?'neg':'pos');
+    }
+  }
   document.getElementById('invoiceCard').scrollIntoView({behavior:'smooth'});
 }
 function setSelectValue(sel,val){
@@ -4241,12 +4385,199 @@ function onClientBillClientChange(){
   }
   document.getElementById('cbFrom').value=clientDutyStartFor(client)||todayStr().slice(0,8)+'01';
   if(!val('cbTo'))document.getElementById('cbTo').value=todayStr();
+  /* duty times of that client's 24-hour caregiver, and the time the duty ended —
+     shown as a starting point; both can be typed over on the form */
+  const t=clientDutyTimes(client);
+  document.getElementById('cbFromT').value=t.fromTime||'';
+  document.getElementById('cbToT').value=t.toTime||'';
+}
+/* The duty time saved for this client's 24-hour caregiver (start) and the time the
+   duty ended on the end row (end) — the two times the hours rule needs. */
+function clientDutyTimes(client){
+  const key=keyOf(client);
+  let fromTime='',toTime='';
+  if(!key)return {fromTime,toTime};
+  const people=clientDutyPeople(client);
+  const p24=people.filter(e=>String(e.dutyHours)==='24'&&String(e.dutyTime||'').trim())
+    .sort((a,b)=>String(a.clientDutyStartDate||a.joinDate||'').localeCompare(String(b.clientDutyStartDate||b.joinDate||'')))[0]
+    ||people.find(e=>String(e.dutyHours)==='24'&&String(e.dutyTime||'').trim());
+  if(p24)fromTime=String(p24.dutyTime).trim();
+  const end=clientEndFor(client,people);
+  if(end&&end.time)toTime=end.time;
+  return {fromTime,toTime};
+}
+/* ================= 24-HOUR CLIENT DUTY — BILLED ACCORDING TO HOURS =================
+   The client's service runs from the day their caregiver's duty started (the
+   clientDutyStartDate / joinDate on that client's Employees row) to the day it
+   ended (endClientDuty / endEmployeeDuty), at the duty time saved on the row.
+   The arithmetic is exactly the employee rule:
+        days = hours ÷ 24                (8 AM → next 8 AM = 1 day, 8 AM → 2 PM = 0.25)
+        bill = deal ÷ days-in-month × days          (month by month)
+   Leave of that caregiver is taken out of the served hours and a substitute who
+   covers the same hours puts them back, so a covered leave never cuts the bill.
+   With no 24-hour duty time anywhere the old calendar-day rule still applies. */
+
+/* Everyone posted at this client (each row is one posting) */
+function clientDutyPeople(client){
+  const key=keyOf(client);
+  if(!key)return [];
+  return DB.employees.filter(e=>e.name&&keyOf(e.client)===key);
+}
+/* When did the client's service end? Nobody still on duty = the newest end row
+   (endClientDuty of this client, or endEmployeeDuty of one of its people). */
+function clientEndFor(client,people){
+  const key=keyOf(client);
+  if(!people||!people.length)return null;
+  if(people.some(e=>!isEmployeeEnded(e)))return null;      /* somebody is still on duty */
+  let best=null;
+  DB.dutyLeave.forEach(r=>{
+    if(r.type!=='endClientDuty'&&r.type!=='endEmployeeDuty')return;
+    const applies=r.type==='endClientDuty'?keyOf(r.client)===key:people.some(e=>employeeEndApplies(r,e));
+    if(!applies)return;
+    const d=r.to||r.from;
+    if(!d)return;
+    if(!best||String(d)>=best.date)best={date:String(d),time:String(r.toTime||r.fromTime||'')};
+  });
+  return best;
+}
+/* Duty days of one 24-hour duty window, split by the month each SHIFT STARTS IN.
+   A shift belongs to the day it begins on (8 AM → next 8 AM is one day), so a
+   full month of duty bills exactly one month of deal — 1 Aug 08:00 → 1 Sep 08:00
+   is 31 August days, not 30.67 August days plus 0.33 September days. */
+function shiftDaysByMonth(startDate,startTime,endDate,endTime){
+  const out={};
+  if(!startDate||!endDate)return out;
+  const t0=startTime||'00:00',t1=endTime||t0;
+  const start=new Date(startDate+'T'+t0),end=new Date(endDate+'T'+t1);
+  if(!(start<end))return out;
+  for(let d=startDate;d<=endDate;d=addDaysStr(d,1)){
+    const s0=new Date(d+'T'+t0),e0=new Date(addDaysStr(d,1)+'T'+t0);
+    const a=s0<start?start:s0,b=e0>end?end:e0;
+    if(b<=a)continue;
+    const ym=monthOf(d);
+    out[ym]=(out[ym]||0)+(b-a)/36e5/24;
+  }
+  Object.keys(out).forEach(k=>{out[k]=round2(out[k]);});
+  return out;
+}
+/* Clock hours of any window (a leave, a substitution), split by the month of each
+   calendar day it covers — used to take leave out of a month / add a substitute back. */
+function hoursByDayMonth(startDate,startTime,endDate,endTime){
+  const out={};
+  if(!startDate||!endDate)return out;
+  const t0=startTime||'00:00',t1=endTime||t0;
+  const start=new Date(startDate+'T'+t0),end=new Date(endDate+'T'+t1);
+  if(!(start<end))return out;
+  for(let d=startDate;d<=endDate;d=addDaysStr(d,1)){
+    const s0=new Date(d+'T'+t0),e0=new Date(addDaysStr(d,1)+'T'+t0);
+    const a=s0<start?start:s0,b=e0>end?end:e0;
+    if(b<=a)continue;
+    const ym=monthOf(d);
+    out[ym]=(out[ym]||0)+(b-a)/36e5;
+  }
+  Object.keys(out).forEach(k=>{out[k]=round2(out[k]);});
+  return out;
+}
+/* The client's 24-hour duty over [from,to] — null when there is no 24-hour duty
+   time to count with (the caller then keeps the calendar-day rule). */
+function client24For(client,from,to,opts){
+  opts=opts||{};
+  if(!client||!from||!to||from>to)return null;
+  const key=keyOf(client);
+  const people=clientDutyPeople(client);
+  if(!people.length)return null;
+  /* substitute rows of this client: those people are serving a shift, not posting a
+     second duty window of their own */
+  const subRows=DB.dutyLeave
+    .filter(r=>r.type==='substitute'&&overlaps(r,from,to)&&(keyOf(r.client)===key||people.some(e=>keyOf(e.name)===keyOf(r.forEmp))))
+    .map(r=>effSubRec(r,to));
+  const isSubPerson=e=>subRows.some(r=>keyOf(r.empName)===keyOf(e.name)&&keyOf(r.forEmp)!==keyOf(e.name));
+  const staff=people.filter(e=>!isSubPerson(e));
+  const pool=staff.length?staff:people;
+  /* every start the client has (a replacement caregiver starts a new one) */
+  const starts=[];
+  pool.forEach(e=>{
+    [e.clientDutyStartDate,e.joinDate].filter(Boolean).forEach(d=>{
+      starts.push({d:String(d),time:(String(e.dutyHours)==='24'?String(e.dutyTime||''):''),name:e.name});
+    });
+  });
+  if(!starts.length)return null;
+  starts.sort((a,b)=>a.d.localeCompare(b.d)||((a.time?0:1)-(b.time?0:1)));
+  const isTime=v=>/^\d{1,2}:\d{2}$/.test(String(v||'').trim());   /* a duty TIME, not “day”/“night” */
+  const timed=starts.find(s=>isTime(s.time));
+  const ownTime=isTime(opts.fromTime)?String(opts.fromTime).trim():'';
+  const base=ownTime||(timed?String(timed.time).trim():'');
+  if(!base)return null;                                   /* no 24-hr duty time → calendar rule */
+  let startDate=starts[0].d;
+  let startTime=ownTime||starts[0].time||base;
+  const endRec=clientEndFor(client,people);
+  let endDate=to,endTime=base;
+  if(endRec&&endRec.date&&endRec.date<=to){endDate=endRec.date;endTime=String(opts.toTime||'').trim()||endRec.time||base;}
+  else{endTime=String(opts.toTime||'').trim()||base;}
+  if(startDate<from)startDate=from;
+  if(endDate>to)endDate=to;
+  /* served days, month by month (each shift counts in the month it started in) */
+  const perMonthDays=shiftDaysByMonth(startDate,startTime,endDate,endTime);
+  const dutyHours=round2(hoursBetween(startDate,startTime,endDate,endTime));
+  /* the caregiver's own leave comes out of the served hours… */
+  const leaveRows=DB.dutyLeave
+    .filter(r=>r.type==='leave'&&overlaps(r,from,to)&&pool.some(e=>keyOf(e.name)===keyOf(r.empName)))
+    .map(r=>r.to?r:effLeaveRec(r,to));
+  /* …and the substitute who covered it puts them back */
+  const signRows=[];
+  leaveRows.forEach(r=>signRows.push({r,sign:-1}));
+  subRows.forEach(r=>signRows.push({r,sign:+1}));
+  let leaveHours=0,subHours=0;
+  signRows.forEach(({r,sign})=>{
+    const s=r.from&&r.from>from?r.from:from;
+    const e2=(r.to||to)<to?(r.to||to):to;
+    if(!s||!e2||e2<s)return;
+    const st=r.fromTime||base,et=r.toTime||r.fromTime||base;
+    const m=hoursByDayMonth(s,st,e2,et);
+    Object.keys(m).forEach(ym=>{
+      if(perMonthDays[ym]===undefined)return;             /* only months the service covers */
+      perMonthDays[ym]=round2(Math.max(0,perMonthDays[ym]+sign*round2(m[ym]/24)));
+    });
+    const h=round2(hoursBetween(s,st,e2,et));
+    if(sign<0)leaveHours=round2(leaveHours+h);else subHours=round2(subHours+h);
+  });
+  const perMonthHours={};
+  Object.keys(perMonthDays).sort().forEach(ym=>{perMonthHours[ym]=round2(perMonthDays[ym]*24);});
+  const days=round2(Object.keys(perMonthDays).reduce((s,k)=>s+perMonthDays[k],0));
+  const hours=round2(days*24);
+  const names=[...new Set(pool.map(e=>e.name).filter(Boolean))];
+  const rangeTxt=startDate+' '+(startTime||base)+(endDate!==startDate||endTime!==startTime?' → '+endDate+' '+(endTime||base):'');
+  const txt='⏱ 24-hr client duty counted in hours: '+rangeTxt+' = '+hrsTxt(dutyHours)
+    +(leaveHours>0?' − leave '+hrsTxt(leaveHours):'')
+    +(subHours>0?' + substitute '+hrsTxt(subHours):'')
+    +' = '+hrsTxt(hours)+' = '+dayWord(days)+' — billed according to hours.';
+  return {active:true, people:names, base, startDate, startTime, endDate, endTime,
+    dutyHours, leaveHours, subHours, hours, days, perMonthHours, perMonthDays,
+    leaveRows, subRows, rangeTxt, txt};
+}
+/* The bill of one client over [from,to] — hours when a 24-hour duty is known,
+   calendar days otherwise. Used by the calculator, the receipt and the reminder. */
+function clientBillFor(client,deal,from,to,opts){
+  const h24=client24For(client,from,to,opts||{});
+  const r=proRateDeal(deal,from,to,h24?h24.perMonthDays:null);
+  return {daysPerMonth:r.daysPerMonth,amountPerMonth:r.amountPerMonth,total:r.total,h24};
 }
 /* Per-month service days + pro-rata deal amount over [from,to].
-   Rule per month: deal ÷ days-in-month × service days (same as monthly salary). */
-function proRateDeal(deal,from,to){
+   Rule per month: deal ÷ days-in-month × service days (same as monthly salary).
+   When `dayMap` is given (a 24-hour duty) those day counts — hours ÷ 24, month by
+   month — are used instead of one day per calendar date. */
+function proRateDeal(deal,from,to,dayMap){
   const daysPerMonth={},amountPerMonth={};let total=0;
   if(!from||!to||!(deal>0))return {daysPerMonth,amountPerMonth,total};
+  if(dayMap&&Object.keys(dayMap).length){
+    Object.keys(dayMap).sort().forEach(ym=>{
+      const d=round2(Number(dayMap[ym]||0));
+      daysPerMonth[ym]=d;
+      amountPerMonth[ym]=Math.round(deal/daysInMonth(ym)*d);
+      total+=amountPerMonth[ym];
+    });
+    return {daysPerMonth,amountPerMonth,total};
+  }
   for(let d=from;d<=to;d=addDaysStr(d,1)){
     const ym=d.slice(0,7);
     daysPerMonth[ym]=(daysPerMonth[ym]||0)+1;
@@ -4265,7 +4596,10 @@ function calcClientBill(){
   if(!deal||deal<=0){box.style.display='block';box.innerHTML='Enter the monthly deal amount for <b>'+esc(client)+'</b> (set it once in Money Entry and it is remembered).';return;}
   if(!from||!to){box.style.display='block';box.innerHTML='Pick the service From and To dates.';return;}
   if(from>to){box.style.display='block';box.innerHTML='From date must be before (or same as) the To date.';return;}
-  const {daysPerMonth,amountPerMonth,total}=proRateDeal(deal,from,to);
+  /* 24-hour duty → the service days of each month are its duty hours ÷ 24,
+     exactly like the employee salary. No duty time → calendar days, as before. */
+  const h24=client24For(client,from,to,{fromTime:val('cbFromT'),toTime:val('cbToT')});
+  const {daysPerMonth,amountPerMonth,total}=proRateDeal(deal,from,to,h24?h24.perMonthDays:null);
   const key=client.trim().toLowerCase();
   const isClient=r=>String(r.client||'').trim().toLowerCase()===key;
 
@@ -4274,24 +4608,29 @@ function calcClientBill(){
   let totalBill=0,totalPaid=0,totalBal=0;
   const perMonth={};
   Object.keys(daysPerMonth).sort().forEach(ym=>{
-    const days=daysInMonth(ym),svc=daysPerMonth[ym];
+    const days=daysInMonth(ym),svc=round2(daysPerMonth[ym]);
+    const svcHrs=h24?round2(svc*24):0;
     const bill=amountPerMonth[ym];
     const pays=DB.receipts.filter(r=>isClient(r)&&monthOf(r.date)===ym)
       .sort((a,b)=>String(a.date).localeCompare(String(b.date)));
     const paid=pays.reduce((s,p)=>s+Number(p.amount||0),0);
     const bal=bill-paid;
-    perMonth[ym]={days,svc,bill,paid,bal,pays};
+    perMonth[ym]={days,svc,bill,paid,bal,pays,hours:svcHrs};
     totalBill+=bill;totalPaid+=paid;totalBal+=bal;
+    const svcLine=h24?('<b>'+svc+'</b> of '+days+' days <span style="color:var(--muted);">('+hrsTxt(svcHrs)+')</span>'):(svc+' of '+days+' days');
+    const howLine=h24
+      ?`${fmt(deal)} ÷ ${days} × ${svc} <span style="color:var(--muted);">(${hrsTxt(svcHrs)} ÷ 24)</span>`
+      :`${fmt(deal)} ÷ ${days} × ${svc}`;
     monthRows.push(
       `<tr>
-        <td><b>${monthLabel(ym)}</b><div style="font-size:.74rem;color:var(--muted);">${svc} of ${days} days</div></td>
-        <td class="right money">${fmt(bill)}<div style="font-size:.74rem;color:var(--muted);">${fmt(deal)} ÷ ${days} × ${svc}</div></td>
+        <td><b>${monthLabel(ym)}</b><div style="font-size:.74rem;color:var(--muted);">${svcLine}</div></td>
+        <td class="right money">${fmt(bill)}<div style="font-size:.74rem;color:var(--muted);">${howLine}</div></td>
         <td class="right money pos">${paid?fmt(paid):'—'}</td>
         <td class="right money ${bal>0?'neg':(bal<0?'pos':'')}"><b>${bal?fmt(Math.abs(bal))+(bal<0?' adv':' due'):'—'}</b></td>
       </tr>`);
   });
   const breakdown=`<div class="tableWrap"><table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
-    <thead><tr><th>Month</th><th class="right">Bill (deal ÷ days × days)</th><th class="right">Paid this month</th><th class="right">Balance</th></tr></thead>
+    <thead><tr><th>Month</th><th class="right">Bill (deal ÷ days × service days)</th><th class="right">Paid this month</th><th class="right">Balance</th></tr></thead>
     <tbody>${monthRows.join('')}
       <tr style="background:var(--soft);">
         <td><b>Total</b></td>
@@ -4319,11 +4658,16 @@ function calcClientBill(){
   box.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
       <button class="btn green" onclick="copyClientBillMessage()">📋 Copy message</button>
-      <span style="font-size:.78rem;color:var(--muted);">Each month: deal ÷ calendar days × service days, minus what was paid that month.</span>
+      <span style="font-size:.78rem;color:var(--muted);">Each month: deal ÷ calendar days × service days${h24?' (24-hr duty: hours ÷ 24)':''}, minus what was paid that month.</span>
     </div>
     <div style="border-bottom:1px dashed #b8c7e6;padding-bottom:6px;margin-bottom:6px;">
       <b style="font-size:1.05rem;">${esc(client)}</b> — ${esc(rangeLabel)}<br>
       Monthly deal: <b>${fmt(deal)}</b>${cd?` &nbsp;•&nbsp; Duty started: <b>${esc(cd)}</b> <span style="color:var(--muted);font-size:.76rem;">(Employees row)</span>`:''}
+      ${h24?`<br><span style="font-size:.84rem;">${esc(h24.txt)}</span>
+      ${h24.people.length?`<br><span style="color:var(--muted);font-size:.76rem;">Caregiver: ${esc(h24.people.join(', '))}</span>`:''}`
+      :(clientDutyPeople(client).length
+        ?`<br><span style="color:var(--muted);font-size:.8rem;">No 24-hour duty time found for this client — days are counted as calendar days. Save a duty time on the caregiver's Employees row (24 hr duty) to bill part shifts by their hours.</span>`
+        :`<br><span style="color:var(--muted);font-size:.8rem;">No caregiver is posted at this client in the Employees tab, so days are counted as calendar days.</span>`)}
     </div>
     ${breakdown}
     <span style="font-size:1.02rem;">Total bill: <b>${fmt(totalBill)}</b> &nbsp;•&nbsp; Received: <b class="pos">${fmt(totalPaid)}</b></span><br>
@@ -4331,7 +4675,9 @@ function calcClientBill(){
     <div style="margin-top:8px;"><b>Payments received — ${esc(rangeLabel)}:</b></div>
     ${payRows}
     <span style="color:var(--muted);font-size:.8rem;">Total received from ${esc(client)} till date (all periods): ${fmt(paidAll)} in ${allPays.length} receipt${allPays.length===1?'':'s'}</span>`;
-  lastClientBill={client,deal,from,to,total:totalBill,paid:totalPaid,bal:totalBal,perMonth,rangeLabel};
+  lastClientBill={client,deal,from,to,total:totalBill,paid:totalPaid,bal:totalBal,perMonth,rangeLabel,
+    h24,basis:h24?'hours':'calendar',hours:h24?h24.hours:0,days:h24?h24.days:null,
+    fromTime:h24?h24.startTime:'',toTime:h24?h24.endTime:'',dutyTxt:h24?h24.txt:''};
   saveRow.style.display=totalBal!==0?'flex':'none';
   document.querySelector('#cbSaveRow .btn').textContent= totalBal>0
     ? '💰 Record balance '+fmt(totalBal)+' in Money Entry'
@@ -4343,11 +4689,20 @@ function buildClientBillMessage(b){
   lines.push('Client bill — '+b.client);
   lines.push('Service period: '+b.from+' to '+b.to);
   lines.push('Monthly deal: '+fmt(b.deal));
-  lines.push('');
-  lines.push('Month-wise (deal ÷ days × service days − paid):');
+  if(b.h24){
+    lines.push('24-hr duty: '+b.h24.rangeTxt+' = '+hrsTxt(b.h24.hours)+' = '+dayWord(b.h24.days));
+    if(b.h24.leaveHours>0)lines.push('Leave adjusted: '+hrsTxt(b.h24.leaveHours));
+    if(b.h24.subHours>0)lines.push('Substitute covered: '+hrsTxt(b.h24.subHours));
+    lines.push('');
+    lines.push('Month-wise (deal ÷ days × (hours ÷ 24) − paid):');
+  }else{
+    lines.push('');
+    lines.push('Month-wise (deal ÷ days × service days − paid):');
+  }
   Object.keys(b.perMonth).sort().forEach(ym=>{
     const m=b.perMonth[ym];
-    lines.push('- '+monthLabel(ym)+' ('+m.svc+'/'+m.days+' days): bill '+fmt(m.bill)+', paid '+fmt(m.paid)+', balance '+fmt(Math.abs(m.bal))+(m.bal<0?' advance':' due'));
+    const svcTxt=b.h24?(m.svc+'/'+m.days+' days, '+hrsTxt(m.hours||0)):(m.svc+'/'+m.days+' days');
+    lines.push('- '+monthLabel(ym)+' ('+svcTxt+'): bill '+fmt(m.bill)+', paid '+fmt(m.paid)+', balance '+fmt(Math.abs(m.bal))+(m.bal<0?' advance':' due'));
   });
   lines.push('');
   lines.push('Total bill: '+fmt(b.total));
@@ -4368,6 +4723,10 @@ function fillMoneyFromClientBill(){
   document.getElementById('rDeal').value=lastClientBill.deal;
   document.getElementById('rDate').value=todayStr();
   document.getElementById('rAmt').value=lastClientBill.bal!==0?Math.abs(lastClientBill.bal):'';
+  /* the service period the bill was worked out for — the invoice repeats it and
+     shows the duty hours the same way the salary receipt does */
+  document.getElementById('rFrom').value=lastClientBill.from||'';
+  document.getElementById('rTo').value=lastClientBill.to||'';
   document.getElementById('rAddr').value='';
   document.getElementById('rPhone').value='';
   setSelectValue(document.getElementById('rEmpSel'),'');
@@ -4442,7 +4801,7 @@ function collectionReminders(){
     /* Balance today = pro-rata bill from duty start to today − everything received.
        Same rule as the Salary Calculator, so the two never disagree. */
     const deal=Number(lastDealForClient(client))||0;
-    const billed=deal>0?proRateDeal(deal,start,today).total:0;
+    const billed=deal>0?clientBillFor(client,deal,start,today).total:0;
     const paidAll=pays.reduce((s,p)=>s+Number(p.amount||0),0);
     const balance=billed-paidAll;
     /* due = collection point reached and this cycle not collected yet */
