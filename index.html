@@ -3,9 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#1f6feb">
+<meta name="theme-color" content="#2563eb">
+<meta name="color-scheme" content="light dark">
 <meta name="description" content="Ardas Caretaker Manager helps manage caretaker employees, leave, salary, invoices, receipts, and Google Sheets sync.">
 <title>Ardas Caretaker Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="logo.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -179,24 +183,347 @@
   .payImgWrap{margin-top:12px; text-align:center;}
   .payImgWrap img{max-width:340px; max-height:440px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
   .payImgCap{font-size:.74rem; color:var(--muted); margin-top:4px;}
+  /* ==================================================================
+     UI REFRESH — modern look & friendlier touch targets (added on top of
+     the rules above; every existing class name keeps working).
+     ================================================================== */
+  :root{
+    --bg:#f5f7fb; --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --brand:#2563eb; --brand-dark:#1d4ed8; --brand-soft:#eef4ff;
+    --green:#059669; --red:#dc2626; --amber:#d97706;
+    --line:#e2e8f0; --soft:#f1f5f9;
+    --radius:18px; --radius-sm:12px;
+    --shadow-sm:0 1px 2px rgba(15,23,42,.06);
+    --shadow-md:0 10px 24px -12px rgba(15,23,42,.22);
+    --shadow-lg:0 24px 60px -28px rgba(15,23,42,.45);
+    --ring:0 0 0 4px rgba(37,99,235,.16);
+    --glow:radial-gradient(1100px 520px at 100% -12%, #e6efff 0%, rgba(230,239,255,0) 60%);
+  }
+  html{ -webkit-text-size-adjust:100%; }
+  body{
+    font-family:Inter,"Segoe UI Variable","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+    background:var(--bg); background-image:var(--glow); background-attachment:fixed;
+    letter-spacing:-.006em;
+  }
+  /* ---------- header ---------- */
+  header{
+    background:rgba(255,255,255,.88); color:var(--ink);
+    -webkit-backdrop-filter:saturate(180%) blur(14px); backdrop-filter:saturate(180%) blur(14px);
+    border-bottom:1px solid var(--line); padding:11px 18px; gap:12px;
+  }
+  header .logo{height:38px; width:38px; border-radius:11px; border:1px solid var(--line); box-shadow:var(--shadow-sm); padding:2px;}
+  header .titleWrap{min-width:0;}
+  header h1{font-size:1.02rem; font-weight:700; letter-spacing:-.015em;}
+  header .sub{font-size:.75rem; color:var(--muted); opacity:1; margin-top:2px;}
+  .brand{
+    display:flex; align-items:center; gap:12px; font:inherit; color:inherit; text-align:left;
+    background:none; border:none; cursor:pointer; padding:4px 8px 4px 4px;
+    margin:-4px -8px -4px -4px; border-radius:12px; transition:background .15s ease;
+  }
+  .brand:hover{background:var(--soft);}
+  .brand:focus-visible{outline:none; box-shadow:var(--ring);}
+  .brand .titleWrap{display:flex; flex-direction:column; line-height:1.2;}
+  .headerTools{margin-left:auto; display:flex; align-items:center; gap:8px; flex-wrap:wrap;}
+  #remindBtn{margin-left:0; background:#fff; color:var(--ink); border:1px solid var(--line); box-shadow:var(--shadow-sm); font-weight:600;}
+  #remindBtn:hover{background:var(--soft);}
+  #remindBtn .cnt{background:var(--red);}
+  #sheetStatus{background:var(--soft); color:var(--muted); border:1px solid var(--line); font-weight:600;}
+  #sheetStatus.ok{color:#047857; border-color:#bbf7d0; background:#f0fdf4;}
+  #sheetStatus .dot{background:var(--amber);}
+  #sheetStatus .dot{ box-shadow:0 0 0 3px rgba(217,119,6,.14); }
+  #sheetStatus.ok .dot{background:var(--green); box-shadow:0 0 0 3px rgba(5,150,105,.16);}
+  .iconBtn{
+    width:38px; height:38px; display:inline-grid; place-items:center; cursor:pointer;
+    border:1px solid var(--line); background:#fff; color:var(--ink);
+    border-radius:11px; box-shadow:var(--shadow-sm); font-size:1rem; line-height:1;
+  }
+  .iconBtn:hover{background:var(--soft);}
+  .iconBtn:focus-visible{outline:none; box-shadow:var(--ring);}
+  /* ---------- tabs (desktop / tablet) ---------- */
+  nav{
+    background:rgba(255,255,255,.92); -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line); padding:7px 14px; gap:2px;
+    justify-content:flex-start; scrollbar-width:none;
+  }
+  nav::-webkit-scrollbar{display:none;}
+  nav button{
+    border:1px solid transparent; border-radius:11px; padding:9px 13px;
+    font-size:.84rem; font-weight:600; letter-spacing:-.005em;
+    transition:background .15s ease, color .15s ease, transform .12s ease;
+  }
+  nav button:hover{background:var(--soft); color:var(--ink);}
+  nav button.active{background:var(--brand-soft); color:var(--brand-dark); border-color:transparent; box-shadow:inset 0 0 0 1px rgba(37,99,235,.14);}
+  nav button:focus-visible{outline:none; box-shadow:var(--ring);}
+  /* ---------- page & cards ---------- */
+  main{max-width:1080px; padding:18px 16px 80px;}
+  .pageHead{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin:2px 0 14px;}
+  .pageHead h2{font-size:1.22rem; font-weight:750; letter-spacing:-.02em;}
+  .pageDate{font-size:.78rem; font-weight:600; color:var(--muted); background:var(--card); border:1px solid var(--line); padding:4px 11px; border-radius:999px; box-shadow:var(--shadow-sm);}
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:18px; box-shadow:var(--shadow-sm); transition:box-shadow .18s ease;
+  }
+  .card h2{font-size:1.02rem; font-weight:700; letter-spacing:-.015em; gap:8px;}
+  .card .hint{font-size:.8rem; line-height:1.6; color:var(--muted); margin-bottom:14px;}
+  .badge{font-size:.66rem; letter-spacing:.03em; padding:3px 9px; text-transform:uppercase;}
+  /* ---------- quick actions ---------- */
+  .quickRow{display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:10px; margin-bottom:14px;}
+  .quickBtn{
+    display:flex; align-items:center; gap:10px; text-align:left; cursor:pointer;
+    background:var(--card); border:1px solid var(--line); border-radius:15px;
+    padding:11px 13px; font-size:.85rem; font-weight:600; color:var(--ink);
+    box-shadow:var(--shadow-sm); transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+  }
+  .quickBtn:hover{transform:translateY(-2px); box-shadow:var(--shadow-md); border-color:#cfdcf5;}
+  .quickBtn:active{transform:translateY(0);}
+  .quickBtn:focus-visible{outline:none; box-shadow:var(--ring);}
+  .qIcon{width:34px; height:34px; flex:0 0 34px; border-radius:11px; background:var(--brand-soft); display:grid; place-items:center; font-size:1.02rem;}
+  /* ---------- KPI tiles ---------- */
+  .statRow{gap:12px; margin-bottom:14px;}
+  .stat{
+    position:relative; overflow:hidden; background:var(--card);
+    border:1px solid var(--line); border-radius:16px; padding:15px 16px;
+    box-shadow:var(--shadow-sm); transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .stat::before{content:''; position:absolute; inset:0 auto 0 0; width:4px; background:var(--brand); opacity:.85;}
+  .stat:nth-child(2)::before{background:var(--red);}
+  .stat:nth-child(3)::before{background:var(--green);}
+  .stat:nth-child(4)::before{background:var(--amber);}
+  .stat:nth-child(5)::before{background:#7c3aed;}
+  .stat:nth-child(6)::before{background:#0891b2;}
+  .stat:hover{transform:translateY(-2px); box-shadow:var(--shadow-md);}
+  .stat .lbl{font-size:.69rem; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); font-weight:650; opacity:.9;}
+  .stat .val{font-size:1.5rem; font-weight:750; letter-spacing:-.03em; margin-top:5px; font-variant-numeric:tabular-nums;}
+  /* ---------- forms ---------- */
+  .grid{gap:12px 12px;}
+  .field label{font-size:.73rem; font-weight:650; letter-spacing:.01em; text-transform:none; color:var(--muted); margin-bottom:5px;}
+  .field input,.field select,.field textarea{
+    padding:11px 12px; min-height:44px; border:1px solid var(--line);
+    border-radius:var(--radius-sm); font-size:.93rem; background:var(--card); color:var(--ink);
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .field input:hover,.field select:hover,.field textarea:hover{border-color:#cbd5e1;}
+  .field input:focus,.field select:focus,.field textarea:focus{outline:none; border-color:var(--brand); box-shadow:var(--ring);}
+  .field input[type=checkbox]{min-height:0;}
+  .actions{gap:9px; margin-top:14px;}
+  .btn{
+    border-radius:12px; padding:11px 17px; font-size:.86rem; font-weight:650; letter-spacing:-.005em;
+    display:inline-flex; align-items:center; justify-content:center; gap:7px;
+    transition:transform .12s ease, box-shadow .15s ease, background .15s ease, color .15s ease;
+  }
+  .btn:hover{box-shadow:var(--shadow-md);}
+  .btn:active{transform:translateY(1px); box-shadow:none;}
+  .btn:focus-visible{outline:none; box-shadow:var(--ring);}
+  .btn.primary{background:var(--brand); color:#fff; box-shadow:0 8px 18px -12px rgba(37,99,235,.95);}
+  .btn.primary:hover{background:var(--brand-dark);}
+  .btn.green{background:var(--green); color:#fff;}
+  .btn.green:hover{background:#047857;}
+  .btn.amber{background:var(--amber); color:#fff;}
+  .btn.ghost{background:var(--brand-soft); color:var(--brand-dark);}
+  .btn.ghost:hover{background:#e2ecff;}
+  .btn.sm{padding:8px 13px; font-size:.79rem; border-radius:10px;}
+  .miniBtn{border-radius:8px; padding:5px 10px; font-size:.72rem; font-weight:700;}
+  .miniBtn.green{background:var(--green);}
+  .miniBtn.blue{background:var(--brand);}
+  /* ---------- tables ---------- */
+  .tableWrap{border:1px solid var(--line); border-radius:14px; background:var(--card);}
+  table{font-size:.84rem;}
+  th{
+    background:var(--soft); color:var(--muted); font-size:.68rem;
+    letter-spacing:.06em; font-weight:700; padding:10px 12px;
+    position:sticky; top:0; z-index:1;
+  }
+  td{padding:10px 12px; border-top:1px solid var(--line);}
+  tr:hover td{background:var(--brand-soft);}
+  .del{border-radius:8px; padding:3px 6px; transition:background .15s ease;}
+  .del:hover{background:#fee2e2;}
+  /* ---------- result cards ---------- */
+  .resultBox{background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; box-shadow:var(--shadow-sm); font-size:.88rem; line-height:1.7;}
+  .salTiles{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin:12px 0 10px;}
+  .salTile{
+    display:flex; flex-direction:column; gap:3px; background:var(--soft);
+    border:1px solid var(--line); border-radius:14px; padding:12px 14px;
+  }
+  .salTile.due{background:#fff1f2; border-color:#fecdd3;}
+  .salTile.clear{background:#ecfdf5; border-color:#a7f3d0;}
+  .salLbl{font-size:.72rem; font-weight:650; color:var(--muted);}
+  .salVal{font-size:1.42rem; font-weight:750; letter-spacing:-.03em; font-variant-numeric:tabular-nums;}
+  .salTile.due .salVal{color:var(--red);}
+  .salTile.clear .salVal{color:var(--green);}
+  .chips{display:flex; flex-wrap:wrap; gap:6px; margin:4px 0 10px;}
+  .chip{
+    font-size:.73rem; font-weight:600; color:var(--muted);
+    background:var(--soft); border:1px solid var(--line);
+    border-radius:999px; padding:4px 11px; font-variant-numeric:tabular-nums;
+  }
+  /* ---------- collapsible long hints ---------- */
+  .hintClamp{display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;}
+  .hintClamp.open{display:block; overflow:visible;}
+  .hintMore{
+    margin:-8px 0 12px; padding:0; border:none; background:none; cursor:pointer;
+    font:inherit; font-size:.76rem; font-weight:700; color:var(--brand);
+  }
+  .hintMore:hover{text-decoration:underline;}
+  /* ---------- dialog & toast ---------- */
+  .dlg{background:var(--card); color:var(--ink); border-radius:18px; box-shadow:var(--shadow-lg); border:1px solid var(--line);}
+  .dlgInfo{background:var(--brand-soft); border-color:#dbe7ff; color:var(--ink);}
+  #toast{
+    background:#0f172a; border-radius:12px; box-shadow:var(--shadow-lg);
+    font-weight:600; padding:12px 18px; bottom:calc(18px + env(safe-area-inset-bottom));
+  }
+  /* ---------- bottom navigation (phones) ---------- */
+  #bottomNav{display:none;}
+  #moreOverlay{position:fixed; inset:0; background:rgba(15,23,42,.42); z-index:80; display:none; align-items:flex-end; justify-content:center; padding:14px;}
+  #moreOverlay.show{display:flex;}
+  #moreSheet{background:var(--card); border:1px solid var(--line); border-radius:20px; box-shadow:var(--shadow-lg); width:100%; max-width:440px; padding:12px; padding-bottom:calc(12px + env(safe-area-inset-bottom)); animation:sheetUp .18s ease;}
+  @keyframes sheetUp{from{transform:translateY(14px); opacity:.4;} to{transform:none; opacity:1;}}
+  #moreSheet h3{font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); padding:6px 8px 8px;}
+  #moreSheet button{
+    width:100%; display:flex; align-items:center; gap:11px; cursor:pointer;
+    background:transparent; border:none; border-radius:12px; padding:11px 10px;
+    font:inherit; font-size:.9rem; font-weight:600; color:var(--ink); text-align:left;
+  }
+  #moreSheet button:hover{background:var(--soft);}
+  #moreSheet .mIcon{width:32px; height:32px; border-radius:10px; background:var(--soft); display:grid; place-items:center; font-size:1rem; flex:0 0 32px;}
+  #moreSheet hr{border:none; border-top:1px solid var(--line); margin:6px 4px;}
+  /* ---------- phone layout ---------- */
+  @media (max-width:760px){
+    header{padding:9px 12px; gap:9px;}
+    header .sub{display:none;}
+    header h1{font-size:.94rem;}
+    header .logo{height:34px; width:34px;}
+    .brand{gap:9px; padding-right:4px; border-radius:10px;}
+    #remindBtn .remindLbl{display:none;}
+    #sheetStatus #sheetStatusTxt{display:none;}
+    #sheetStatus{padding:6px 10px;}
+    #themeBtn{position:relative;}
+    nav{display:none;}
+    main{padding:12px 12px 104px;}
+    .pageHead{margin:0 0 10px;}
+    .pageHead h2{font-size:1.08rem;}
+    .card{padding:15px; border-radius:16px; margin-bottom:12px;}
+    .statRow{grid-template-columns:1fr 1fr; gap:9px;}
+    .stat{padding:12px;}
+    .stat .val{font-size:1.22rem;}
+    .quickRow{grid-template-columns:1fr 1fr; gap:8px;}
+    .quickBtn{padding:10px; font-size:.79rem; gap:8px; border-radius:14px;}
+    .qIcon{width:30px; height:30px; flex-basis:30px; font-size:.95rem;}
+    .btn{flex:1 1 auto; padding:12px 14px;}
+    .actions .msg{flex:1 1 100%;}
+    .salTiles{grid-template-columns:1fr 1fr;}
+    .salTile:last-child{grid-column:1 / -1;}
+    th,td{padding:9px 10px;}
+    #bottomNav{
+      display:grid; grid-template-columns:repeat(6,1fr); gap:2px;
+      position:fixed; left:0; right:0; bottom:0; z-index:75;
+      background:rgba(255,255,255,.96);
+      -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px);
+      border-top:1px solid var(--line);
+      padding:5px 4px calc(5px + env(safe-area-inset-bottom));
+      box-shadow:0 -8px 24px -18px rgba(15,23,42,.5);
+    }
+    #bottomNav button{
+      display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+      min-height:50px; padding:5px 2px; border:none; border-radius:12px; cursor:pointer;
+      background:transparent; color:var(--muted); font:inherit; font-size:.6rem; font-weight:600;
+      letter-spacing:0; transition:background .15s ease, color .15s ease;
+    }
+    #bottomNav button svg{width:21px; height:21px; stroke:currentColor; fill:none; stroke-width:1.9; stroke-linecap:round; stroke-linejoin:round;}
+    #bottomNav button.active{color:var(--brand); background:var(--brand-soft);}
+    #bottomNav button:active{transform:scale(.96);}
+    #toast{bottom:calc(72px + env(safe-area-inset-bottom)); max-width:calc(100vw - 24px);}
+  }
+  /* ---------- dark theme ---------- */
+  html[data-theme="dark"]{
+    --bg:#0b1220; --card:#131c2e; --ink:#e6edf7; --muted:#94a3b8;
+    --brand:#3b82f6; --brand-dark:#93c5fd; --brand-soft:#16243d;
+    --green:#34d399; --red:#f87171; --amber:#fbbf24;
+    --line:#243049; --soft:#1a2438;
+    --glow:radial-gradient(1100px 520px at 100% -12%, #16233c 0%, rgba(22,35,60,0) 62%);
+    --shadow-sm:0 1px 2px rgba(0,0,0,.5);
+    --shadow-md:0 12px 28px -16px rgba(0,0,0,.7);
+    --shadow-lg:0 26px 60px -26px rgba(0,0,0,.85);
+    --ring:0 0 0 4px rgba(59,130,246,.28);
+    color-scheme:dark;
+  }
+  html[data-theme="dark"] header{background:rgba(19,28,46,.9);}
+  html[data-theme="dark"] #remindBtn,
+  html[data-theme="dark"] .iconBtn{background:var(--card); color:var(--ink);}
+  html[data-theme="dark"] #sheetStatus{background:var(--soft);}
+  html[data-theme="dark"] #sheetStatus.ok{background:#0d2a22; border-color:#155e4b; color:#6ee7b7;}
+  html[data-theme="dark"] nav{background:rgba(19,28,46,.92);}
+  html[data-theme="dark"] #bottomNav{background:rgba(19,28,46,.97);}
+  html[data-theme="dark"] .btn.primary{color:#fff;}
+  html[data-theme="dark"] .btn.ghost{background:var(--brand-soft); color:#bfdbfe;}
+  html[data-theme="dark"] .btn.ghost:hover{background:#1d3050;}
+  html[data-theme="dark"] .btn.green{color:#04211a;}
+  html[data-theme="dark"] .btn.amber{color:#251500;}
+  html[data-theme="dark"] .salTile.due{background:#2a1620; border-color:#5b2333;}
+  html[data-theme="dark"] .salTile.clear{background:#0e2a24; border-color:#1c5b4a;}
+  html[data-theme="dark"] .badge.green{background:#0e2a24; color:#6ee7b7;}
+  html[data-theme="dark"] .badge.red{background:#2a1620; color:#fca5a5;}
+  html[data-theme="dark"] .badge.blue{background:#16243d; color:#bfdbfe;}
+  html[data-theme="dark"] .badge.amber{background:#2a2113; color:#fcd34d;}
+  html[data-theme="dark"] .badge.purple{background:#241a3d; color:#c4b5fd;}
+  html[data-theme="dark"] .remRow.due{background:#2a1620; border-color:#5b2333;}
+  html[data-theme="dark"] .remRow.soon{background:#2a2113; border-color:#5b4a1d;}
+  html[data-theme="dark"] .remRow.ok{background:#0e2a24; border-color:#1c5b4a;}
+  html[data-theme="dark"] .onLeaveItem{background:#20141a; border-color:#4a2230;}
+  html[data-theme="dark"] .subLine{background:#1e1733; border-color:#3b2d63; color:#d6c9ff;}
+  html[data-theme="dark"] .clearNotice{background:#2a2113; border-color:#5b4a1d; color:#fcd34d;}
+  html[data-theme="dark"] .alertBox{background:#26141a; border-color:#5b2333;}
+  html[data-theme="dark"] .dlgInfo{background:var(--brand-soft); border-color:#1e3a63;}
+  html[data-theme="dark"] .del:hover{background:#3a1c22;}
+  html[data-theme="dark"] .rep{background:#0f1729;}
+  html[data-theme="dark"] code{background:#1f2b42;}
+  html[data-theme="dark"] #sResult table,
+  html[data-theme="dark"] .resultBox table{background:var(--card) !important;}
+  html[data-theme="dark"] #toast{background:#e6edf7; color:#0b1220;}
+  /* the invoice must stay a white sheet of paper, in both themes */
+  .invoiceBox, .invoiceBox *{color-scheme:light;}
+  html[data-theme="dark"] .invoiceBox{background:#fff; color:#0f172a;}
+  html[data-theme="dark"] .invoiceBox th{background:#f1f5f9; color:#1d4ed8;}
+  html[data-theme="dark"] .invoiceBox td{border-top-color:#e2e8f0; color:#0f172a;}
+  html[data-theme="dark"] .invoiceBox tr:hover td{background:#f8fbff;}
+  html[data-theme="dark"] .invoiceBox .payDetail{background:#f1f5f9; color:#0f172a;}
+  html[data-theme="dark"] .invoiceBox .invSub,
+  html[data-theme="dark"] .invoiceBox .invRow,
+  html[data-theme="dark"] .invoiceBox .invAddr,
+  html[data-theme="dark"] .invoiceBox .invWords{color:#64748b;}
+  html[data-theme="dark"] .invoiceBox .invRow b,
+  html[data-theme="dark"] .invoiceBox .invCo{color:#0f172a;}
+  @media (prefers-reduced-motion:reduce){
+    *{animation-duration:.001s !important; transition-duration:.001s !important;}
+  }
   @media print{
+    body{background:#fff !important; color:#000 !important; background-image:none !important;}
     body *{visibility:hidden !important;}
     #invoicePrintArea,#invoicePrintArea *,#payInvoicePrintArea,#payInvoicePrintArea *{visibility:visible !important;}
     #invoicePrintArea,#payInvoicePrintArea{position:absolute;left:0;top:0;width:100%;max-width:none;border:none;box-shadow:none;border-radius:0;padding:24px;margin:0;}
     body.printClient #payInvCard, body.printPay #invoiceCard{display:none !important;}
   }
 </style>
+<script>/* paint the saved theme before the first frame (no white flash in dark mode) */
+try{var _t=localStorage.getItem('hisabTheme_v1');
+  if(!_t&&window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)_t='dark';
+  if(_t==='dark')document.documentElement.setAttribute('data-theme','dark');}catch(e){}</script>
 </head>
 <body>
 
 <header>
-  <img class="logo" src="logo.png" alt="Ardas Caretaker Manager logo">
-  <div class="titleWrap">
-    <h1>Ardas Caretaker Manager</h1>
-    <div class="sub">Employee database • Salary calculator • Monthly profit/loss (2 partners, 50-50)</div>
+  <button class="brand" type="button" onclick="goHome()" title="Back to the main page (Dashboard)" aria-label="Back to the main page">
+    <img class="logo" src="logo.png" alt="Ardas Caretaker Manager logo">
+    <div class="titleWrap">
+      <h1>Ardas Caretaker Manager</h1>
+      <div class="sub">Caretaker payroll, leave &amp; billing</div>
+    </div>
+  </button>
+  <div class="headerTools">
+    <button id="remindBtn" onclick="openCollectionReminder()" title="15-day payment collection reminder">⏰ <span class="remindLbl">Reminders</span> <span class="cnt" id="remindCnt">0</span></button>
+    <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
+    <button class="iconBtn" id="themeBtn" onclick="toggleTheme()" title="Switch light / dark" aria-label="Switch light or dark theme">🌙</button>
   </div>
-  <button id="remindBtn" onclick="openCollectionReminder()" title="15-day payment collection reminder">⏰ Reminders <span class="cnt" id="remindCnt">0</span></button>
-  <div id="sheetStatus"><span class="dot"></span><span id="sheetStatusTxt">Google: not signed in</span></div>
 </header>
 
 <nav id="nav">
@@ -214,6 +541,13 @@
 
 <!-- ============ DASHBOARD ============ -->
 <section class="tab active" id="tab-dash">
+  <div class="pageHead"><h2>Overview</h2><span class="pageDate" id="dashDate">—</span></div>
+  <div class="quickRow">
+    <button class="quickBtn" onclick="showTab('duty')"><span class="qIcon">🤝</span><span>Leave / Join duty</span></button>
+    <button class="quickBtn" onclick="showTab('money')"><span class="qIcon">💰</span><span>Record payment</span></button>
+    <button class="quickBtn" onclick="showTab('salary')"><span class="qIcon">🧾</span><span>Salary calculator</span></button>
+    <button class="quickBtn" onclick="openCollectionReminder()"><span class="qIcon">⏰</span><span>Reminders</span></button>
+  </div>
   <div class="statRow">
     <div class="stat"><div class="lbl">Employees</div><div class="val" id="dEmp">0</div></div>
     <div class="stat"><div class="lbl">On leave now</div><div class="val neg" id="dOnLeave" style="cursor:pointer;" title="Open Leave Entry" onclick="showTab('duty')">0</div></div>
@@ -789,13 +1123,105 @@ function flash(id,txt,ok=true,ms=4000){const el=document.getElementById(id);el.t
 /* ================= NAV ================= */
 function showTab(name){
   document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));
+  document.querySelectorAll('#bottomNav button').forEach(x=>x.classList.toggle('active',x.dataset.tab===name));
   document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.id==='tab-'+name));
+  const ov=document.getElementById('moreOverlay');
+  if(ov)ov.classList.remove('show');
   renderAll();
 }
 document.getElementById('nav').addEventListener('click',e=>{
   const b=e.target.closest('button');if(!b)return;
   showTab(b.dataset.tab);
 });
+
+/* ================= UI SHELL — light/dark theme, phone tab bar, short hints =================
+   Pure presentation: nothing here touches the books or the Sheet. */
+const THEME_KEY='hisabTheme_v1';
+function applyTheme(t){
+  const dark=t==='dark';
+  document.documentElement.setAttribute('data-theme',dark?'dark':'light');
+  try{localStorage.setItem(THEME_KEY,dark?'dark':'light');}catch(e){}
+  const meta=document.querySelector('meta[name="theme-color"]');
+  if(meta)meta.setAttribute('content',dark?'#0b1220':'#2563eb');
+  const b=document.getElementById('themeBtn');
+  if(b){b.textContent=dark?'☀️':'🌙';b.setAttribute('aria-label',dark?'Switch to light theme':'Switch to dark theme');}
+  const mb=document.getElementById('themeMoreBtn');
+  if(mb)mb.innerHTML='<span class="mIcon">'+(dark?'☀️':'🌙')+'</span><span>'+(dark?'Light theme':'Dark theme')+'</span>';
+}
+function toggleTheme(){applyTheme(document.documentElement.getAttribute('data-theme')==='dark'?'light':'dark');}
+/* Back to the main page — the logo/title in the header is a Home button */
+function goHome(){
+  showTab('dash');
+  try{window.scrollTo({top:0,behavior:'smooth'});}catch(e){}
+}
+const NAV_SVG={
+  dash:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></svg>',
+  emp:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.8"/><path d="M4.5 20.5c0-3.9 3.4-6.2 7.5-6.2s7.5 2.3 7.5 6.2"/></svg>',
+  duty:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/></svg>',
+  money:'<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="3"/><circle cx="12" cy="12" r="2.6"/><path d="M6 10.5v3M18 10.5v3"/></svg>',
+  salary:'<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M9 12h6M9 15.5h6M9 8.5h3"/></svg>',
+  more:'<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="18" cy="12" r="1.5"/></svg>'
+};
+function setupBottomNav(){
+  if(document.getElementById('bottomNav'))return;
+  const wrap=document.createElement('div');wrap.id='bottomNav';
+  [['dash','Home'],['emp','Staff'],['duty','Leave'],['money','Money'],['salary','Salary']].forEach(pair=>{
+    const b=document.createElement('button');b.type='button';b.dataset.tab=pair[0];
+    b.innerHTML=(NAV_SVG[pair[0]]||'')+'<span>'+pair[1]+'</span>';
+    b.addEventListener('click',()=>{showTab(pair[0]);try{window.scrollTo({top:0,behavior:'smooth'});}catch(e){}});
+    wrap.appendChild(b);
+  });
+  const more=document.createElement('button');more.type='button';more.dataset.tab='more';
+  more.innerHTML=NAV_SVG.more+'<span>More</span>';
+  more.addEventListener('click',openMoreSheet);
+  wrap.appendChild(more);
+  document.body.appendChild(wrap);
+
+  const ov=document.createElement('div');ov.id='moreOverlay';
+  ov.innerHTML='<div id="moreSheet" role="dialog" aria-modal="true" aria-label="More sections">'
+    +'<h3>More</h3>'
+    +'<button type="button" data-go="pl"><span class="mIcon">⚖️</span><span>Profit / Loss</span></button>'
+    +'<button type="button" data-go="records"><span class="mIcon">🗂️</span><span>All records</span></button>'
+    +'<button type="button" data-go="sheet"><span class="mIcon">🔗</span><span>Google Sheet</span></button>'
+    +'<hr>'
+    +'<button type="button" id="themeMoreBtn"><span class="mIcon">🌙</span><span>Dark theme</span></button>'
+    +'<button type="button" data-go="close"><span class="mIcon">✕</span><span>Close</span></button>'
+    +'</div>';
+  document.body.appendChild(ov);
+  ov.addEventListener('click',e=>{
+    if(e.target===ov){ov.classList.remove('show');return;}
+    const b=e.target.closest?e.target.closest('button'):null;if(!b)return;
+    if(b.id==='themeMoreBtn'){toggleTheme();return;}
+    ov.classList.remove('show');
+    if(b.dataset.go&&b.dataset.go!=='close')showTab(b.dataset.go);
+  });
+}
+function openMoreSheet(){const ov=document.getElementById('moreOverlay');if(ov)ov.classList.add('show');}
+/* Long paragraphs start folded (2 lines) with a "Show more" under them, so a form
+   is never pushed below the fold. Only static card hints; live messages are left alone. */
+function setupHints(){
+  document.querySelectorAll('.card > .hint').forEach(h=>{
+    if(!h||h.id||h.dataset.clampDone)return;
+    const txt=(h.textContent||'').trim();
+    if(txt.length<170)return;
+    h.dataset.clampDone='1';h.classList.add('hintClamp');
+    const b=document.createElement('button');
+    b.type='button';b.className='hintMore';b.textContent='Show more';
+    b.addEventListener('click',()=>{const open=h.classList.toggle('open');b.textContent=open?'Show less':'Show more';});
+    if(h.parentNode&&h.parentNode.insertBefore)h.parentNode.insertBefore(b,h.nextSibling);
+  });
+}
+function setupUI(){
+  try{
+    let t='';
+    try{t=localStorage.getItem(THEME_KEY)||'';}catch(e){}
+    if(!t){try{t=(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches)?'dark':'light';}catch(e){t='light';}}
+    applyTheme(t==='dark'?'dark':'light');
+    setupBottomNav();setupHints();
+    const d=document.getElementById('dashDate');
+    if(d){try{d.textContent=new Date().toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});}catch(e){}}
+  }catch(e){}
+}
 
 /* ================= GOOGLE SHEET SYNC — Google OAuth + the Sheets API ================= */
 const TABS=['Employees','DutyLeave','EmployeePayments','ClientReceipts','Expenses'];
@@ -4036,12 +4462,21 @@ function calcSalary(){
         :'⚠ Not in the Employees tab (substitute-only) — no wage saved on the app, so salary shows ₹0.'}</i><br>
         <button class="btn ghost" style="padding:7px 14px;font-size:.82rem;" onclick="addSubstituteToEmployees('${esc(name)}')">👤 Add ${esc(name)} to Employees (save wage) → then Calculate again</button>`}
     </div>
+    <div class="chips">
+      <span class="chip">🗓 ${esc(rangeLabel)}</span>
+      <span class="chip">Duty ${esc(dayWord(dutyDays))}</span>
+      <span class="chip">Leave ${esc(dayWord(leaveDays))}</span>
+      ${is24?'<span class="chip">⏱ 24-hr duty</span>':''}
+    </div>
+    <div class="salTiles">
+      <div class="salTile"><span class="salLbl">Total salary</span><span class="salVal">${fmt(salary)}</span></div>
+      <div class="salTile"><span class="salLbl">Paid in this period</span><span class="salVal">${fmt(paid)}</span></div>
+      <div class="salTile ${bal>0?'due':'clear'}"><span class="salLbl">${bal>=0?'Balance to pay':'Overpaid / advance'}</span><span class="salVal">${fmt(Math.abs(bal))}</span></div>
+    </div>
     ${breakdown}
-    ${assumed?`<span style="color:var(--muted);font-size:.8rem;">Note: no duty entries — full period counted automatically${joinNote}${is24&&fromTime?' as 24-hr shifts':''}.</span><br>`:''}
-    <span style="color:var(--muted);font-size:.8rem;">${ruleTxt}</span><br>
-    <span style="font-size:1.02rem;">Total salary: <b style="font-size:1.15rem;">${fmt(salary)}</b></span><br>
-    <span style="font-size:1.02rem;">Balance ${bal>=0?'to pay':'overpaid / advance'}: <b class="${bal>0?'neg':'pos'}" style="font-size:1.15rem;">${fmt(Math.abs(bal))}</b></span><br>
-    <div style="margin-top:8px;"><b>Payment history — ${esc(rangeLabel)}:</b></div>
+    ${assumed?`<div style="color:var(--muted);font-size:.8rem;margin-bottom:6px;">Note: no duty entries — full period counted automatically${joinNote}${is24&&fromTime?' as 24-hr shifts':''}.</div>`:''}
+    <div style="color:var(--muted);font-size:.8rem;line-height:1.6;">${ruleTxt}</div>
+    <div style="margin-top:12px;"><b>Payment history — ${esc(rangeLabel)}:</b></div>
     ${payRows}
     <span style="color:var(--muted);font-size:.8rem;">Total paid to ${esc(name)} till date (all months): ${fmt(paidAll)} in ${allPays.length} payment${allPays.length===1?'':'s'}</span>`;
   lastSalary={name,from,to,salary:bal>0?bal:salary,fullSalary:salary,bal,rangeLabel,copyText,dutyRecs,leaveRecs,dutyDays,leaveDays,assumed};
@@ -5656,7 +6091,7 @@ document.getElementById('cbTo').value=todayStr();
   flash('shMsg','🛠 Corrected '+r.total+' record'+(r.total===1?'':'s')+' that were saved one column out ('+list+'). Press 🔄 Push app data to Sheet to write the corrected rows.');
   setTimeout(()=>toast('🛠 '+r.total+' row'+(r.total===1?'':'s')+' were one column out — corrected. See the Google Sheet tab'),1000);
 })();
-updateSheetStatus();renderAll();
+updateSheetStatus();renderAll();setupUI();
 maybeAutoOpenReminder();
 autoLoadIncludedDataOnce();
 checkShippedData();
