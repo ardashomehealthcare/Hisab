@@ -258,6 +258,11 @@ follows the hours instead of being rounded up to a whole day:
   none. There is **no salary calculation** on it — no duty working, no salary line and no balance
   line — because this form records a payment, not a salary calculation; the salary working is
   still written to the Sheet's `summary` / `balance` columns.
+* **Payment screenshot** — the form has its own *Payment screenshot (optional)* picker, and the
+  receipt preview offers the same field for every mode (**Cash included**). The image is
+  downscaled to ~800 px JPEG so it stays small on the phone, prints on the receipt under the
+  table, and is saved on the device against the payment id (`hisabPayImages_v1`) — so a re-print
+  from All Records still carries it. **✕ Remove screenshot** takes it off again.
   Submit keeps the previewed number; a payment saved without a preview takes the next free
   number. The paid row reads *Advance paid* / *Bonus paid* for a non-salary type. Every saved
   payment is re-printable from All Records, and a payment recorded here re-prints paid-only.
@@ -637,7 +642,7 @@ tables.
 | `hisabWaNum:<name>` | the WhatsApp number typed for a person without a saved one |
 | `hisabIncludedDataAuto` | the shipped data has been auto-loaded once |
 | `hisabDeviceCleared` | the day this device was cleared — while set, the automatic pull from the Sheet stays off (§12.1) |
-| `hisabPayImages_v1` | online-payment screenshots attached to receipts |
+| `hisabPayImages_v1` | payment screenshots attached to receipts (UPI / bank proof, or a photo of a cash payment) |
 
 ---
 
