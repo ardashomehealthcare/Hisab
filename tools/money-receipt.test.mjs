@@ -188,5 +188,43 @@ console.log('\n4. Re-printing from All Records keeps each receipt as it was made
   eq(document.getElementById('piBalRow').style.display, '', 'its balance line is shown');
 }
 
+console.log('\n5. The payment screenshot option is always offered — Cash included');
+{
+  const { $, document } = boot({ employees: [RAJ] });
+  fillMoneyForm(document, { pEmpSel: 'Raj', pFrom: '2026-10-01', pTo: '2026-10-31', pAmt: '12000', pType: 'Salary', pMode: 'Cash' });
+  $('openPayInvoiceFromMoneyEntry()');
+  eq(document.getElementById('piUploadField').style.display, '', 'the screenshot field is shown for a Cash payment too');
+  eq(document.getElementById('piImgClear').style.display, 'none', 'nothing to remove before an image is picked');
+
+  $("payInvImg='data:image/jpeg;base64,AAAA'");
+  $('updatePayInvoicePreview()');
+  eq(document.getElementById('piImgWrap').style.display, '', 'the screenshot appears on the receipt');
+  eq(document.getElementById('piImgClear').style.display, '', 'a ✕ Remove screenshot button appears');
+  eq(document.getElementById('pImgClear').style.display, '', 'the form offers the same remove button');
+
+  $('removePayImg()');
+  eq($('payInvImg'), '', 'removing clears the screenshot');
+  eq(document.getElementById('piImgWrap').style.display, 'none', 'and it leaves the receipt');
+  eq(document.getElementById('piImgClear').style.display, 'none', 'the remove button goes away');
+}
+
+console.log('\n6. A screenshot picked in the Money-Entry form reaches the receipt and is saved');
+{
+  const { $, document, store } = boot({ employees: [RAJ] });
+  /* the form's own picker sets these (the real handler runs FileReader/canvas) */
+  $("payInvImg='data:image/jpeg;base64,BBBB';moneyImgPending=true");
+  fillMoneyForm(document, { pEmpSel: 'Raj', pFrom: '2026-10-01', pTo: '2026-10-31', pAmt: '12000', pType: 'Salary', pMode: 'Cash' });
+  $('openPayInvoiceFromMoneyEntry()');
+  eq($('payInvImg'), 'data:image/jpeg;base64,BBBB', 'Generate receipt keeps the screenshot attached in the form');
+  eq($('payInvData.simple'), true, 'and the receipt is still paid-only');
+  eq(document.getElementById('piImgWrap').style.display, '', 'the screenshot is on the receipt');
+
+  $('savePayment()');
+  const saved = JSON.parse(store['hisabPayImages_v1'] || '{}');
+  const id = $('DB.payments[0].id');
+  eq(Object.keys(saved), [id], 'the screenshot is stored against the saved payment');
+  eq($('payInvImg'), '', 'and cleared for the next entry');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);

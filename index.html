@@ -740,7 +740,7 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
 
   <div class="card" id="empPayCard">
     <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
-    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts. Press <b>🧾 Generate receipt</b> for a printable receipt — it shows <b>only the amount paid</b> (plus the <b>leave period</b>, if the employee had leave in that salary period) with no salary calculation or balance, and updates as you edit.</div>
+    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts. Press <b>🧾 Generate receipt</b> for a printable receipt — it shows <b>only the amount paid</b> (plus the <b>leave period</b>, if the employee had leave in that salary period) with no salary calculation or balance, and updates as you edit. Add a <b>payment screenshot</b> (UPI / bank proof, or a photo of a cash payment) — it prints on the receipt and is saved with the payment.</div>
     <div class="grid">
       <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect" onchange="onPaymentEmpChange();refreshMoneyReceiptIfOpen('emp')"></select></div>
       <div class="field"><label>Salary period — From</label><input id="pFrom" type="date" oninput="refreshMoneyReceiptIfOpen('from')"></div>
@@ -748,12 +748,18 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
       <div class="field"><label>Amount paid (₹)</label><input id="pAmt" type="number" min="0" placeholder="e.g. 15000" oninput="refreshMoneyReceiptIfOpen('amt')"></div>
       <div class="field"><label>Payment type</label><select id="pType" onchange="refreshMoneyReceiptIfOpen('type')"><option value="">— select —</option><option>Salary</option><option>Advance</option><option>Bonus</option><option>Other</option></select></div>
       <div class="field"><label>Mode</label><select id="pMode" onchange="refreshMoneyReceiptIfOpen('mode')"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
+      <div class="field">
+        <label>Payment screenshot (optional)</label>
+        <input type="file" id="pImg" accept="image/*" onchange="onMoneyImgUpload(this)">
+        <button type="button" class="btn ghost" id="pImgClear" style="display:none;margin-top:6px;" onclick="removePayImg()">✕ Remove screenshot</button>
+      </div>
     </div>
     <div class="actions">
       <button class="btn red" onclick="savePayment()">✔ Submit employee payment</button>
       <button class="btn primary" onclick="openPayInvoiceFromMoneyEntry()">🧾 Generate receipt</button>
       <span class="msg" id="pMsg"></span>
     </div>
+    <div class="hint" id="pImgHint" style="display:none;">📷 Screenshot attached — it is saved with this payment and printed on the receipt.</div>
   </div>
 
   <div class="card" id="expenseCard">
@@ -802,10 +808,14 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
 
   <div class="card" id="payInvCard" style="display:none;">
     <h2>Payment receipt preview <span class="badge blue">Auto-generated</span></h2>
-    <div class="hint" id="payInvHint">Receipt number, date, duty &amp; leave details (same as the copy message), salary, amount paid &amp; balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.</div>
+    <div class="hint" id="payInvHint">Receipt number, date and amounts are filled automatically from the form or the calculation. Attach a <b>payment screenshot</b> if you have one — it appears on the receipt and is saved with the payment. First preview, then print.</div>
     <div class="grid" style="max-width:620px;">
       <div class="field"><label>Payment mode</label><select id="piMode" onchange="updatePayInvoicePreview()"><option value="">— select —</option><option>Cash</option><option>UPI</option><option>Bank transfer</option><option>Cheque</option></select></div>
-      <div class="field" id="piUploadField" style="display:none;"><label>Online payment screenshot</label><input type="file" id="piImg" accept="image/*" onchange="onPayImgUpload(this)"></div>
+      <div class="field" id="piUploadField">
+        <label>Payment screenshot (optional)</label>
+        <input type="file" id="piImg" accept="image/*" onchange="onPayImgUpload(this)">
+        <button type="button" class="btn ghost" id="piImgClear" style="display:none;margin-top:6px;" onclick="removePayImg()">✕ Remove screenshot</button>
+      </div>
     </div>
     <div id="payInvoicePrintArea" class="invoiceBox">
       <div class="invHead">
@@ -851,8 +861,8 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
       </div>
       <div class="invWords">In words: <b id="piWords">—</b></div>
       <div class="payImgWrap" id="piImgWrap" style="display:none;">
-        <img id="piImgView" alt="Online payment screenshot">
-        <div class="payImgCap">Online payment screenshot</div>
+        <img id="piImgView" alt="Payment screenshot">
+        <div class="payImgCap">Payment screenshot</div>
       </div>
       <div class="invFoot">Thank you</div>
     </div>
@@ -4031,12 +4041,17 @@ function savePayment(){
   const used=new Set(DB.payments.map(r=>String(r.invoiceNo||'')));
   while(used.has(no))no=nextPayNoAfter(no);
   rec.invoiceNo=no;
-  DB.payments.push(rec);persist();flash('pMsg','Employee payment saved — receipt '+rec.invoiceNo+'.');
-  if(payInvSource==='money'&&payInvImg)savePayImg(rec.id,payInvImg);
+  DB.payments.push(rec);persist();
+  if(payInvImg)savePayImg(rec.id,payInvImg);            // form or preview — either way it is kept
+  flash('pMsg','Employee payment saved — receipt '+rec.invoiceNo+(payInvImg?' with its screenshot':'')+'.');
   payInvNoOverrideMoney='';
   if(payInvSource==='money')closePayInvoice();
+  payInvImg='';moneyImgPending=false;
+  document.getElementById('piImg').value='';
+  document.getElementById('pImgClear').style.display='none';
+  document.getElementById('pImgHint').style.display='none';
   sendRecord('EmployeePayments',rec);
-  clear('pEmpSel','pFrom','pTo','pAmt','pType','pMode');renderAll();
+  clear('pEmpSel','pFrom','pTo','pAmt','pType','pMode','pImg');renderAll();
 }
 function saveExpense(){
   const rec={id:uid(),item:val('xItem'),date:val('xDate'),amount:val('xAmt'),savedAt:new Date().toLocaleString()};
@@ -4051,6 +4066,7 @@ function saveExpense(){
 let lastSalary=null;
 let payInvData=null;   // current payment-receipt data (preview / reprint)
 let payInvImg='';      // pending online-payment screenshot (data URL) for the receipt
+let moneyImgPending=false; // the screenshot was picked in the Money-Entry form, so Generate receipt keeps it
 const PAY_IMG_KEY='hisabPayImages_v1';
 function savePayImg(id,dataUrl){
   try{const m=JSON.parse(localStorage.getItem(PAY_IMG_KEY)||'{}');m[id]=dataUrl;localStorage.setItem(PAY_IMG_KEY,JSON.stringify(m));}
@@ -4512,10 +4528,11 @@ function nextPayNoAfter(no){
   return m[1]+String(parseInt(m[2],10)+1).padStart(m[2].length,'0');
 }
 let payInvSource=null;        // which form the open preview came from: 'money' | 'salary' | 'record'
+let payInvRecordId='';        // the saved payment a re-printed receipt belongs to (source 'record')
 let payInvNoOverrideMoney=''; // Money-Entry preview holds its number until Submit (like the client invoice)
-const PAY_INV_HINT_SALARY='Receipt number, date, duty & leave details (same as the copy message), salary, amount paid & balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
-const PAY_INV_HINT_MONEY='Receipt number, date, payment type, salary period and the <b>amount paid</b> are filled from the employee payment form above — this receipt carries no salary calculation and no balance, only the amount paid (plus the <b>leave period</b> if the employee had leave in that period). Edit the form and this preview updates. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print (or press Submit to save).';
-const PAY_INV_HINT_MONEY_RECORD='This payment was recorded from Money Entry, so its receipt shows <b>only the amount paid</b> (plus the <b>leave period</b>, if any) — no salary calculation and no balance. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
+const PAY_INV_HINT_SALARY='Receipt number, date, duty & leave details (same as the copy message), salary, amount paid & balance are filled automatically from the calculation. Attach a <b>payment screenshot</b> if you have one (UPI / bank proof, or a photo of a cash payment) — it appears on the receipt and is saved with the payment. First preview, then print.';
+const PAY_INV_HINT_MONEY='Receipt number, date, payment type, salary period and the <b>amount paid</b> are filled from the employee payment form above — this receipt carries no salary calculation and no balance, only the amount paid (plus the <b>leave period</b> if the employee had leave in that period). Edit the form and this preview updates. Attach a <b>payment screenshot</b> here or on the receipt preview (UPI / bank proof, or a photo of a cash payment) — it appears on the receipt and is saved with the payment. First preview, then print (or press Submit to save).';
+const PAY_INV_HINT_MONEY_RECORD='This payment was recorded from Money Entry, so its receipt shows <b>only the amount paid</b> (plus the <b>leave period</b>, if any) — no salary calculation and no balance. Attach a <b>payment screenshot</b> if you have one — it appears on the receipt and stays saved with the payment. First preview, then print.';
 /* The single receipt preview card moves between the Salary tab and the Money tab,
    so the preview always appears right under the form it was generated from. */
 function placePayInvCard(where){
@@ -4628,7 +4645,7 @@ function openPayInvoice(){
     bal:lastSalary.bal
   };
   payInvSource='salary';
-  payInvImg='';
+  payInvImg='';moneyImgPending=false;
   document.getElementById('piMode').value='';
   document.getElementById('piImg').value='';
   placePayInvCard('salary');setPayInvHint('salary');
@@ -4704,9 +4721,9 @@ function openPayInvoiceFromMoneyEntry(){
   payInvData=d;
   payInvNoOverrideMoney=d.no;   /* Submit keeps this number, like the client invoice */
   payInvSource='money';
-  payInvImg='';
+  /* a screenshot attached in the payment form stays on the receipt */
+  if(!moneyImgPending){payInvImg='';document.getElementById('piImg').value='';}
   document.getElementById('piMode').value=val('pMode');
-  document.getElementById('piImg').value='';
   placePayInvCard('money');setPayInvHint('money');
   document.getElementById('payInvCard').style.display='';
   updatePayInvoicePreview();
@@ -4760,13 +4777,18 @@ function updatePayInvoicePreview(){
      saved row matches the receipt (programmatic sets fire no events — no loop) */
   if(payInvSource==='money'){const pm=document.getElementById('pMode');if(pm)pm.value=val('piMode');}
   document.getElementById('piModeTxt').textContent=mode;
-  document.getElementById('piUploadField').style.display=(mode!=='—'&&mode!=='Cash')?'':'none';
+  /* the screenshot option is always offered — cash payments get it too */
+  document.getElementById('piUploadField').style.display='';
+  document.getElementById('piImgClear').style.display=payInvImg?'':'none';
+  const onMoney=payInvSource==='money';   // the form's remove button / note follow its own receipt
+  document.getElementById('pImgClear').style.display=(onMoney&&payInvImg)?'':'none';
+  document.getElementById('pImgHint').style.display=(onMoney&&payInvImg)?'':'none';
   const wrap=document.getElementById('piImgWrap');
   if(payInvImg){wrap.style.display='';document.getElementById('piImgView').src=payInvImg;}
   else{wrap.style.display='none';}
 }
-/* Attach an online-payment screenshot — downscaled so it stays small on the device */
-function onPayImgUpload(inp){
+/* Read a chosen screenshot — downscaled so it stays small on the device */
+function readPayImage(inp,cb){
   const f=inp.files&&inp.files[0];if(!f)return;
   if(!/^image\//.test(f.type)){toast('❌ Please choose an image file.');inp.value='';return;}
   const rd=new FileReader();
@@ -4781,13 +4803,44 @@ function onPayImgUpload(inp){
       const url=c.toDataURL('image/jpeg',0.72);
       if(url.length>380000){toast('⚠ Screenshot kept only for this preview (too large to store).');}
       else{toast('✅ Screenshot attached to the receipt.');}
-      payInvImg=url;
-      updatePayInvoicePreview();
+      cb(url);
     };
     img.onerror=()=>{toast('❌ Could not read that image.');inp.value='';};
     img.src=rd.result;
   };
   rd.readAsDataURL(f);
+}
+/* Screenshot picked on the receipt preview itself */
+function onPayImgUpload(inp){
+  readPayImage(inp,url=>{
+    payInvImg=url;
+    if(payInvSource==='money')moneyImgPending=true;   // keep it across Generate receipt
+    if(payInvSource==='record'&&payInvRecordId)savePayImg(payInvRecordId,url); // re-print of a saved payment
+    updatePayInvoicePreview();
+  });
+}
+/* Screenshot picked in the Money-Entry employee payment form — it rides on the
+   receipt when one is generated, and it is saved with the payment either way. */
+function onMoneyImgUpload(inp){
+  readPayImage(inp,url=>{
+    payInvImg=url;
+    moneyImgPending=true;
+    if(payInvSource==='money'&&payInvData)updatePayInvoicePreview();
+    else{
+      document.getElementById('pImgClear').style.display='';
+      document.getElementById('pImgHint').style.display='';
+    }
+  });
+}
+/* Take the screenshot off the payment again */
+function removePayImg(){
+  if(payInvSource==='record'&&payInvRecordId)delPayImg(payInvRecordId);
+  payInvImg='';moneyImgPending=false;
+  const a=document.getElementById('piImg'),b=document.getElementById('pImg');
+  if(a)a.value='';if(b)b.value='';
+  document.getElementById('pImgClear').style.display='none';
+  document.getElementById('pImgHint').style.display='none';
+  if(payInvData&&payInvSource)updatePayInvoicePreview();
 }
 function printPayInvoice(){
   const card=document.getElementById('payInvCard');
@@ -4853,7 +4906,8 @@ function openPayInvoiceFromRecord(id){
     simple
   };
   payInvSource='record';
-  payInvImg=getPayImg(r.id);
+  payInvRecordId=r.id;
+  payInvImg=getPayImg(r.id);moneyImgPending=false;
   document.getElementById('piMode').value=r.mode||'';
   document.getElementById('piImg').value='';
   placePayInvCard('salary');setPayInvHint(simple?'moneyRecord':'salary');
