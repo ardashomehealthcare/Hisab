@@ -253,9 +253,11 @@ follows the hours instead of being rounded up to a whole day:
 * **🧾 Generate receipt** builds a payment receipt (`PAY-####`, PAID stamp) straight from this
   form — the preview appears right below it and updates as the form is edited. **This receipt
   carries only the amount paid**: it shows the payment type, the salary period, the amount paid
-  and its amount in words. There is **no salary calculation** on it — no duty/leave working, no
-  salary line and no balance line — because this form records a payment, not a salary
-  calculation; the salary working is still written to the Sheet's `summary` / `balance` columns.
+  and its amount in words — plus the **leave period** (the leave dates, with their day count and
+  total) whenever the employee had leave inside that salary period, and nothing when there was
+  none. There is **no salary calculation** on it — no duty working, no salary line and no balance
+  line — because this form records a payment, not a salary calculation; the salary working is
+  still written to the Sheet's `summary` / `balance` columns.
   Submit keeps the previewed number; a payment saved without a preview takes the next free
   number. The paid row reads *Advance paid* / *Bonus paid* for a non-salary type. Every saved
   payment is re-printable from All Records, and a payment recorded here re-prints paid-only.

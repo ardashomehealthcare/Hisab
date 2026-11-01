@@ -88,6 +88,11 @@ const eq = (a, b, msg) => ok(JSON.stringify(a) === JSON.stringify(b),
 
 /* Raj — ₹1,000 a day. On duty the whole of October 2026. */
 const RAJ = { id: 'e1', name: 'Raj', client: 'Sharma', clientDutyStartDate: '2026-10-01', dutyHours: '12', dutyTime: 'day', wageType: 'daily', wageAmount: '1000', joinDate: '2026-10-01' };
+/* Two spells of leave inside October, one of them open (no end date yet) */
+const LEAVE = [
+  { id: 'l1', type: 'leave', empName: 'Raj', from: '2026-10-05', to: '2026-10-07' },
+  { id: 'l2', type: 'leave', empName: 'Raj', from: '2026-10-20', to: '' }
+];
 
 /* Fill the Money-Entry employee payment form */
 function fillMoneyForm(document, vals) {
@@ -96,7 +101,7 @@ function fillMoneyForm(document, vals) {
 
 console.log('\n1. A Money-Entry receipt carries only the amount paid');
 {
-  const { $, document } = boot({ employees: [RAJ] });
+  const { $, document } = boot({ employees: [RAJ], dutyLeave: [] });
   fillMoneyForm(document, {
     pEmpSel: 'Raj', pFrom: '2026-10-01', pTo: '2026-10-31',
     pAmt: '12000', pType: 'Salary', pMode: 'Cash'
@@ -115,6 +120,23 @@ console.log('\n1. A Money-Entry receipt carries only the amount paid');
   ok(/Payment type:<\/b> Salary/.test($('payInvData.detailsHtml')), 'it keeps the payment type');
   eq(document.getElementById('piPeriod').textContent, '2026-10-01 → 2026-10-31', 'the period sits in the receipt header');
   eq(document.getElementById('piWords').textContent, $('amountInWords(12000)'), 'the words are the words of the paid amount');
+  ok(!/Leave/.test($('payInvData.detailsHtml')), 'no leave block when the employee took no leave');
+}
+
+console.log('\n1b. Leave period is shown when the employee had leave in that period');
+{
+  const { $, document } = boot({ employees: [RAJ], dutyLeave: LEAVE });
+  fillMoneyForm(document, { pEmpSel: 'Raj', pFrom: '2026-10-01', pTo: '2026-10-31', pAmt: '12000', pType: 'Salary', pMode: 'Cash' });
+  $('openPayInvoiceFromMoneyEntry()');
+  const det = $('payInvData.detailsHtml');
+  ok(/Leave:/.test(det), 'the receipt carries a Leave block');
+  ok(/2026-10-05 → 2026-10-07 \(3 days\)/.test(det), 'the closed leave spell shows its period and its days');
+  ok(/2026-10-20 → still on leave/.test(det), 'an open leave spell shows as still on leave');
+  ok(/Total leave days: <b>\d+(\.\d+)? day/.test(det), 'the leave days are totalled');
+  ok(!/Duty|Salary ₹|Balance/.test(det), 'still no duty or salary working on the receipt');
+  eq(document.getElementById('piSalaryRow').style.display, 'none', 'the salary line is still hidden');
+  eq(document.getElementById('piBalRow').style.display, 'none', 'the balance line is still hidden');
+  eq(document.getElementById('piPaid').textContent, '₹12,000', 'the amount paid is still the only amount');
 }
 
 console.log('\n2. Editing the Money-Entry form keeps the receipt paid-only');
@@ -147,13 +169,15 @@ console.log('\n4. Re-printing from All Records keeps each receipt as it was made
 {
     /* a Money-Entry payment (pay type with no “ - <range>” suffix) */
   const money = { id: 'm1', empName: 'Raj', date: '2026-10-31', amount: 12000, payType: 'Salary', mode: 'Cash', periodFrom: '2026-10-01', periodTo: '2026-10-31', invoiceNo: 'PAY-0001', summary: 'Duty 31 days • Leave 0 days\nSalary ₹31,000 (₹1,000 × 31)\nPaid ₹12,000 • Balance ₹19,000', balance: 19000 };
-  let { $, document } = boot({ employees: [RAJ], payments: [money] });
+  let { $, document } = boot({ employees: [RAJ], dutyLeave: LEAVE, payments: [money] });
   $("openPayInvoiceFromRecord('m1')");
   eq($('payInvData.simple'), true, 'a Money-Entry payment re-prints paid-only');
   eq(document.getElementById('piSalaryRow').style.display, 'none', 'its salary line is hidden');
   eq(document.getElementById('piBalRow').style.display, 'none', 'its balance line is hidden');
   eq(document.getElementById('piPaid').textContent, '₹12,000', 'only the amount paid is shown');
   ok(!/Salary ₹/.test($('payInvData.detailsHtml')), 'the stored salary working is kept off the receipt');
+  ok(/Leave:/.test($('payInvData.detailsHtml')) && /2026-10-05 → 2026-10-07/.test($('payInvData.detailsHtml')),
+    'but the leave period still re-prints');
 
   /* a Salary-Calculator payment (pay type = “Salary - <range>”) */
   const calc = { id: 'c1', empName: 'Raj', date: '2026-10-31', amount: 15000, payType: 'Salary - 2026-10-01 → 2026-10-31', mode: 'Cash', periodFrom: '2026-10-01', periodTo: '2026-10-31', invoiceNo: 'PAY-0002', summary: 'Salary details', balance: 5000 };

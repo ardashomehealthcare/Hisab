@@ -740,7 +740,7 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
 
   <div class="card" id="empPayCard">
     <h2>Payment given to employee <span class="badge red">Money OUT</span></h2>
-    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts. Press <b>🧾 Generate receipt</b> for a printable receipt — it shows <b>only the amount paid</b> (no salary calculation or balance) and updates as you edit.</div>
+    <div class="hint">Record a salary, advance, bonus, or other payment for the selected employee and salary period (From → To). The payment is recorded on today's date in accounts. Press <b>🧾 Generate receipt</b> for a printable receipt — it shows <b>only the amount paid</b> (plus the <b>leave period</b>, if the employee had leave in that salary period) with no salary calculation or balance, and updates as you edit.</div>
     <div class="grid">
       <div class="field"><label>Employee</label><select id="pEmpSel" class="empSelect" onchange="onPaymentEmpChange();refreshMoneyReceiptIfOpen('emp')"></select></div>
       <div class="field"><label>Salary period — From</label><input id="pFrom" type="date" oninput="refreshMoneyReceiptIfOpen('from')"></div>
@@ -4514,8 +4514,8 @@ function nextPayNoAfter(no){
 let payInvSource=null;        // which form the open preview came from: 'money' | 'salary' | 'record'
 let payInvNoOverrideMoney=''; // Money-Entry preview holds its number until Submit (like the client invoice)
 const PAY_INV_HINT_SALARY='Receipt number, date, duty & leave details (same as the copy message), salary, amount paid & balance are filled automatically from the calculation. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
-const PAY_INV_HINT_MONEY='Receipt number, date, payment type, salary period and the <b>amount paid</b> are filled from the employee payment form above — this receipt carries no salary calculation and no balance, only the amount paid. Edit the form and this preview updates. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print (or press Submit to save).';
-const PAY_INV_HINT_MONEY_RECORD='This payment was recorded from Money Entry, so its receipt shows <b>only the amount paid</b> — no salary calculation and no balance. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
+const PAY_INV_HINT_MONEY='Receipt number, date, payment type, salary period and the <b>amount paid</b> are filled from the employee payment form above — this receipt carries no salary calculation and no balance, only the amount paid (plus the <b>leave period</b> if the employee had leave in that period). Edit the form and this preview updates. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print (or press Submit to save).';
+const PAY_INV_HINT_MONEY_RECORD='This payment was recorded from Money Entry, so its receipt shows <b>only the amount paid</b> (plus the <b>leave period</b>, if any) — no salary calculation and no balance. If the payment was made online (UPI / bank transfer), attach the payment screenshot — it appears on the receipt. First preview, then print.';
 /* The single receipt preview card moves between the Salary tab and the Money tab,
    so the preview always appears right under the form it was generated from. */
 function placePayInvCard(where){
@@ -4636,6 +4636,35 @@ function openPayInvoice(){
   updatePayInvoicePreview();
   document.getElementById('payInvCard').scrollIntoView({behavior:'smooth'});
 }
+/* Leave period(s) that fall inside a payment's salary period — the only detail a
+   paid-only Money-Entry receipt still carries. The dates are listed as they were
+   recorded (leave start → leave end, with the time when the row has one); there is
+   no duty or salary working here. Nothing is returned when the employee had no
+   leave in the period. */
+function leaveDetailHtml(name,from,to){
+  if(!(name&&from&&to))return '';
+  const emp=findEmpByName(name);
+  const recs=DB.dutyLeave.filter(r=>r.empName===name&&r.type==='leave'&&overlaps(r,from,to))
+    .map(r=>r.to?r:effLeaveRec(r,to))
+    .sort((a,b)=>String(a.from).localeCompare(String(b.from)));
+  if(!recs.length)return '';
+  const L=['<b>Leave:</b>'];
+  let total=0;
+  recs.forEach(r=>{
+    let t=esc(r.from);
+    if(r.fromTime)t+=' '+esc(r.fromTime);
+    if(r.ongoing)t+=' → still on leave';
+    else{
+      if(r.to&&r.to!==r.from)t+=' → '+esc(r.to);
+      if(r.toTime)t+=' '+esc(r.toTime);
+    }
+    const d=rowDaysInRange(r,from,to,(emp&&emp.dutyTime)||'');
+    total+=d;
+    L.push('&nbsp;&nbsp;• '+t+(d?(' ('+dayWord(d)+')'):''));
+  });
+  L.push('Total leave days: <b>'+dayWord(total)+'</b>');
+  return L.join('<br>');
+}
 /* Build the receipt data straight from the Money-Entry employee payment form, so a
    salary / advance / bonus paid there gets the same printable receipt as the Salary
    Calculator. keepNo preserves the number across live refreshes. */
@@ -4643,10 +4672,15 @@ function buildMoneyPayInvData(keepNo){
   const name=val('pEmpSel'),from=val('pFrom'),to=val('pTo'),amt=val('pAmt'),payType=val('pType');
   if(!name||!(Number(amt)>0))return null;
   /* The Money-Entry receipt is a simple payment receipt: it shows ONLY the amount
-     paid — no salary calculation, no duty/leave math, no balance. The salary
-     working (duty days, leave, salary, balance) still goes into the saved row's
-     summary column for the Sheet; it just stays off this printed receipt. */
-  const detailsHtml=payType?('<b>Payment type:</b> '+esc(payType)):'';
+     paid — no salary calculation, no duty math, no balance — plus the leave period
+     if the employee had leave in that salary period. The salary working (duty days,
+     leave, salary, balance) still goes into the saved row's summary column for the
+     Sheet; it just stays off this printed receipt. */
+  const parts=[];
+  if(payType)parts.push('<b>Payment type:</b> '+esc(payType));
+  const lv=leaveDetailHtml(name,from,to);
+  if(lv)parts.push(lv);
+  const detailsHtml=parts.join('<br>');
   return {
     no:keepNo||payInvNoOverrideMoney||nextPayInvoiceNo(),
     date:todayStr(),
@@ -4791,8 +4825,13 @@ function openPayInvoiceFromRecord(id){
   const simple=/^(salary|advance|bonus|other)$/i.test(String(r.payType||'').trim());
   let detailsHtml,salary=null,bal=null;
   if(simple){
-    /* paid-only: the period already sits in the receipt header — no working here */
-    detailsHtml=r.payType?('<b>Payment type:</b> '+esc(r.payType)):'';
+    /* paid-only: the period already sits in the receipt header — no salary working
+       here, but the leave period is still listed when the employee had leave */
+    const parts=[];
+    if(r.payType)parts.push('<b>Payment type:</b> '+esc(r.payType));
+    const lv=leaveDetailHtml(r.empName,r.periodFrom||'',r.periodTo||'');
+    if(lv)parts.push(lv);
+    detailsHtml=parts.join('<br>');
   }else{
     const d=salaryDetailsFor(r.empName,from,to);
     detailsHtml=r.summary
