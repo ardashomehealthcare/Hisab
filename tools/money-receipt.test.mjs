@@ -112,7 +112,7 @@ console.log('\n1. A Money-Entry receipt carries only the amount paid');
   eq(document.getElementById('piSalaryRow').style.display, 'none', 'the salary line is hidden');
   eq(document.getElementById('piBalRow').style.display, 'none', 'the balance line is hidden');
   eq(document.getElementById('piPaid').textContent, '₹12,000', 'the amount paid is on the receipt');
-  eq(document.getElementById('piDescPaid').textContent, 'Amount paid (' + $('todayStr()') + ')', 'the paid line names the payment date');
+  ok(document.getElementById('piDescPaid').innerHTML.includes('Amount paid (' + $('todayStr()') + ')') && document.getElementById('piDescPaid').innerHTML.includes('Salary period:</b> 2026-10-01 → 2026-10-31'), 'the description includes the payment date and salary period');
   eq($('payInvData.salary'), null, 'no salary figure is passed to the receipt');
   eq($('payInvData.bal'), null, 'no balance is passed to the receipt');
   ok(!/Duty|Leave/.test($('payInvData.detailsHtml')) && !/Salary ₹/.test($('payInvData.detailsHtml')),
@@ -128,7 +128,7 @@ console.log('\n1b. Leave period is shown when the employee had leave in that per
   const { $, document } = boot({ employees: [RAJ], dutyLeave: LEAVE });
   fillMoneyForm(document, { pEmpSel: 'Raj', pFrom: '2026-10-01', pTo: '2026-10-31', pAmt: '12000', pType: 'Salary', pMode: 'Cash' });
   $('openPayInvoiceFromMoneyEntry()');
-  const det = $('payInvData.detailsHtml');
+  const det = document.getElementById('piDescPaid').innerHTML;
   ok(/Leave:/.test(det), 'the receipt carries a Leave block');
   ok(/2026-10-05 → 2026-10-07 \(3 days\)/.test(det), 'the closed leave spell shows its period and its days');
   ok(/2026-10-20 → still on leave/.test(det), 'an open leave spell shows as still on leave');
@@ -149,7 +149,7 @@ console.log('\n2. Editing the Money-Entry form keeps the receipt paid-only');
   eq(document.getElementById('piSalaryRow').style.display, 'none', 'the salary line stays hidden after editing');
   eq(document.getElementById('piBalRow').style.display, 'none', 'the balance line stays hidden after editing');
   eq(document.getElementById('piPaid').textContent, '₹9,000', 'the receipt follows the edited amount');
-  eq(document.getElementById('piDescPaid').textContent, 'Advance paid (' + $('todayStr()') + ')', 'a non-salary payment is labelled Advance paid');
+  ok(document.getElementById('piDescPaid').innerHTML.includes('Advance paid (' + $('todayStr()') + ')'), 'a non-salary payment is labelled Advance paid');
 }
 
 console.log('\n3. The Salary Calculator receipt still shows the whole working');
@@ -176,7 +176,7 @@ console.log('\n4. Re-printing from All Records keeps each receipt as it was made
   eq(document.getElementById('piBalRow').style.display, 'none', 'its balance line is hidden');
   eq(document.getElementById('piPaid').textContent, '₹12,000', 'only the amount paid is shown');
   ok(!/Salary ₹/.test($('payInvData.detailsHtml')), 'the stored salary working is kept off the receipt');
-  ok(/Leave:/.test($('payInvData.detailsHtml')) && /2026-10-05 → 2026-10-07/.test($('payInvData.detailsHtml')),
+  ok(/Leave:/.test(document.getElementById('piDescPaid').innerHTML) && /2026-10-05 → 2026-10-07/.test(document.getElementById('piDescPaid').innerHTML) && /Salary period:<\/b> 2026-10-01 → 2026-10-31/.test(document.getElementById('piDescPaid').innerHTML),
     'but the leave period still re-prints');
 
   /* a Salary-Calculator payment (pay type = “Salary - <range>”) */
