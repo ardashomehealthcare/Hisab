@@ -176,6 +176,7 @@
 
   /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
+  .invTableWrap.paidOnly{padding-bottom:130px;}
   .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
   .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
   .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
@@ -839,7 +840,7 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
         </div>
       </div>
       <div class="payDetail" id="piDetails"></div>
-      <div class="invTableWrap">
+      <div class="invTableWrap" id="piTableWrap">
         <table class="invTable">
           <thead><tr><th>Description</th><th class="right">Amount</th></tr></thead>
           <tbody>
@@ -4695,8 +4696,7 @@ function buildMoneyPayInvData(keepNo){
      Sheet; it just stays off this printed receipt. */
   const parts=[];
   if(payType)parts.push('<b>Payment type:</b> '+esc(payType));
-  const lv=leaveDetailHtml(name,from,to);
-  if(lv)parts.push(lv);
+  const leaveHtml=leaveDetailHtml(name,from,to);
   const detailsHtml=parts.join('<br>');
   return {
     no:keepNo||payInvNoOverrideMoney||nextPayInvoiceNo(),
@@ -4705,6 +4705,7 @@ function buildMoneyPayInvData(keepNo){
     payType:payType||'Salary',
     period:(from||'—')+' → '+(to||'—'),
     detailsHtml,
+    leaveHtml,
     salary:null,
     paid:Number(amt||0),
     bal:null,
@@ -4765,7 +4766,13 @@ function updatePayInvoicePreview(){
     document.getElementById('piDescSalary').textContent='Salary — '+payInvData.period;
     document.getElementById('piSalary').textContent=payInvData.salary?fmt(payInvData.salary):'—';
   }
-  document.getElementById('piDescPaid').textContent=payInvPaidLabel()+' ('+payInvData.date+')';
+  const desc=document.getElementById('piDescPaid');
+  document.getElementById('piTableWrap').classList.toggle('paidOnly',simple);
+  if(simple){
+    desc.innerHTML=esc(payInvPaidLabel())+' ('+esc(payInvData.date)+')'
+      +(/\d/.test(String(payInvData.period||''))?'<br><b>Salary period:</b> '+esc(payInvData.period):'')
+      +(payInvData.leaveHtml?'<br>'+payInvData.leaveHtml:'');
+  }else desc.textContent=payInvPaidLabel()+' ('+payInvData.date+')';
   document.getElementById('piPaid').textContent=payInvData.paid?fmt(payInvData.paid):'—';
   const balLbl=document.getElementById('piBalLbl'),balEl=document.getElementById('piBal');
   if(payInvData.bal===null||payInvData.bal===undefined){balLbl.textContent='Balance';balEl.textContent='—';}
@@ -4876,14 +4883,13 @@ function openPayInvoiceFromRecord(id){
      with no “ - <date range>” suffix) re-prints as the same simple receipt: amount
      paid only, no salary calculation. */
   const simple=/^(salary|advance|bonus|other)$/i.test(String(r.payType||'').trim());
-  let detailsHtml,salary=null,bal=null;
+  let detailsHtml,leaveHtml='',salary=null,bal=null;
   if(simple){
     /* paid-only: the period already sits in the receipt header — no salary working
        here, but the leave period is still listed when the employee had leave */
     const parts=[];
     if(r.payType)parts.push('<b>Payment type:</b> '+esc(r.payType));
-    const lv=leaveDetailHtml(r.empName,r.periodFrom||'',r.periodTo||'');
-    if(lv)parts.push(lv);
+    leaveHtml=leaveDetailHtml(r.empName,r.periodFrom||'',r.periodTo||'');
     detailsHtml=parts.join('<br>');
   }else{
     const d=salaryDetailsFor(r.empName,from,to);
@@ -4900,6 +4906,7 @@ function openPayInvoiceFromRecord(id){
     payType:r.payType||'Salary',
     period:(r.periodFrom||'—')+' → '+(r.periodTo||'—'),
     detailsHtml,
+    leaveHtml,
     salary,
     paid:Number(r.amount||0),
     bal,
