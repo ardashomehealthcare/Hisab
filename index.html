@@ -3980,6 +3980,31 @@ function onPaymentEmpChange(){
   document.getElementById('pFrom').value=salaryFromDate(name,emp);
   document.getElementById('pTo').value=todayStr();
 }
+/* Allocate only payments explicitly assigned to the exact salary period. Partial
+   overlaps and legacy/unknown categories cannot safely be split automatically. */
+function salaryPaymentType(p){
+  const t=String(p.payType||'').trim().toLowerCase();
+  if(t==='salary'||t.startsWith('salary -'))return 'salary';
+  if(t==='advance')return 'advance';
+  if(t==='bonus')return 'bonus';
+  return 'review';
+}
+function salaryPaymentsFor(name,from,to){
+  const included=[],review=[];
+  DB.payments.filter(p=>p.empName===name).forEach(p=>{
+    const a=String(p.periodFrom||''),b=String(p.periodTo||'');
+    const valid=/^\d{4}-\d{2}-\d{2}$/.test(a)&&/^\d{4}-\d{2}-\d{2}$/.test(b)&&a<=b;
+    const type=salaryPaymentType(p);
+    if(!valid){review.push({payment:p,reason:'Missing or invalid salary period'});return;}
+    if(b<from||a>to)return;
+    if(a!==from||b!==to){review.push({payment:p,reason:'Overlapping salary period — allocation needs review'});return;}
+    if(type==='review'){review.push({payment:p,reason:'Other or unknown payment type'});return;}
+    included.push(p);
+  });
+  included.sort((a,b)=>String(a.date||'').localeCompare(String(b.date||'')));
+  const total=type=>included.filter(p=>salaryPaymentType(p)===type).reduce((s,p)=>s+Number(p.amount||0),0);
+  return {included,review,salaryPaid:total('salary'),advance:total('advance'),bonus:total('bonus')};
+}
 /* Duty/leave days and the money position of one employee over a period — the same
    rules as the Salary Calculator, read from the columns: Employees.wageType /
    wageAmount, DutyLeave.type / from / to / days, EmployeePayments.amount. */
@@ -4012,8 +4037,9 @@ function salarySummaryFor(name,from,to){
     if(wt==='monthly'){const p=Math.round(wage/daysInMonth(ym)*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' ÷ '+daysInMonth(ym)+' × '+round2(dutyPerMonth[ym]));}
     else if(wt==='daily'){const p=Math.round(wage*dutyPerMonth[ym]);salary+=p;parts.push('₹'+wage.toLocaleString('en-IN')+' × '+round2(dutyPerMonth[ym]));}
   });
-  const paid=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
-  return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,rule:parts.join(' + '),windowTxt,twentyFour};
+  const payments=salaryPaymentsFor(name,from,to);
+  const paid=payments.salaryPaid+payments.advance;
+  return {emp,wage,wt,dutyDays,leaveDays,salary,paid,bal:salary-paid,payments,rule:parts.join(' + '),windowTxt,twentyFour};
 }
 /* Duty/leave/salary summary for a Money-Entry employee payment — the same rules as
    salarySummaryFor. Shared by savePayment() and the receipt preview, so the preview
@@ -4021,12 +4047,14 @@ function salarySummaryFor(name,from,to){
 function moneyPaymentSummary(empName,from,to,amount,payType){
   if(!(empName&&from&&to))return {summary:'',balance:null,salary:null};
   const sm=salarySummaryFor(empName,from,to);
-  const amt=Number(amount||0),after=sm.bal-amt;
+  const amt=Number(amount||0),type=salaryPaymentType({payType}),deduct=(type==='salary'||type==='advance')?amt:0,after=sm.bal-deduct;
   const typeLine=(payType&&!/^salary/i.test(payType))?('Payment type: '+payType+'\n'):'';
   const summary=typeLine+'Duty '+dayWord(sm.dutyDays)+' • Leave '+dayWord(sm.leaveDays)
     +'\nPeriod '+from+' → '+to+sm.windowTxt
     +(sm.wage?('\nSalary '+fmt(sm.salary)+(sm.rule?' ('+sm.rule+')':'')):'')
-    +'\nPaid '+fmt(sm.paid+amt)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'');
+    +'\nSalary / advance paid '+fmt(sm.paid+deduct)+' • Balance '+fmt(Math.abs(after))+(after<0?' advance':'')
+    +(type==='bonus'?'\nBonus earned and paid '+fmt(amt):type==='review'?'\nPayment type requires review; not deducted.':'')
+    +(sm.payments.review.length?'\nWarning: '+sm.payments.review.length+' existing payment(s) require review.':'');
   return {summary,balance:after,salary:sm.wage?sm.salary:null};
 }
 function savePayment(){
@@ -4402,7 +4430,7 @@ function calcSalary(){
     leavePerMonth=groupByMonth(leaveSet);
   }
   if(dutyDays===0&&!assumed){
-    const paidRange=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to).reduce((s,p)=>s+Number(p.amount||0),0);
+    const matches=salaryPaymentsFor(name,from,to),paidRange=matches.salaryPaid+matches.advance;
     const endedOn=dutyWindowEnd(name,emp,to);
     const endRow=endedOn&&endedOn<from?endedOn:'';
     box.style.display='block';
@@ -4410,7 +4438,8 @@ function calcSalary(){
       +(endRow
         ?`Their duty <b>ended on ${esc(endRow)}</b> (the endEmployeeDuty row in Duty &amp; Leave), before this period started.`
         :`Fill <b>joining date / client duty start date</b> in the Employees tab, or tick the checkbox above to count the whole period as duty.`)
-      +(paidRange?`<br>Already paid in this period: <b>${fmt(paidRange)}</b>`:'');
+      +(paidRange?`<br>Salary / advance assigned to this period: <b>${fmt(paidRange)}</b>`:'')
+      +(matches.review.length?`<br>⚠ ${matches.review.length} payment(s) require review and were not deducted.`:'');
     return;
   }
   /* Wage: the Employees row first. A substitute (or anyone) whose Employees row
@@ -4440,13 +4469,15 @@ function calcSalary(){
   }
   if(duty24Txt)ruleTxt=(ruleTxt?ruleTxt+'<br>':'')+duty24Txt;
   const rangeLabel=from+(from!==to?' → '+to:'');
-  const periodPays=DB.payments.filter(p=>p.empName===name&&p.date>=from&&p.date<=to)
-    .sort((x,z)=>String(x.date).localeCompare(String(z.date)));
-  const paid=periodPays.reduce((s,p)=>s+Number(p.amount||0),0);
+  const allocations=salaryPaymentsFor(name,from,to),periodPays=allocations.included;
+  const paid=allocations.salaryPaid+allocations.advance;
   const allPays=DB.payments.filter(p=>p.empName===name);
   const paidAll=allPays.reduce((s,p)=>s+Number(p.amount||0),0);
   const bal=salary-paid;
-  const copyText=buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,bal,assumed);
+  const copyText=buildSalaryMessage(name,from,to,dutyRecs,leaveRecs,dutyDays,leaveDays,bal,assumed)
+    +'\nSalary paid: '+fmt(allocations.salaryPaid)+' • Advance: '+fmt(allocations.advance)
+    +(allocations.bonus?'\nBonus earned and already paid: '+fmt(allocations.bonus):'')
+    +(allocations.review.length?'\nWarning: '+allocations.review.length+' payment(s) require review and were not deducted.':'');
   const curM=to.slice(0,7),prevM=prevMonthStr(curM);
   const monthRows=Object.keys(salaryPerMonth).sort().map(ym=>{
     let tag='';
@@ -4461,8 +4492,9 @@ function calcSalary(){
     ? `<table style="margin:6px 0;background:#fff;border-radius:8px;overflow:hidden;">
         <thead><tr><th>Date</th><th>Type</th><th>Mode</th><th class="right">Amount</th></tr></thead>
         <tbody>${periodPays.map(p=>`<tr><td>${esc(p.date)||''}</td><td>${esc(p.payType)||''}</td><td>${esc(p.mode)||''}</td><td class="right money">${p.amount?fmt(p.amount):''}</td></tr>`).join('')}
-        <tr><td colspan="3"><b>Total paid in ${esc(rangeLabel)}</b></td><td class="right money"><b>${fmt(paid)}</b></td></tr></tbody></table>`
-    : `<i>No payment given to ${esc(name)} in this period yet.</i><br>`;
+        <tr><td colspan="3"><b>Salary and advance deducted</b></td><td class="right money"><b>${fmt(paid)}</b></td></tr></tbody></table>`
+    : `<i>No salary, advance or bonus assigned to this exact period.</i><br>`;
+  const reviewRows=allocations.review.map(({payment:p,reason})=>`<li>${esc(p.date||'No payment date')} • ${esc(p.payType||'No type')} • ${fmt(p.amount||0)} • Period: ${esc(p.periodFrom||'?')} → ${esc(p.periodTo||'?')} — ${esc(reason)}</li>`).join('');
   box.style.display='block';
   box.innerHTML=`
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px;">
@@ -4489,7 +4521,7 @@ function calcSalary(){
     </div>
     <div class="salTiles">
       <div class="salTile"><span class="salLbl">Total salary</span><span class="salVal">${fmt(salary)}</span></div>
-      <div class="salTile"><span class="salLbl">Paid in this period</span><span class="salVal">${fmt(paid)}</span></div>
+      <div class="salTile"><span class="salLbl">Salary / advance deducted</span><span class="salVal">${fmt(paid)}</span></div>
       <div class="salTile ${bal>0?'due':'clear'}"><span class="salLbl">${bal>=0?'Balance to pay':'Overpaid / advance'}</span><span class="salVal">${fmt(Math.abs(bal))}</span></div>
     </div>
     ${breakdown}
@@ -4497,19 +4529,29 @@ function calcSalary(){
     <div style="color:var(--muted);font-size:.8rem;line-height:1.6;">${ruleTxt}</div>
     <div style="margin-top:12px;"><b>Payment history — ${esc(rangeLabel)}:</b></div>
     ${payRows}
+    <div style="font-size:.8rem;color:var(--muted);">Only payments assigned to this exact salary period are included. Bonus earned and already paid: ${fmt(allocations.bonus)} (no effect on regular salary balance).</div>
+    ${reviewRows?`<div style="margin-top:10px;color:var(--amber);"><b>⚠ Payments requiring review — not deducted</b><ul>${reviewRows}</ul>Check their salary periods and types before paying. Overlapping calculations can count the same payment again; do not pay overlapping periods twice.</div>`:''}
     <span style="color:var(--muted);font-size:.8rem;">Total paid to ${esc(name)} till date (all months): ${fmt(paidAll)} in ${allPays.length} payment${allPays.length===1?'':'s'}</span>`;
-  lastSalary={name,from,to,salary:bal>0?bal:salary,fullSalary:salary,bal,rangeLabel,copyText,dutyRecs,leaveRecs,dutyDays,leaveDays,assumed};
+  lastSalary={name,from,to,salary:bal>0?bal:salary,fullSalary:salary,bal,rangeLabel,copyText,dutyRecs,leaveRecs,dutyDays,leaveDays,assumed,paymentSnapshot:JSON.stringify(DB.payments.filter(p=>p.empName===name))};
   saveRow.style.display=bal>0?'flex':'none';
   document.querySelector('#sSaveRow .btn').textContent='💸 Record balance '+fmt(bal>0?bal:0)+' as payment given today';
 }
 function saveSalaryAsPayment(){
   if(!lastSalary)return;
+  if(lastSalary.paymentSnapshot!==JSON.stringify(DB.payments.filter(p=>p.empName===lastSalary.name)) ||
+     val('sEmpSel')!==lastSalary.name || val('sFrom')!==lastSalary.from || val('sTo')!==lastSalary.to){
+    flash('sMsg','Payments or selected period changed. Calculate salary again before recording payment.',false);
+    lastSalary=null;document.getElementById('sSaveRow').style.display='none';return;
+  }
+  const pending=salaryPaymentsFor(lastSalary.name,lastSalary.from,lastSalary.to).review.length;
+  if(pending&&!confirm(pending+' payment(s) need review and were not deducted. Record this balance anyway?'))return;
   /* reuse the previewed number only when the open preview IS this salary calculation —
      a Money-Entry preview (or an old re-printed receipt) must never lend its number */
   let no=(payInvSource==='salary'&&payInvData&&payInvData.no)||nextPayInvoiceNo();
   if(payInvNoOverrideMoney&&String(no)===String(payInvNoOverrideMoney))no=nextPayNoAfter(no);
   const rec={id:uid(),empName:lastSalary.name,date:todayStr(),amount:lastSalary.salary,payType:'Salary - '+lastSalary.rangeLabel,mode:val('piMode'),periodFrom:lastSalary.from,periodTo:lastSalary.to,invoiceNo:no,summary:lastSalary.copyText,balance:lastSalary.bal,savedAt:new Date().toLocaleString()};
   DB.payments.push(rec);persist();
+  lastSalary=null;document.getElementById('sSaveRow').style.display='none';
   if(payInvImg)savePayImg(rec.id,payInvImg);
   flash('sMsg','Recorded as payment given today — receipt '+rec.invoiceNo+'.');
   sendRecord('EmployeePayments',rec);renderAll();

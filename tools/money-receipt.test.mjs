@@ -226,5 +226,37 @@ console.log('\n6. A screenshot picked in the Money-Entry form reaches the receip
   eq($('payInvImg'), '', 'and cleared for the next entry');
 }
 
+console.log('\n7. Salary payments use their assigned period and type');
+{
+  const payments = [
+    {id:'a',empName:'Raj',date:'2026-11-15',periodFrom:'2026-10-01',periodTo:'2026-10-31',payType:'Advance',amount:5000},
+    {id:'s',empName:'Raj',date:'2026-11-16',periodFrom:'2026-10-01',periodTo:'2026-10-31',payType:'Salary - 2026-10-01 → 2026-10-31',amount:3000},
+    {id:'b',empName:'Raj',date:'2026-10-10',periodFrom:'2026-10-01',periodTo:'2026-10-31',payType:'Bonus',amount:2000},
+    {id:'o',empName:'Raj',date:'2026-10-11',periodFrom:'2026-10-01',periodTo:'2026-10-31',payType:'Other',amount:400},
+    {id:'overlap',empName:'Raj',date:'2026-10-12',periodFrom:'2026-10-15',periodTo:'2026-11-15',payType:'Salary',amount:900},
+    {id:'legacy',empName:'Raj',date:'2026-10-13',payType:'Advance',amount:700},
+    {id:'outside',empName:'Raj',date:'2026-10-14',periodFrom:'2026-11-01',periodTo:'2026-11-30',payType:'Salary',amount:1000},
+    {id:'otheremployee',empName:'Someone else',periodFrom:'2026-10-01',periodTo:'2026-10-31',payType:'Salary',amount:10000}
+  ];
+  const { $, document } = boot({ employees:[RAJ], payments });
+  eq($('salaryPaymentsFor("Raj","2026-10-01","2026-10-31").salaryPaid'), 3000, 'salary paid in November is assigned to October');
+  eq($('salaryPaymentsFor("Raj","2026-10-01","2026-10-31").advance'), 5000, 'advance is deducted by assigned period');
+  eq($('salaryPaymentsFor("Raj","2026-10-01","2026-10-31").bonus'), 2000, 'bonus is separate and neutral to regular salary');
+  eq($('salaryPaymentsFor("Raj","2026-10-01","2026-10-31").review.length'), 3, 'other, overlapping and missing-period payments require review');
+  eq($('salarySummaryFor("Raj","2026-10-01","2026-10-31").bal'), 23000, 'summary deducts only salary and advance');
+  eq($('moneyPaymentSummary("Raj","2026-10-01","2026-10-31",1000,"Bonus").balance'), 23000, 'new bonus does not reduce regular balance');
+  eq($('moneyPaymentSummary("Raj","2026-10-01","2026-10-31",1000,"Other").balance'), 23000, 'new other payment is not automatically deducted');
+  fillMoneyForm(document, {sEmpSel:'Raj',sFrom:'2026-10-01',sTo:'2026-10-31'});
+  document.getElementById('sAssumeFull').checked = true;
+  $('calcSalary()');
+  eq($('lastSalary.bal'), 23000, 'calculator balance uses same allocation');
+  ok(document.getElementById('sResult').innerHTML.includes('Payments requiring review'), 'calculator shows excluded payments for review');
+  ok(document.getElementById('sResult').innerHTML.includes('2026-10-15'), 'overlapping period is visible');
+  $('saveSalaryAsPayment();saveSalaryAsPayment()');
+  eq($('DB.payments.length'), payments.length+1, 'repeated save does not create duplicate payment');
+  $('calcSalary()');
+  eq($('lastSalary.bal'), 0, 'recorded balance is deducted when recalculated');
+}
+
 console.log(`\n${pass} passed, ${fail} failed\n`);
 process.exit(fail ? 1 : 0);
