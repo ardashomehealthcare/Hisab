@@ -155,36 +155,53 @@
   .filterRow .field{min-width:150px;}
 
   /* ---- Auto-generated invoice ---- */
-  .invoiceBox{background:#fff;border:1px solid var(--line);border-radius:10px;padding:22px;font-size:.92rem;max-width:760px;box-shadow:0 1px 3px rgba(20,40,80,.05);}
-  .invHead{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid var(--brand);padding-bottom:10px;margin-bottom:12px;}
-  .invCo{font-size:1.2rem;color:var(--brand-dark);font-weight:800;}
-  .invSub{font-size:.78rem;color:var(--muted);}
-  .invHead img{height:52px;width:52px;border-radius:8px;background:#fff;padding:3px;border:1px solid var(--line);object-fit:contain;}
+  .invoiceBox{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px;font-size:.92rem;max-width:760px;box-shadow:0 10px 24px -12px rgba(15,23,42,.18);}
+  .invHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;background:linear-gradient(120deg,#1e40af,#2563eb 60%,#0ea5e9);border-radius:14px;padding:16px 18px;margin-bottom:14px;color:#fff;}
+  .invCo{font-size:1.28rem;color:#fff;font-weight:800;letter-spacing:-.01em;}
+  .invSub{font-size:.78rem;color:rgba(255,255,255,.88);}
+  .invHead img{height:52px;width:52px;border-radius:10px;background:#fff;padding:3px;border:1px solid var(--line);object-fit:contain;}
+  .invHeadRight{margin-left:auto;text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex:0 0 auto;}
+  /* payment status pill — green when settled, amber when a balance is due */
+  .invStatus{display:inline-block;background:#fff;color:#047857;font-weight:800;font-size:.68rem;letter-spacing:.06em;padding:5px 10px;border-radius:999px;text-transform:uppercase;white-space:nowrap;}
+  .invStatus.partial{color:#92400e;}
   .invMeta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .invMeta>div{flex:1 1 220px;border:1px solid var(--line);border-radius:12px;padding:12px 14px;background:#f8fafc;}
+  .invMeta>div:first-child{background:#fff;}
   .invTitle{font-size:1.05rem;font-weight:800;letter-spacing:2px;color:var(--brand-dark);margin-bottom:6px;}
   .invRow{font-size:.82rem;color:var(--muted);margin-top:3px;}
   .invRow b{color:var(--ink);}
-  .invTo{text-align:right;font-size:.9rem;}
+  .invTo{text-align:left;font-size:.9rem;}
   .invAddr{color:var(--muted);font-size:.82rem;margin-top:2px;}
   .invTable{width:100%;border-collapse:collapse;margin:8px 0 4px;}
   .invTable th{background:var(--soft);padding:8px 9px;font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;color:var(--brand-dark);}
   .invTable td{padding:8px 9px;border-top:1px solid var(--line);}
   /* the one line a paid-only receipt carries is the total */
-  .invTable tr.totalRow td{font-weight:700;font-size:.98rem;color:var(--ink);}
+  .invTable tr.totalRow td{font-weight:800;font-size:1.02rem;color:#065f46;background:#ecfdf5;}
+  /* the table's final total line reads as the amount hero box */
+  .invTable tfoot tr:last-child td{background:#eef4ff;border-top:2px solid var(--brand);font-size:1.02rem;}
   .invWords{font-size:.85rem;color:var(--muted);margin-top:8px;}
-  .invFoot{margin-top:16px;border-top:1px dashed var(--line);padding-top:10px;font-size:.92rem;font-weight:600;color:var(--brand-dark);text-align:center;letter-spacing:.02em;}
+  .invSign{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin-top:20px;}
+  .invSignNote{font-size:.72rem;color:var(--muted);line-height:1.55;max-width:300px;}
+  .invSignBox{text-align:center;min-width:180px;font-size:.78rem;color:var(--muted);line-height:1.5;}
+  .invSignLine{border-top:1.5px solid #94a3b8;height:36px;}
+  .invSignBox b{color:var(--ink);display:block;font-size:.82rem;}
+  .invFoot{margin-top:16px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:.88rem;font-weight:600;color:var(--brand-dark);text-align:center;letter-spacing:.02em;}
+  .invFoot small{display:block;font-weight:400;color:var(--muted);font-size:.7rem;margin-top:3px;letter-spacing:0;}
 
   /* Round rubber stamp — company name curved on the border, PAID/RECEIVED + date in the centre */
   .invTableWrap{position:relative;}
-  .invTableWrap.paidOnly{padding-bottom:130px;}
-  .stamp{position:absolute; right:5%; bottom:-8px; width:122px; height:122px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
+  .invTableWrap.paidOnly{padding-bottom:118px;}
+  .stamp{position:absolute; right:5%; bottom:-8px; width:104px; height:104px; color:#c53030; opacity:.92; transform:rotate(-12deg); pointer-events:none;}
+  #invoicePrintArea .stamp{color:#2563eb;}
+  #payInvoicePrintArea .stamp{color:#059669;}
   .stampArc{font-size:12px; font-weight:700; letter-spacing:.5px; fill:currentColor;}
   .stampPaid{font-size:36px; font-weight:900; letter-spacing:2px; fill:currentColor;}
   .stampRcvd{font-size:27px; font-weight:900; letter-spacing:1px; fill:currentColor;}
   .stampDate{font-size:13px; font-weight:700; letter-spacing:1px; fill:currentColor;}
-  .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:8px 12px; background:var(--soft); border-radius:8px;}
-  .payImgWrap{margin-top:12px; text-align:center;}
-  .payImgWrap img{max-width:340px; max-height:440px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
+  .payDetail{font-size:.85rem; line-height:1.8; margin:6px 0 10px; padding:10px 14px; background:#eff6ff; border:1px solid #dbeafe; border-radius:12px;}
+  /* the payment screenshot prints as a labelled attachment, not a full-page photo */
+  .payImgWrap{margin-top:12px; text-align:left; border:1px dashed #cbd5e1; background:#f8fafc; border-radius:12px; padding:10px 12px;}
+  .payImgWrap img{max-width:200px; max-height:260px; border:1px solid var(--line); border-radius:8px; box-shadow:0 1px 4px rgba(20,40,80,.12);}
   .payImgCap{font-size:.74rem; color:var(--muted); margin-top:4px;}
   /* ==================================================================
      UI REFRESH — modern look & friendlier touch targets (added on top of
@@ -494,8 +511,10 @@
   html[data-theme="dark"] .invoiceBox .invRow,
   html[data-theme="dark"] .invoiceBox .invAddr,
   html[data-theme="dark"] .invoiceBox .invWords{color:#64748b;}
-  html[data-theme="dark"] .invoiceBox .invRow b,
-  html[data-theme="dark"] .invoiceBox .invCo{color:#0f172a;}
+  html[data-theme="dark"] .invoiceBox .invRow b{color:#0f172a;}
+  /* the gradient header band keeps its white text on the white sheet, in both themes */
+  html[data-theme="dark"] .invoiceBox .invHead .invCo{color:#fff;}
+  html[data-theme="dark"] .invoiceBox .invHead .invSub{color:rgba(255,255,255,.88);}
   @media (prefers-reduced-motion:reduce){
     *{animation-duration:.001s !important; transition-duration:.001s !important;}
   }
@@ -503,7 +522,7 @@
     body{background:#fff !important; color:#000 !important; background-image:none !important;}
     body *{visibility:hidden !important;}
     #invoicePrintArea,#invoicePrintArea *,#payInvoicePrintArea,#payInvoicePrintArea *{visibility:visible !important;}
-    #invoicePrintArea,#payInvoicePrintArea{position:absolute;left:0;top:0;width:100%;max-width:none;border:none;box-shadow:none;border-radius:0;padding:24px;margin:0;}
+    #invoicePrintArea,#payInvoicePrintArea{position:absolute;left:0;top:0;width:100%;max-width:none;border:none;box-shadow:none;border-radius:0;padding:24px;margin:0;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     body.printClient #payInvCard, body.printPay #invoiceCard{display:none !important;}
   }
 </style>
@@ -683,10 +702,13 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
     <div id="invoicePrintArea" class="invoiceBox">
       <div class="invHead">
         <div>
-          <b class="invCo">Ardas Caretaker Manager</b><br>
+          <b class="invCo">Ardas Home Health Care</b><br>
           <span class="invSub">Caretaker services — reliable home care</span>
         </div>
-        <img src="logo.png" alt="Ardas Caretaker Manager">
+        <div class="invHeadRight">
+          <img src="logo.png" alt="Ardas Home Health Care">
+          <span class="invStatus" id="invStatus">● Received</span>
+        </div>
       </div>
       <div class="invMeta">
         <div>
@@ -728,7 +750,11 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
         </svg>
       </div>
       <div class="invWords">In words: <b id="invWords">—</b></div>
-      <div class="invFoot">Thank you</div>
+      <div class="invSign">
+        <div class="invSignNote">Please keep this receipt for your records.</div>
+        <div class="invSignBox"><div class="invSignLine"></div><b>Authorised Signatory</b>For Ardas Home Health Care</div>
+      </div>
+      <div class="invFoot">Thank you for trusting Ardas Home Health Care<small>This is a computer-generated invoice-cum-receipt.</small></div>
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printInvoice()">🖨 Print / Save as PDF</button>
@@ -821,10 +847,13 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
     <div id="payInvoicePrintArea" class="invoiceBox">
       <div class="invHead">
         <div>
-          <b class="invCo">Ardas Caretaker Manager</b><br>
+          <b class="invCo">Ardas Home Health Care</b><br>
           <span class="invSub">Caretaker services — reliable home care</span>
         </div>
-        <img src="logo.png" alt="Ardas Caretaker Manager">
+        <div class="invHeadRight">
+          <img src="logo.png" alt="Ardas Home Health Care">
+          <span class="invStatus" id="piStatus">● Paid</span>
+        </div>
       </div>
       <div class="invMeta">
         <div>
@@ -863,9 +892,13 @@ try{var _t=localStorage.getItem('hisabTheme_v1');
       <div class="invWords">In words: <b id="piWords">—</b></div>
       <div class="payImgWrap" id="piImgWrap" style="display:none;">
         <img id="piImgView" alt="Payment screenshot">
-        <div class="payImgCap">Payment screenshot</div>
+        <div class="payImgCap">Attachment: payment screenshot</div>
       </div>
-      <div class="invFoot">Thank you</div>
+      <div class="invSign">
+        <div class="invSignNote">Please keep this receipt for your records.</div>
+        <div class="invSignBox"><div class="invSignLine"></div><b>Received by</b>Employee signature / thumb impression</div>
+      </div>
+      <div class="invFoot">Thank you<small>This is a computer-generated payment receipt.</small></div>
     </div>
     <div class="actions">
       <button class="btn primary" onclick="printPayInvoice()">🖨 Print / Save as PDF</button>
@@ -3516,6 +3549,15 @@ function lastDealForClient(client){
   });
   return best?best.value:'';
 }
+/* Client receipt status pill — derived from the balance row already on the
+   invoice (display only; nothing extra is saved or synced) */
+function refreshInvStatus(){
+  const st=document.getElementById('invStatus');if(!st)return;
+  const row=document.getElementById('invBalRow'),lbl=document.getElementById('invBalLabel');
+  const due=row&&row.style.display!=='none'&&lbl&&lbl.textContent==='Balance due';
+  st.textContent=due?'● Partially Paid':'● Received';
+  st.className='invStatus '+(due?'partial':'paid');
+}
 /* Live invoice preview — auto-fills from the payment form; only client name & address are editable */
 function updateInvoicePreview(force){
   const card=document.getElementById('invoiceCard');
@@ -3592,6 +3634,7 @@ function updateInvoicePreview(force){
   document.getElementById('invTotal').textContent=amtTxt;
   document.getElementById('invWords').textContent=amt?amountInWords(amt):'—';
   document.getElementById('invMode').textContent=mode||'—';
+  refreshInvStatus();
 }
 /* ---- A client receipt's duty block (same shape as the salary receipt) ----
    Returns null when the period is empty, the deal is missing, or the client has no
@@ -3968,6 +4011,7 @@ function openInvoiceFromRecord(id){
       bal.className='right money '+(diff>0?'neg':'pos');
     }
   }
+  refreshInvStatus();
   document.getElementById('invoiceCard').scrollIntoView({behavior:'smooth'});
 }
 function setSelectValue(sel,val){
